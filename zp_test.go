@@ -38,18 +38,37 @@ func zp7(n int) *Zp {
 func TestAdd(t *testing.T) {
 	a := zp5(1)
 	b := zp5(3)
-	assert.Equal(t, 0, zp5(4).Z.Cmp(a.Add(b).Z))
+	assert.Equal(t, 0, zp5(4).Cmp(a.Add(a, b)))
 }
 
 func TestAddWrap(t *testing.T) {
 	a := zp5(1)
 	b := zp5(9)
-	assert.Equal(t, 0, zp5(0).Z.Cmp(a.Add(b).Z))
+	assert.Equal(t, 0, zp5(0).Cmp(a.Add(a, b)))
 }
 
 func TestMinusOne(t *testing.T) {
 	a := NewZp(int64(65537), int64(-1))
-	assert.Equal(t, int64(65536), a.Z.Int64())
+	assert.Equal(t, int64(65536), a.Int64())
+}
+
+func TestMul(t *testing.T) {
+	// 4x3
+	a := zp5(4)
+	b := zp5(3)
+	a.Mul(a, b)
+	assert.Equal(t, int64(2), a.Int64())
+	// 4x4x3
+	a = zp5(4)
+	b = zp5(3)
+	a.Mul(a, a)
+	a.Mul(a, b)
+	assert.Equal(t, int64(3), a.Int64())
+	// 16x16
+	a = zp5(4)
+	a.Mul(a, a) // 4x4
+	a.Mul(a, a) // 16x16
+	assert.Equal(t, int64(1), a.Int64())
 }
 
 func TestMismatchedP(t *testing.T) {
@@ -59,6 +78,6 @@ func TestMismatchedP(t *testing.T) {
 	}()
 	a := zp5(1)
 	b := NewZp(int64(65537), int64(9))
-	a.Add(b)
+	a.Add(a, b)
 	t.Fail()
 }

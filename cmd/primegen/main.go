@@ -29,11 +29,11 @@ import (
 
 func main() {
 	for _, n := range []int{ 128, 160, 256, 512 } {
-		p, err := rand.Prime(rand.Reader, n)
+		p, err := rand.Prime(rand.Reader, n+1)
 		if err != nil {
 			panic(err)
 		}
-		fmt.Printf("const P_%v = []byte{", n)
+		fmt.Printf("var p_%v = big.NewInt(0).SetBytes([]byte{", n)
 		data := p.Bytes()
 		for i, b := range data {
 			if i > 0 {
@@ -44,6 +44,6 @@ func main() {
 			}
 			fmt.Printf("0x%x", b)
 		}
-		fmt.Printf("}\n\n")
+		fmt.Printf("})\n\n")
 	}
 }
