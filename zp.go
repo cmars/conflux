@@ -84,6 +84,13 @@ func (zp *Zp) Add(x, y *Zp) *Zp {
 	return zp
 }
 
+func (zp *Zp) Sub(x, y *Zp) *Zp {
+	zp.assertP(x, y)
+	zp.Int.Sub(x.Int, y.Int)
+	zp.Norm()
+	return zp
+}
+
 func (zp *Zp) Mul(x, y *Zp) *Zp {
 	zp.assertP(x, y)
 	zp.Int.Mul(x.Int, y.Int)

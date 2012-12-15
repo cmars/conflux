@@ -22,15 +22,55 @@
 
 package conflux
 
-// Store defines an interface for key storage operations (add, remove, exists)
-// and per-point (m) evaluation.
-type Store interface {
+import (
+	"math/big"
+)
+
+// SetStore defines an interface for element storage operations
+// (add, remove, exists) and per-point (m) evaluation.
+type SetStore interface {
 	// Evaluate the key store polynomial for m.
 	Evaluate(m *Zp) (result *Zp, err error)
-	// Add a key into the store.
-	Add(key *Zp) error
+	// Add an element into the store.
+	Add(element *Zp) error
 	// Remove a key from the store.
-	Remove(key *Zp) error
+	Remove(element *Zp) error
 	// Test if a key exists in the store.
-	Exists(key *Zp) (bool, error)
+	Exists(element *Zp) (bool, error)
+}
+
+// SimpleStore is a very naive, inefficient implementation
+// of a set store. However it is useful for demonstrating
+// the concept, and for testing.
+type SimpleStore struct {
+	elements map[string]*Zp
+}
+
+func NewSimpleStore() *SimpleStore {
+	return &SimpleStore{ elements: make(map[string]*Zp) }
+}
+
+func (ss *SimpleStore) Evaluate(m *Zp) (result *Zp, err error) {
+	result = &Zp{ Int: big.NewInt(1), P: m.P }
+	for _, v := range ss.elements {
+		mv := &Zp{ Int: big.NewInt(0).Set(m.Int), P: m.P }
+		mv.Sub(mv, v)
+		result.Mul(result, mv)
+	}
+	return result, nil
+}
+
+func (ss *SimpleStore) Add(element *Zp) error {
+	ss.elements[element.String()] = element
+	return nil
+}
+
+func (ss *SimpleStore) Remove(element *Zp) error {
+	delete(ss.elements, element.String())
+	return nil
+}
+
+func (ss *SimpleStore) Exists(element *Zp) (bool, error) {
+	_, has := ss.elements[element.String()]
+	return has, nil
 }
