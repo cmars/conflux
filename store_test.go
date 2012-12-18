@@ -24,29 +24,32 @@ package conflux
 
 import (
 	"github.com/bmizerany/assert"
+	"math/big"
 	"testing"
 )
+
+var p97 *big.Int = big.NewInt(int64(97))
 
 func TestExample323(t *testing.T) {
 	saVals := []int{ 1, 2, 9, 12, 33 }
 	sa := NewSimpleStore()
 	for _, v := range saVals {
-		sa.Add(NewZp(97, int64(v)))
+		sa.Add(Zi(p97, v))
 	}
 	mVals := []int{ -1, -2, -3, -4, -5 }
 	xzaVals := []int{ 58, 19, 89, 77, 4 }
 	for i := 0; i < len(mVals); i++ {
-		xsaz, _ := sa.Evaluate(NewZp(97, int64(mVals[i])))
+		xsaz, _ := sa.Evaluate(Zi(p97, mVals[i]))
 		assert.Equal(t, int64(xzaVals[i]), xsaz.Int64())
 	}
 	sbVals := []int{ 1, 2, 9, 10, 12, 28 }
 	sb := NewSimpleStore()
 	for _, v := range sbVals {
-		sb.Add(NewZp(97, int64(v)))
+		sb.Add(Zi(p97, v))
 	}
 	xzbVals := []int{ 15, 54, 68, 77, 50 }
 	for i := 0; i < len(mVals); i++ {
-		xsbz, _ := sb.Evaluate(NewZp(97, int64(mVals[i])))
+		xsbz, _ := sb.Evaluate(Zi(p97, mVals[i]))
 		assert.Equal(t, int64(xzbVals[i]), xsbz.Int64())
 	}
 }

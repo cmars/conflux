@@ -27,21 +27,25 @@ import (
 	"math/big"
 )
 
+// P for a finite field Z(P) that includes all 128-bit integers.
 var P_128 = big.NewInt(0).SetBytes([]byte{
         0x1,0x11,0xd,0xb2,0x97,0xcd,0x30,0x8d,
         0x90,0xe5,0x3f,0xb8,0xa1,0x30,0x90,0x97,0xe9})
 
+// P for a finite field Z(P) that includes all 160-bit integers.
 var P_160 = big.NewInt(0).SetBytes([]byte{
         0x1,0xfe,0x90,0xe7,0xb4,0x19,0x88,0xa6,
         0x41,0xb1,0xa6,0xfe,0xc8,0x7d,0x89,0xa3,
         0x1e,0x2a,0x61,0x31,0xf5})
 
+// P for a finite field Z(P) that includes all 256-bit integers.
 var P_256 = big.NewInt(0).SetBytes([]byte{
         0x1,0xdd,0xf4,0x8a,0xc3,0x45,0x19,0x18,
         0x13,0xab,0x7d,0x92,0x27,0x99,0xe8,0x93,
         0x96,0x19,0x43,0x8,0xa4,0xa5,0x9,0xb,
         0x36,0xc9,0x62,0xd5,0xd5,0xd6,0xdd,0x80,0x27})
 
+// P for a finite field Z(P) that includes all 512-bit integers.
 var P_512 = big.NewInt(0).SetBytes([]byte{
         0x1,0xc7,0x19,0x72,0x25,0xf4,0xa5,0xd5,
         0x8a,0xc0,0x2,0xa4,0xdc,0x8d,0xb1,0xd9,
@@ -52,18 +56,32 @@ var P_512 = big.NewInt(0).SetBytes([]byte{
         0xb7,0x26,0x6d,0x19,0x15,0x53,0xd7,0xd,
         0xb6,0x68,0x3b,0x65,0x40,0x89,0x18,0x3e,0xbd})
 
-var P_SKS = big.NewInt(0).SetString("530512889551602322505127520352579437339")
+// Finite field P used by SKS, the Synchronizing Key Server.
+var P_SKS *big.Int
+
+var zero = big.NewInt(0)
+
+func init() {
+	P_SKS, _ = big.NewInt(0).SetString("530512889551602322505127520352579437339", 10)
+}
 
 // Zp represents a value in the finite field Z(p),
 // an integer in which all arithmetic is (mod p).
 type Zp struct {
+	// The integer's value.
 	*big.Int
 	// The prime bound of the finite field Z(p).
 	P *big.Int
 }
 
-// NewZp creates an integer n in the finite field p.
-func NewZp(p *big.Int, n int) *Zp {
+// Z creates an integer in the finite field P
+// initialized to 0.
+func Z(p *big.Int) *Zp {
+	return Zi(p, 0)
+}
+
+// Zi creates an integer n in the finite field p.
+func Zi(p *big.Int, n int) *Zp {
 	zp := &Zp{ Int: big.NewInt(int64(n)), P: p }
 	zp.Norm()
 	return zp
@@ -75,44 +93,74 @@ func (zp *Zp) Copy() *Zp {
 }
 
 // Normalize the integer to its finite field, (mod P).
-func (zp *Zp) Norm() {
+func (zp *Zp) Norm() *Zp {
 	zp.Mod(zp.Int, zp.P)
+	return zp
 }
 
+// Compare with another integer. See big.Int.Cmp for return value semantics.
 func (zp *Zp) Cmp(x *Zp) int {
-	zp.assertP(x)
+	zp.assertEqualP(x)
 	return zp.Int.Cmp(x.Int)
 }
 
+// IsZero returns true if the integer is zero, otherwise false.
+func (zp *Zp) IsZero() bool {
+	return zp.Int.Cmp(zero) == 0
+}
+
+// Add two integers.
 func (zp *Zp) Add(x, y *Zp) *Zp {
-	zp.assertP(x, y)
+	zp.assertEqualP(x, y)
 	zp.Int.Add(x.Int, y.Int)
 	zp.Norm()
 	return zp
 }
 
+// Subtract two integers.
 func (zp *Zp) Sub(x, y *Zp) *Zp {
-	zp.assertP(x, y)
+	zp.assertEqualP(x, y)
 	zp.Int.Sub(x.Int, y.Int)
 	zp.Norm()
 	return zp
 }
 
+// Multiply two integers.
 func (zp *Zp) Mul(x, y *Zp) *Zp {
-	zp.assertP(x, y)
+	zp.assertEqualP(x, y)
 	zp.Int.Mul(x.Int, y.Int)
 	zp.Norm()
 	return zp
 }
 
-func (zp *Zp) Neg() *Zp {
-	return zp.Int.Sub(zp.P, zp.Int)
+// Set the multiplicative inverse in P.
+func (zp *Zp) Inv() *Zp {
+	zp.Int.ModInverse(zp.Int, zp.P)
+	return zp
 }
 
-func (zp *Zp) assertP(values... *Zp) {
+// Divide two integers.
+func (zp *Zp) Div(x, y *Zp) *Zp {
+	panic("TODO")
+}
+
+// Additive inverse of an integer.
+func (zp *Zp) Neg() *Zp {
+	zp.Int.Sub(zp.P, zp.Int)
+	zp.Norm()
+	return zp
+}
+
+// Assert an integer is in the expected finite field P.
+func (zp *Zp) assertP(p *big.Int) {
+	if zp.P.Cmp(p) != 0 {
+		panic(fmt.Sprintf("expect finite field Z(%v), was Z(%v)", p, zp.P))
+	}
+}
+
+// Assert all integers share the same finite field P as this one.
+func (zp *Zp) assertEqualP(values... *Zp) {
 	for _, v := range values {
-		if zp.P.Cmp(v.P) != 0 {
-			panic(fmt.Sprintf("finite field mismatch betwee Z(%v) and Z(%v)", zp.P, v.P))
-		}
+		zp.assertP(v.P)
 	}
 }

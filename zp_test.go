@@ -24,15 +24,20 @@ package conflux
 
 import (
 	"github.com/bmizerany/assert"
+	"math/big"
 	"testing"
 )
 
+func p(n int) *big.Int {
+	return big.NewInt(int64(n))
+}
+
 func zp5(n int) *Zp {
-	return NewZp(int64(5), int64(n))
+	return Zi(p(5), n)
 }
 
 func zp7(n int) *Zp {
-	return NewZp(int64(7), int64(n))
+	return Zi(p(7), n)
 }
 
 func TestAdd(t *testing.T) {
@@ -48,7 +53,7 @@ func TestAddWrap(t *testing.T) {
 }
 
 func TestMinusOne(t *testing.T) {
-	a := NewZp(int64(65537), int64(-1))
+	a := Zi(p(65537), -1)
 	assert.Equal(t, int64(65536), a.Int64())
 }
 
@@ -77,7 +82,40 @@ func TestMismatchedP(t *testing.T) {
 		assert.T(t, r != nil)
 	}()
 	a := zp5(1)
-	b := NewZp(int64(65537), int64(9))
+	b := Zi(p(65537), 9)
 	a.Add(a, b)
 	t.Fail()
+}
+
+func TestNeg(t *testing.T) {
+	a := zp5(2)
+	a.Neg()
+	assert.Equal(t, int64(3), a.Int64())
+	a = zp5(0)
+	a.Neg()
+	assert.Equal(t, int64(0), a.Int64())
+}
+
+func TestSub(t *testing.T) {
+	a := zp5(4)
+	b := zp5(3)
+	c := a.Copy().Sub(a, b)
+	assert.Equal(t, int64(4), a.Int64())
+	assert.Equal(t, int64(3), b.Int64())
+	assert.Equal(t, int64(1), c.Int64())
+}
+
+func TestSubRoll(t *testing.T) {
+	a := zp5(1)
+	b := zp5(3)
+	c := a.Copy().Sub(a, b)
+	assert.Equal(t, int64(1), a.Int64())
+	assert.Equal(t, int64(3), b.Int64())
+	assert.Equal(t, int64(3), c.Int64()) // -2 == 3
+	a = zp5(1)
+	b = zp5(4)
+	c = a.Copy().Sub(a, b)
+	assert.Equal(t, int64(1), a.Int64())
+	assert.Equal(t, int64(4), b.Int64())
+	assert.Equal(t, int64(2), c.Int64()) // -3 == 2
 }
