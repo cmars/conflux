@@ -76,6 +76,19 @@ func TestMul(t *testing.T) {
 	assert.Equal(t, int64(1), a.Int64())
 }
 
+func TestDiv(t *testing.T) {
+	// in Z(5), 1 / 2 = 3 because 3 * 2 = 1.
+	a := zp5(1)
+	b := zp5(2)
+	q := Z(p(5)).Div(a, b)
+	assert.Equal(t, int64(3), q.Int64())
+	// in Z(5), 1 / 3 = 2 because 3 * 2 = 1.
+	a = zp5(1)
+	b = zp5(3)
+	q = Z(p(5)).Div(a, b)
+	assert.Equal(t, int64(2), q.Int64())
+}
+
 func TestMismatchedP(t *testing.T) {
 	defer func(){
         r := recover()

@@ -152,6 +152,20 @@ func (p *Poly) Sub(x, y *Poly) *Poly {
 
 func (p *Poly) Mul(x, y *Poly) *Poly {
 	panic("TODO")
+/*
+let mult x y = 
+  let mdegree = degree x + degree y in
+  let prod = { a = Array.make ( mdegree + 1 ) ZZp.zero;
+               degree = mdegree ;
+             }
+  in
+  for i = 0 to degree x  do
+    for j = 0 to degree y do
+      prod.a.(i + j) <- prod.a.(i + j) +: x.a.(i) *: y.a.(j)
+    done
+  done;
+  prod
+*/
 }
 
 func (p *Poly) IsConstant(c *Zp) bool {
@@ -159,7 +173,13 @@ func (p *Poly) IsConstant(c *Zp) bool {
 }
 
 func (p *Poly) Eval(z *Zp) *Zp {
-	panic("TODO")
+	zd := Zi(p.p, 1)
+	sum := Zi(p.p, 0)
+	for d := 0; d <= p.degree; d++ {
+		sum.Add(sum, Z(p.p).Mul(p.coeff[d], zd))
+		zd.Mul(zd, z)
+	}
+	return sum
 }
 
 func PolyTerm(degree int, c *Zp) *Poly {

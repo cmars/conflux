@@ -80,6 +80,12 @@ func Z(p *big.Int) *Zp {
 	return Zi(p, 0)
 }
 
+// Zzp creates an integer in the finite field P
+// initialized to zp.
+func Zzp(zp *Zp) *Zp {
+	return &Zp{ Int: big.NewInt(0).Set(zp.Int), P: zp.P }
+}
+
 // Zi creates an integer n in the finite field p.
 func Zi(p *big.Int, n int) *Zp {
 	zp := &Zp{ Int: big.NewInt(int64(n)), P: p }
@@ -139,9 +145,15 @@ func (zp *Zp) Inv() *Zp {
 	return zp
 }
 
-// Divide two integers.
+// Exp calculates x**y ("x to the yth power")
+func (zp *Zp) Exp(x, y *Zp) *Zp {
+	zp.assertEqualP(x, y)
+	zp.Int.Exp(x.Int, y.Int, zp.P)
+	return zp
+}
+
 func (zp *Zp) Div(x, y *Zp) *Zp {
-	panic("TODO")
+	return zp.Mul(x, Zzp(y).Inv())
 }
 
 // Additive inverse of an integer.
