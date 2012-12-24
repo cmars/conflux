@@ -254,7 +254,9 @@ func PolyMod(x, y *Poly) (r *Poly, err error) {
 }
 
 func polyGcd(x, y *Poly) (*Poly, error) {
+	//fmt.Printf("polyGcd x=(%v) y=(%v)\n", x, y)
 	if y.IsConstant(Zi(x.p, 0)) {
+		//fmt.Printf("y is zero\n")
 		return x, nil
 	}
 	_, r, err := PolyDivmod(x, y)
@@ -266,10 +268,12 @@ func polyGcd(x, y *Poly) (*Poly, error) {
 
 func PolyGcd(x, y *Poly) (result *Poly, err error) {
 	result, err = polyGcd(x, y)
+	//fmt.Printf("result = (%v)\n", result)
 	if err != nil {
 		return nil, err
 	}
-	result.Mul(result, NewPoly(result.coeff[result.degree].Copy().Inv()))
+	result = NewPoly().Mul(result,
+			NewPoly(result.coeff[result.degree].Copy().Inv()))
 	return result, nil
 }
 

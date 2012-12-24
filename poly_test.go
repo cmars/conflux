@@ -95,3 +95,16 @@ func TestPolyDivmod(t *testing.T) {
 	assert.Equal(t, 0, r.degree)
 	assert.Equal(t, nil, err)
 }
+
+func TestGcd(t *testing.T) {
+	p := big.NewInt(int64(97))
+	x := NewPoly(Zi(p, 1), Zi(p, 2), Zi(p, 1))
+	y := NewPoly(Zi(p, 1), Zi(p, 1))
+	r, err := PolyGcd(x, y)
+	assert.Equal(t, nil, err)
+	t.Logf("r=(%v)", r)
+	assert.Equal(t, 1, r.degree)
+	assert.Equal(t, int64(1), r.coeff[0].Int64())
+	assert.Equal(t, int64(1), r.coeff[1].Int64())
+	assert.Equal(t, 2, len(r.coeff))
+}
