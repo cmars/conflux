@@ -28,7 +28,6 @@ func Interpolate(values []*Zp, points []*Zp, degDiff int) (rfn *RationalFn, err 
 	}
 	ma := (mbar + degDiff) / 2
 	mb := (mbar - degDiff) / 2
-	// TODO: implement matrix
 	matrix := NewMatrix(mbar, mbar+1, &Zp{ Int: big.NewInt(int64(0)), P: p })
 	for j := 0; j < mbar; j++ {
 		accum := Zi(p, 1)
@@ -81,8 +80,56 @@ func Interpolate(values []*Zp, points []*Zp, degDiff int) (rfn *RationalFn, err 
 
 var LowMBar error = errors.New("Low MBar")
 
-func factor(p *Poly) []*Zp {
-	panic("TODO")
+/*
+let powmod ~modulus x n =             
+  let nbits = Number.nbits n in       
+  let rval = ref Poly.one in          
+  let x2n = ref x in                  
+  for bit = 0 to nbits do             
+    if Number.nth_bit n bit then      
+      rval := mult modulus !rval !x2n;
+    x2n := square modulus !x2n        
+  done;                               
+  !rval                               
+
+let gen_splitter f =
+  let q =  ZZp.neg ZZp.one /: ZZp.two in
+  let a =  rand_ZZp () in
+  let za = Poly.of_array [| a ; ZZp.one |] in
+  let zaq = powmod ~modulus:f za (ZZp.to_number q) in
+  let zaqo = Poly.sub zaq Poly.one in
+  zaqo
+
+let rec rand_split f =
+  let splitter = gen_splitter f in
+  let first = Poly.gcd splitter f in
+  let second = Poly.div f first in
+  (first,second)
+*/
+
+func (p *Poly) Factor() (result *ZSet) {
+	result = &ZSet{}
+	if p.degree == 1 {
+		constCoeff := p.coeff[0]
+		result.Add(constCoeff.Copy().Neg())
+	} else if p.degree > 1 {
+		p1, p2 := p.RandSplit()
+		result.AddAll(p1.Factor())
+		result.AddAll(p2.Factor())
+	}
+	return
+/*
+let rec factor f =
+  let degree = Poly.degree f in
+  if degree = 1
+  	then ZSet.add (ZZp.neg (Poly.const_coeff f)) ZSet.empty
+  else if degree = 0
+  	then ZSet.empty
+  else
+    let (f1,f2) = rand_split f in
+    flush stdout;
+    ZSet.union (factor f1) (factor f2)
+*/
 }
 
 func factorCheck(p *Poly) bool {

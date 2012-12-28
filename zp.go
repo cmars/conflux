@@ -176,3 +176,33 @@ func (zp *Zp) assertEqualP(values... *Zp) {
 		zp.assertP(v.P)
 	}
 }
+
+type ZSet struct {
+	s map[Zp]bool
+}
+
+func (zs *ZSet) Add(v *Zp) {
+	zs.s[*v] = true
+}
+
+func (zs *ZSet) Remove(v *Zp) {
+	delete zs.s[*v]
+}
+
+func (zs *ZSet) Has(v *Zp) bool {
+	_, has := zs.s[*v]
+	return has
+}
+
+func (zs *ZSet) AddAll(other *ZSet) {
+	for k, _ := range other.s {
+		zs.s[k] = true
+	}
+}
+
+func (zs *ZSet) Items() (result []*Zp) {
+	for k, _ := range zs.s {
+		result = append(result, k)
+	}
+	return
+}
