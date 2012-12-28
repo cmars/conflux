@@ -20,12 +20,12 @@ func NewMatrix(columns, rows int, x *Zp) *Matrix {
 	return matrix
 }
 
-func (m *Matrix) Get(i, j int) *Zp {
-	return m.cells[i + (j * m.columns)]
+func (m *Matrix) Get(col, row int) *Zp {
+	return m.cells[col + (row * m.columns)]
 }
 
-func (m *Matrix) Set(i, j int, x *Zp) {
-	m.cells[i + (j * m.columns)] = x.Copy()
+func (m *Matrix) Set(col, row int, x *Zp) {
+	m.cells[col + (row * m.columns)] = x.Copy()
 }
 
 var MatrixTooNarrow = errors.New("Matrix is too narrow to reduce")
@@ -34,8 +34,8 @@ func (m *Matrix) Reduce() (err error) {
 	if m.columns < m.rows {
 		return MatrixTooNarrow
 	}
-	for j := 0; j < m.rows; j++ {
-		err = m.processRow(j)
+	for row := 0; row < m.rows; row++ {
+		err = m.processRow(row)
 		return
 	}
 	return
@@ -70,13 +70,32 @@ func (m *Matrix) processRow(row int) error {
 }
 
 func (m *Matrix) swapRows(row1, row2 int) {
-	panic("TODO")
+	start1 := row1 * m.columns
+	start2 := row2 * m.columns
+	for col := 0; col < m.columns; col++ {
+		m.cells[start1 + col], m.cells[start2 + col] = m.cells[start2 + col], m.cells[start1 + col]
+	}
 }
 
 func (m *Matrix) scmultRow(row int, v *Zp) {
-	panic("TODO")
+	start := row * m.columns
+	for col := 0; col < m.columns; col++ {
+		z := m.cells[start + col]
+		z.Mul(z, v)
+	}
 }
 
-func (m *Matrix) rowsub(row1, row2 int, v *Zp) {
-	panic("TODO")
+func (m *Matrix) rowsub(src, dst int, scmult *Zp) {
+	for i := 0; i < m.columns; i++ {
+		sval := m.Get(i, src)
+		if !sval.IsZero() {
+			var newval *Zp
+			if scmult.Cmp(Zi(scmult.P, 1)) != 0 {
+				newval = Z(scmult.P).Sub(m.Get(i, dst), Z(scmult.P).Mul(sval, scmult))
+			} else {
+				newval = Z(scmult.P).Sub(m.Get(i, dst), sval)
+			}
+			m.Set(i, dst, newval)
+		}
+	}
 }

@@ -25,3 +25,26 @@ func TestMatrixPutGet(t *testing.T) {
 	}
 	assert.Equal(t, 25, n)
 }
+
+func TestSwapRows(t *testing.T) {
+	p := big.NewInt(int64(13))
+	m := NewMatrix(3, 3, Zi(p, 0))
+	for i := 0; i < len(m.cells); i++ {
+		m.cells[i] = Zi(p, i)
+	}
+	m.swapRows(0, 1)
+	assert.Equal(t, int64(0), m.Get(0, 1).Int64())
+	assert.Equal(t, int64(3), m.Get(0, 0).Int64())
+}
+
+func TestScalarMult(t *testing.T) {
+	p := big.NewInt(int64(13))
+	m := NewMatrix(3, 3, Zi(p, 0))
+	for col := 0; col < m.columns; col++ {
+		m.Set(col, 0, Zi(p, col))
+	}
+	m.scmultRow(0, Zi(p, 2))
+	assert.Equal(t, int64(0), m.Get(0, 0).Int64())
+	assert.Equal(t, int64(2), m.Get(1, 0).Int64())
+	assert.Equal(t, int64(4), m.Get(2, 0).Int64())
+}
