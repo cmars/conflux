@@ -186,7 +186,7 @@ func (zs *ZSet) Add(v *Zp) {
 }
 
 func (zs *ZSet) Remove(v *Zp) {
-	delete zs.s[*v]
+	delete(zs.s, *v)
 }
 
 func (zs *ZSet) Has(v *Zp) bool {
@@ -202,7 +202,7 @@ func (zs *ZSet) AddAll(other *ZSet) {
 
 func (zs *ZSet) Items() (result []*Zp) {
 	for k, _ := range zs.s {
-		result = append(result, k)
+		result = append(result, &k)
 	}
 	return
 }

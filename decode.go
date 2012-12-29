@@ -80,6 +80,26 @@ func Interpolate(values []*Zp, points []*Zp, degDiff int) (rfn *RationalFn, err 
 
 var LowMBar error = errors.New("Low MBar")
 
+// PolyPowmod calculates a^n mod b where a and b are
+// polynomials, n is an integer Z(P).
+func PolyPowmod(a, b *Poly, n *Zp) *Poly {
+	var err error
+	nbits := n.BitLen()
+	rval := NewPoly(Zi(n.P, 1))
+	x2n := a
+	for bit := 0; bit < nbits; bit++ {
+		if n.Bit(bit) != 0 {
+			rval.Mul(rval, x2n).Mul(rval, b)
+		}
+		x2n.Mul(x2n, x2n)
+		x2n, err = PolyMod(x2n, b)
+		if err != nil {
+			panic(err)
+		}
+	}
+	return rval
+}
+
 /*
 let powmod ~modulus x n =             
   let nbits = Number.nbits n in       
@@ -91,7 +111,13 @@ let powmod ~modulus x n =
     x2n := square modulus !x2n        
   done;                               
   !rval                               
+*/
 
+func (p *Poly) genSplitter() *Poly {
+	panic("TODO")
+}
+
+/*
 let gen_splitter f =
   let q =  ZZp.neg ZZp.one /: ZZp.two in
   let a =  rand_ZZp () in
@@ -99,7 +125,24 @@ let gen_splitter f =
   let zaq = powmod ~modulus:f za (ZZp.to_number q) in
   let zaqo = Poly.sub zaq Poly.one in
   zaqo
+	
+*/
 
+func (p *Poly) RandSplit() (first, second *Poly) {
+	var err error
+	splitter := p.genSplitter()
+	first, err = PolyGcd(splitter, p)
+	if err != nil {
+		panic(err)
+	}
+	second, err = PolyDiv(p, first)
+	if err != nil {
+		panic(err)
+	}
+	return
+}
+
+/*
 let rec rand_split f =
   let splitter = gen_splitter f in
   let first = Poly.gcd splitter f in
@@ -118,25 +161,13 @@ func (p *Poly) Factor() (result *ZSet) {
 		result.AddAll(p2.Factor())
 	}
 	return
-/*
-let rec factor f =
-  let degree = Poly.degree f in
-  if degree = 1
-  	then ZSet.add (ZZp.neg (Poly.const_coeff f)) ZSet.empty
-  else if degree = 0
-  	then ZSet.empty
-  else
-    let (f1,f2) = rand_split f in
-    flush stdout;
-    ZSet.union (factor f1) (factor f2)
-*/
 }
 
 func factorCheck(p *Poly) bool {
 	panic("TODO")
 }
 
-func Reconcile(values []*Zp, points []*Zp, degDiff int) ([]*Zp, []*Zp, error) {
+func Reconcile(values []*Zp, points []*Zp, degDiff int) (*ZSet, *ZSet, error) {
 	rfn, err := Interpolate(
 			values[:len(values)-1], points[:len(points)-1], degDiff)
 	if err != nil {
@@ -150,5 +181,5 @@ func Reconcile(values []*Zp, points []*Zp, degDiff int) ([]*Zp, []*Zp, error) {
 			!factorCheck(rfn.Num) || !factorCheck(rfn.Denom) {
 		return nil, nil, LowMBar
 	}
-	return factor(rfn.Num), factor(rfn.Denom), nil
+	return rfn.Num.Factor(), rfn.Denom.Factor(), nil
 }
