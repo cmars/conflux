@@ -132,3 +132,16 @@ func TestSubRoll(t *testing.T) {
 	assert.Equal(t, int64(4), b.Int64())
 	assert.Equal(t, int64(2), c.Int64()) // -3 == 2
 }
+
+func TestZSet(t *testing.T) {
+	a := NewZSet()
+	a.Add(zp5(1))
+	a.Add(zp5(1))
+	a.Add(zp5(2))
+	a.Add(zp5(3))
+	items := a.Items()
+	assert.Equal(t, 3, len(items))
+	assert.T(t, a.Has(zp5(1)))
+	assert.T(t, a.Has(zp5(2)))
+	assert.T(t, a.Has(zp5(3)))
+}

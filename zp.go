@@ -23,6 +23,7 @@
 package conflux
 
 import (
+	"bytes"
 	"crypto/rand"
 	"fmt"
 	"math/big"
@@ -189,19 +190,29 @@ func (zp *Zp) assertEqualP(values ...*Zp) {
 }
 
 type ZSet struct {
-	s map[Zp]bool
+	s map[string]bool
+	p *big.Int
+}
+
+func NewZSet() *ZSet {
+	return &ZSet{ s: make(map[string]bool) }
 }
 
 func (zs *ZSet) Add(v *Zp) {
-	zs.s[*v] = true
+	if zs.p == nil {
+		zs.p = v.P
+	} else {
+		v.assertP(zs.p)
+	}
+	zs.s[v.String()] = true
 }
 
 func (zs *ZSet) Remove(v *Zp) {
-	delete(zs.s, *v)
+	delete(zs.s, v.String())
 }
 
 func (zs *ZSet) Has(v *Zp) bool {
-	_, has := zs.s[*v]
+	_, has := zs.s[v.String()]
 	return has
 }
 
@@ -213,7 +224,25 @@ func (zs *ZSet) AddAll(other *ZSet) {
 
 func (zs *ZSet) Items() (result []*Zp) {
 	for k, _ := range zs.s {
-		result = append(result, &k)
+		n := big.NewInt(int64(0))
+		n.SetString(k, 10)
+		result = append(result, &Zp{ Int: n, P: zs.p })
 	}
 	return
+}
+
+func (zs *ZSet) String() string {
+	buf := bytes.NewBuffer(nil)
+	fmt.Fprintf(buf, "{")
+	first := true
+	for k, _ := range zs.s {
+		if first {
+			first = false
+		} else {
+			fmt.Fprintf(buf, ", ")
+		}
+		fmt.Fprintf(buf, "%v", k)
+	}
+	fmt.Fprintf(buf, "}")
+	return string(buf.Bytes())
 }

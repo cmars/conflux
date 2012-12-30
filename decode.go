@@ -24,6 +24,7 @@ package conflux
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
 )
 
@@ -102,16 +103,38 @@ func Interpolate(values []*Zp, points []*Zp, degDiff int) (rfn *RationalFn, err 
 
 var LowMBar error = errors.New("Low MBar")
 
-func PolyPowmod(modulus, a *Poly, n *Zp) (rval *Poly, err error) {
-	nbits := n.BitLen()
-	rval = NewPoly(Zi(n.P, 1))
-	x2n := a
-	for bit := 0; bit < nbits; bit++ {
-		if n.Bit(bit) != 0 {
-			rval.Mul(rval, x2n).Mul(rval, modulus)
+var powModSmallN = errors.New("PowMod not implemented for small values of N")
+
+// polyPowMod computes ``f**n`` in ``GF(p)[x]/(g)`` using repeated squaring.             
+// Given polynomials ``f`` and ``g`` in ``GF(p)[x]`` and a non-negative      
+// integer ``n``, efficiently computes ``f**n (mod g)`` i.e. the remainder   
+// of ``f**n`` from division by ``g``, using the repeated squaring algorithm.
+// This function was ported from sympy.polys.galoistools.
+func polyPowMod(f *Poly, n *big.Int, g *Poly) (h *Poly, err error) {
+	zero := big.NewInt(int64(0))
+	one := big.NewInt(int64(1))
+	n = big.NewInt(int64(0)).Set(n)
+	if n.BitLen() < 3 {
+		// Small values of n not useful for recon
+		err = powModSmallN
+		return
+	}
+	h = NewPoly(Zi(f.p, 1))
+	for {
+		if n.Bit(0) > 0 {
+			h = NewPoly().Mul(h, f)
+			h, err = PolyMod(h, g)
+			if err != nil {
+				return
+			}
+			n.Sub(n, one)
 		}
-		x2n.Mul(x2n, x2n)
-		x2n, err = PolyMod(x2n, modulus)
+		n.Rsh(n, 1)
+		if n.Cmp(zero) == 0 {
+			break
+		}
+		f = NewPoly().Mul(f, f)
+		f, err = PolyMod(f, g)
 		if err != nil {
 			return
 		}
@@ -119,82 +142,78 @@ func PolyPowmod(modulus, a *Poly, n *Zp) (rval *Poly, err error) {
 	return
 }
 
-/*
-let powmod ~modulus x n =             
-  let nbits = Number.nbits n in       
-  let rval = ref Poly.one in          
-  let x2n = ref x in                  
-  for bit = 0 to nbits do             
-    if Number.nth_bit n bit then      
-      rval := mult modulus !rval !x2n;
-    x2n := square modulus !x2n        
-  done;                               
-  !rval                               
-*/
-
-func (p *Poly) genSplitter() (*Poly, error) {
-	q := Z(p.p).Div(Zi(p.p, 1), Zi(p.p, 2)).Neg()
-	za := NewPoly(Zrand(p.p), Zi(p.p, 1))
-	zaq, err := PolyPowmod(p, za, q)
-	zaqo := NewPoly().Sub(zaq, za)
-	return zaqo, err
+// PolyRand generates a random polynomial of degree n.
+// This is useful for probabilistic polynomial factoring.
+func PolyRand(p *big.Int, degree int) *Poly {
+	var terms []*Zp
+	for i := 0; i <= degree; i++ {
+		terms = append(terms, Zrand(p))
+	}
+	return NewPoly(terms...)
 }
 
-/*
-let gen_splitter f =
-  let q =  ZZp.neg ZZp.one /: ZZp.two in
-  let a =  rand_ZZp () in
-  let za = Poly.of_array [| a ; ZZp.one |] in
-  let zaq = powmod ~modulus:f za (ZZp.to_number q) in
-  let zaqo = Poly.sub zaq Poly.one in
-  zaqo
-
-*/
-
-func (p *Poly) RandSplit() (first, second *Poly, err error) {
-	var splitter *Poly
-	splitter, err = p.genSplitter()
+// Factor reduces a polynomial to irreducible linear components.
+// If the polynomial is not reducible to a product of linears,
+// the polynomial is useless for reconciliation, resulting in an error.
+// Returns a ZSet of all the constants in each linear factor.
+func (p *Poly) Factor() (roots *ZSet, err error) {
+	factors, err := p.factor()
 	if err != nil {
 		return
 	}
-	first, err = PolyGcd(splitter, p)
-	if err != nil {
-		return
+	roots = NewZSet()
+	for _, f := range factors {
+		if f.degree != 1 {
+			return nil, errors.New(fmt.Sprintf("Invalid factor: (%v)", f))
+		}
+		roots.Add(f.coeff[0])
 	}
-	second, err = PolyDiv(p, first)
 	return
 }
 
-/*
-let rec rand_split f =
-  let splitter = gen_splitter f in
-  let first = Poly.gcd splitter f in
-  let second = Poly.div f first in
-  (first,second)
-*/
-
-func (p *Poly) Factor() (*ZSet, error) {
-	result := &ZSet{}
-	if p.degree == 1 {
-		constCoeff := p.coeff[0]
-		result.Add(constCoeff.Copy().Neg())
-	} else if p.degree > 1 {
-		p1, p2, err := p.RandSplit()
-		if err != nil {
-			return nil, err
-		}
-		f1, err := p1.Factor()
-		if err != nil {
-			return nil, err
-		}
-		f2, err := p2.Factor()
-		if err != nil {
-			return nil, err
-		}
-		result.AddAll(f1)
-		result.AddAll(f2)
+// factor performs Cantor-Zassenhaus: Probabilistic Equal Degree Factorization
+// on a complex polynomial into linear factors.
+// Adapted from sympy.polys.galoistools.gf_edf_zassenhaus, specialized for
+// the reconciliation cases of GF(p) and factor degree.
+func (p *Poly) factor() (factors []*Poly, err error) {
+	factors = append(factors, p)
+	q := big.NewInt(int64(0)).Set(p.p)
+	if p.degree <= 1 {
+		return
 	}
-	return result, nil
+	for len(factors) < p.degree {
+		//r := Zrand(p.p).Mod(Zi(p.p, (2*p.degree) - 1))
+		r := PolyRand(p.p, 2*p.degree - 1)
+		qh := big.NewInt(int64(0)).Sub(q, big.NewInt(int64(0)))
+		qh.Div(qh, big.NewInt(int64(2)))
+		if err != nil {
+			return nil, err
+		}
+		h, err := polyPowMod(r, qh, p)
+		if err != nil {
+			return nil, err
+		}
+		g, err := PolyGcd(p, NewPoly().Sub(h, NewPoly(Zi(p.p, 1))))
+		if err != nil {
+			return nil, err
+		}
+		if !g.Equal(NewPoly(Zi(p.p, 1))) && !g.Equal(p) {
+			qfg, err := PolyDiv(p, g)
+			if err != nil {
+				return nil, err
+			}
+			factors, err = g.factor()
+			if err != nil {
+				return nil, err
+			}
+			qfgFactors, err := qfg.factor()
+			if err != nil {
+				return nil, err
+			}
+			factors = append(factors, qfgFactors...)
+		}
+	}
+	return
 }
 
 func factorCheck(p *Poly) bool {
