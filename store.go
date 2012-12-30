@@ -47,13 +47,13 @@ type SimpleStore struct {
 }
 
 func NewSimpleStore() *SimpleStore {
-	return &SimpleStore{ elements: make(map[string]*Zp) }
+	return &SimpleStore{elements: make(map[string]*Zp)}
 }
 
 func (ss *SimpleStore) Evaluate(m *Zp) (result *Zp, err error) {
-	result = &Zp{ Int: big.NewInt(1), P: m.P }
+	result = &Zp{Int: big.NewInt(1), P: m.P}
 	for _, v := range ss.elements {
-		mv := &Zp{ Int: big.NewInt(0).Set(m.Int), P: m.P }
+		mv := &Zp{Int: big.NewInt(0).Set(m.Int), P: m.P}
 		mv.Sub(mv, v)
 		result.Mul(result, mv)
 	}

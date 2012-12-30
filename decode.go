@@ -1,3 +1,25 @@
+/*
+   conflux - Distributed database synchronization library
+	Based on the algorithm described in
+		"Set Reconciliation with Nearly Optimal	Communication Complexity",
+			Yaron Minsky, Ari Trachtenberg, and Richard Zippel, 2004.
+
+   Copyright (C) 2012  Casey Marshall <casey.marshall@gmail.com>
+
+   This program is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 package conflux
 
 import (
@@ -21,14 +43,14 @@ func Interpolate(values []*Zp, points []*Zp, degDiff int) (rfn *RationalFn, err 
 	}
 	p := values[0].P
 	mbar := len(values)
-	if (len(values) + degDiff) % 2 != 0 {
+	if (len(values)+degDiff)%2 != 0 {
 		mbar = len(values) - 1
 	} else {
 		mbar = len(values)
 	}
 	ma := (mbar + degDiff) / 2
 	mb := (mbar - degDiff) / 2
-	matrix := NewMatrix(mbar, mbar+1, &Zp{ Int: big.NewInt(int64(0)), P: p })
+	matrix := NewMatrix(mbar, mbar+1, &Zp{Int: big.NewInt(int64(0)), P: p})
 	for j := 0; j < mbar; j++ {
 		accum := Zi(p, 1)
 		kj := points[j]
@@ -61,7 +83,7 @@ func Interpolate(values []*Zp, points []*Zp, degDiff int) (rfn *RationalFn, err 
 	bcoeffs := make([]*Zp, mb+1)
 	acoeffs[mb] = Zi(p, 1)
 	for j := 0; j < mb; j++ {
-		acoeffs[j] = matrix.Get(mbar, j + ma)
+		acoeffs[j] = matrix.Get(mbar, j+ma)
 	}
 	bpoly := NewPoly(bcoeffs...)
 	// Reduce
@@ -80,24 +102,21 @@ func Interpolate(values []*Zp, points []*Zp, degDiff int) (rfn *RationalFn, err 
 
 var LowMBar error = errors.New("Low MBar")
 
-// PolyPowmod calculates a^n mod b where a and b are
-// polynomials, n is an integer Z(P).
-func PolyPowmod(a, b *Poly, n *Zp) *Poly {
-	var err error
+func PolyPowmod(modulus, a *Poly, n *Zp) (rval *Poly, err error) {
 	nbits := n.BitLen()
-	rval := NewPoly(Zi(n.P, 1))
+	rval = NewPoly(Zi(n.P, 1))
 	x2n := a
 	for bit := 0; bit < nbits; bit++ {
 		if n.Bit(bit) != 0 {
-			rval.Mul(rval, x2n).Mul(rval, b)
+			rval.Mul(rval, x2n).Mul(rval, modulus)
 		}
 		x2n.Mul(x2n, x2n)
-		x2n, err = PolyMod(x2n, b)
+		x2n, err = PolyMod(x2n, modulus)
 		if err != nil {
-			panic(err)
+			return
 		}
 	}
-	return rval
+	return
 }
 
 /*
@@ -113,8 +132,12 @@ let powmod ~modulus x n =
   !rval                               
 */
 
-func (p *Poly) genSplitter() *Poly {
-	panic("TODO")
+func (p *Poly) genSplitter() (*Poly, error) {
+	q := Z(p.p).Div(Zi(p.p, 1), Zi(p.p, 2)).Neg()
+	za := NewPoly(Zrand(p.p), Zi(p.p, 1))
+	zaq, err := PolyPowmod(p, za, q)
+	zaqo := NewPoly().Sub(zaq, za)
+	return zaqo, err
 }
 
 /*
@@ -125,20 +148,20 @@ let gen_splitter f =
   let zaq = powmod ~modulus:f za (ZZp.to_number q) in
   let zaqo = Poly.sub zaq Poly.one in
   zaqo
-	
+
 */
 
-func (p *Poly) RandSplit() (first, second *Poly) {
-	var err error
-	splitter := p.genSplitter()
+func (p *Poly) RandSplit() (first, second *Poly, err error) {
+	var splitter *Poly
+	splitter, err = p.genSplitter()
+	if err != nil {
+		return
+	}
 	first, err = PolyGcd(splitter, p)
 	if err != nil {
-		panic(err)
+		return
 	}
 	second, err = PolyDiv(p, first)
-	if err != nil {
-		panic(err)
-	}
 	return
 }
 
@@ -150,17 +173,28 @@ let rec rand_split f =
   (first,second)
 */
 
-func (p *Poly) Factor() (result *ZSet) {
-	result = &ZSet{}
+func (p *Poly) Factor() (*ZSet, error) {
+	result := &ZSet{}
 	if p.degree == 1 {
 		constCoeff := p.coeff[0]
 		result.Add(constCoeff.Copy().Neg())
 	} else if p.degree > 1 {
-		p1, p2 := p.RandSplit()
-		result.AddAll(p1.Factor())
-		result.AddAll(p2.Factor())
+		p1, p2, err := p.RandSplit()
+		if err != nil {
+			return nil, err
+		}
+		f1, err := p1.Factor()
+		if err != nil {
+			return nil, err
+		}
+		f2, err := p2.Factor()
+		if err != nil {
+			return nil, err
+		}
+		result.AddAll(f1)
+		result.AddAll(f2)
 	}
-	return
+	return result, nil
 }
 
 func factorCheck(p *Poly) bool {
@@ -169,17 +203,25 @@ func factorCheck(p *Poly) bool {
 
 func Reconcile(values []*Zp, points []*Zp, degDiff int) (*ZSet, *ZSet, error) {
 	rfn, err := Interpolate(
-			values[:len(values)-1], points[:len(points)-1], degDiff)
+		values[:len(values)-1], points[:len(points)-1], degDiff)
 	if err != nil {
 		return nil, nil, err
 	}
 	lastPoint := points[len(points)-1]
 	valFromPoly := Z(lastPoint.P).Div(
-			rfn.Num.Eval(lastPoint), rfn.Denom.Eval(lastPoint))
+		rfn.Num.Eval(lastPoint), rfn.Denom.Eval(lastPoint))
 	lastValue := values[len(values)-1]
 	if valFromPoly.Cmp(lastValue) != 0 ||
-			!factorCheck(rfn.Num) || !factorCheck(rfn.Denom) {
+		!factorCheck(rfn.Num) || !factorCheck(rfn.Denom) {
 		return nil, nil, LowMBar
 	}
-	return rfn.Num.Factor(), rfn.Denom.Factor(), nil
+	numF, err := rfn.Num.Factor()
+	if err != nil {
+		return nil, nil, err
+	}
+	denomF, err := rfn.Denom.Factor()
+	if err != nil {
+		return nil, nil, err
+	}
+	return numF, denomF, nil
 }

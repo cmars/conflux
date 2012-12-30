@@ -90,8 +90,8 @@ func TestDiv(t *testing.T) {
 }
 
 func TestMismatchedP(t *testing.T) {
-	defer func(){
-        r := recover()
+	defer func() {
+		r := recover()
 		assert.T(t, r != nil)
 	}()
 	a := zp5(1)

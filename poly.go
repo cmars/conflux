@@ -1,3 +1,25 @@
+/*
+   conflux - Distributed database synchronization library
+	Based on the algorithm described in
+		"Set Reconciliation with Nearly Optimal	Communication Complexity",
+			Yaron Minsky, Ari Trachtenberg, and Richard Zippel, 2004.
+
+   Copyright (C) 2012  Casey Marshall <casey.marshall@gmail.com>
+
+   This program is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
 package conflux
 
 import (
@@ -21,7 +43,7 @@ type Poly struct {
 // NewPoly creates a polynomial with the given coefficients, in ascending
 // degree order. For example, NewPoly(1,-2,3) represents the polynomial
 // 3x^2 - 2x + 1.
-func NewPoly(coeff... *Zp) *Poly {
+func NewPoly(coeff ...*Zp) *Poly {
 	p := &Poly{}
 	for i := 0; i < len(coeff); i++ {
 		if coeff[i] == nil {
@@ -97,7 +119,7 @@ func (p *Poly) P() *big.Int {
 // Copy returns a deep copy of the polynomial and its
 // term coefficients.
 func (p *Poly) Copy() *Poly {
-	newP := &Poly{ degree: p.degree, p: p.p }
+	newP := &Poly{degree: p.degree, p: p.p}
 	for i := 0; i <= p.degree; i++ {
 		newP.coeff = append(newP.coeff, p.coeff[i].Copy())
 	}
@@ -136,7 +158,7 @@ func (p *Poly) Add(x, y *Poly) *Poly {
 	if y.degree > p.degree {
 		p.degree = y.degree
 	}
-	p.coeff = make([]*Zp, p.degree + 1)
+	p.coeff = make([]*Zp, p.degree+1)
 	for i := 0; i <= p.degree; i++ {
 		p.coeff[i] = Z(x.p)
 		if i <= x.degree && x.coeff[i] != nil {
@@ -170,14 +192,14 @@ func (p *Poly) Sub(x, y *Poly) *Poly {
 func (p *Poly) Mul(x, y *Poly) *Poly {
 	x.assertP(y.p)
 	p.p = x.p
-	p.coeff = make([]*Zp, x.degree + y.degree + 1)
+	p.coeff = make([]*Zp, x.degree+y.degree+1)
 	p.degree = x.degree + y.degree
 	for i := 0; i <= x.degree; i++ {
 		for j := 0; j <= y.degree; j++ {
-			zp := p.coeff[i + j]
+			zp := p.coeff[i+j]
 			if zp == nil {
 				zp = Z(p.p)
-				p.coeff[i + j] = zp
+				p.coeff[i+j] = zp
 			}
 			zp.Add(zp, Z(p.p).Mul(x.coeff[i], y.coeff[j]))
 		}
@@ -201,8 +223,8 @@ func (p *Poly) Eval(z *Zp) *Zp {
 }
 
 func PolyTerm(degree int, c *Zp) *Poly {
-	p := &Poly{ p: c.P, degree: degree,
-			coeff: make([]*Zp, degree + 1)}
+	p := &Poly{p: c.P, degree: degree,
+		coeff: make([]*Zp, degree+1)}
 	for i := 0; i <= degree; i++ {
 		if i == degree {
 			p.coeff[i] = c.Copy()
@@ -273,11 +295,11 @@ func PolyGcd(x, y *Poly) (result *Poly, err error) {
 		return nil, err
 	}
 	result = NewPoly().Mul(result,
-			NewPoly(result.coeff[result.degree].Copy().Inv()))
+		NewPoly(result.coeff[result.degree].Copy().Inv()))
 	return result, nil
 }
 
 type RationalFn struct {
-	Num *Poly
+	Num   *Poly
 	Denom *Poly
 }
