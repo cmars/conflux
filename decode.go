@@ -51,7 +51,7 @@ func Interpolate(values []*Zp, points []*Zp, degDiff int) (rfn *RationalFn, err 
 	}
 	ma := (mbar + degDiff) / 2
 	mb := (mbar - degDiff) / 2
-	matrix := NewMatrix(mbar, mbar+1, &Zp{Int: big.NewInt(int64(0)), P: p})
+	matrix := NewMatrix(mbar+1, mbar, Zi(p, 0))
 	for j := 0; j < mbar; j++ {
 		accum := Zi(p, 1)
 		kj := points[j]
@@ -67,7 +67,7 @@ func Interpolate(values []*Zp, points []*Zp, degDiff int) (rfn *RationalFn, err 
 			accum.Mul(accum, kj)
 		}
 		fjkjmb := accum.Copy().Neg()
-		matrix.Set(mbar, j, fjkjmb.Copy().Sub(fjkjmb, kjma))
+		matrix.Set(mbar, j, Z(p).Sub(fjkjmb, kjma))
 	}
 	err = matrix.Reduce()
 	if err != nil {
@@ -82,9 +82,9 @@ func Interpolate(values []*Zp, points []*Zp, degDiff int) (rfn *RationalFn, err 
 	apoly := NewPoly(acoeffs...)
 	// Fill 'B' coefficients
 	bcoeffs := make([]*Zp, mb+1)
-	acoeffs[mb] = Zi(p, 1)
+	bcoeffs[mb] = Zi(p, 1)
 	for j := 0; j < mb; j++ {
-		acoeffs[j] = matrix.Get(mbar, j+ma)
+		bcoeffs[j] = matrix.Get(mbar, j+ma)
 	}
 	bpoly := NewPoly(bcoeffs...)
 	// Reduce
@@ -147,7 +147,11 @@ func polyPowMod(f *Poly, n *big.Int, g *Poly) (h *Poly, err error) {
 func PolyRand(p *big.Int, degree int) *Poly {
 	var terms []*Zp
 	for i := 0; i <= degree; i++ {
-		terms = append(terms, Zrand(p))
+		if i == degree {
+			terms = append(terms, Zi(p, 1))
+		} else {
+			terms = append(terms, Zrand(p))
+		}
 	}
 	return NewPoly(terms...)
 }

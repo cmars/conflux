@@ -60,7 +60,21 @@ func (m *Matrix) Reduce() (err error) {
 		err = m.processRow(row)
 		return
 	}
+	for row := m.rows - 1; row > 0; row-- {
+		m.backsub(row)
+	}
 	return
+}
+
+func (m *Matrix) backsub(row int) {
+	if m.Get(row, row).Int64() == int64(1) {
+		last := m.rows - 1
+		for j := row - 1; j >= 0; j-- {
+			scmult := m.Get(row, j)
+			m.rowsub(last, row, j, scmult)
+			m.Set(row, j, Zi(scmult.P, 0))
+		}
+	}
 }
 
 var SwapRowNotFound = errors.New("Swap row not found")
@@ -83,9 +97,9 @@ func (m *Matrix) processRow(row int) error {
 	if v.Int64() != int64(1) {
 		m.scmultRow(row, v.Copy().Inv())
 	}
-	for j := 0; j < m.rows; j++ {
+	for j := row + 1; j < m.rows; j++ {
 		if row != j {
-			m.rowsub(row, j, m.Get(row, j))
+			m.rowsub(row, row, j, m.Get(row, j))
 		}
 	}
 	return nil
@@ -107,8 +121,8 @@ func (m *Matrix) scmultRow(row int, v *Zp) {
 	}
 }
 
-func (m *Matrix) rowsub(src, dst int, scmult *Zp) {
-	for i := 0; i < m.columns; i++ {
+func (m *Matrix) rowsub(scol, src, dst int, scmult *Zp) {
+	for i := scol; i < m.columns; i++ {
 		sval := m.Get(i, src)
 		if !sval.IsZero() {
 			var newval *Zp

@@ -26,51 +26,37 @@ import (
 	"github.com/bmizerany/assert"
 	"testing"
 	"math/big"
-	mrand "math/rand"
+	"crypto/rand"
 )
 
-func randPoly(p *big.Int, dim int) *Poly {
-	terms := make([]*Zp, dim+1)
-	for i := 0; i <= dim; i++ {
-		if i == dim {
-			terms[i] = Zi(p, 1)
-		} else {
-			terms[i] = Zrand(p)
-		}
+func randInt(max int) int {
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		panic(err)
 	}
-	return NewPoly(terms...)
+	return int(n.Int64())
+}
+
+// randLinearProd randomly generates a product of
+// linears (x + a0)(x + a1)...(x + an).
+func randLinearProd(p *big.Int, n int) *Poly {
+	result := NewPoly(Zi(p, 1))
+	for i := 0; i < n; i++ {
+		result = NewPoly().Mul(result, PolyRand(p, 1))
+	}
+	return result
 }
 
 func factorTest(t *testing.T) {
-	deg := (mrand.Int() % 10) + 1
-	terms := []*Poly{}
+	deg := randInt(10) + 1
 	p := big.NewInt(int64(97))
-	for i := 0; i <= deg; i++ {
-		terms = append(terms, randPoly(p, 1))
-	}
-	var poly *Poly
-	for _, term := range terms {
-		t.Logf("term (%v)", term)
-		if poly == nil {
-			poly = term
-		} else {
-			poly = NewPoly().Mul(poly, term)
-		}
-	}
+	// Create a factor-able, polynomial product of linears
+	var poly *Poly = randLinearProd(p, deg)
 	t.Logf("factor poly: (%v)", poly)
 	roots, err := poly.Factor()
 	assert.Equal(t, err, nil)
 	t.Logf("roots=%v", roots)
-/*
-  let deg = rand_int 10 + 1 in
-  let terms = Array.to_list (Array.init deg (fun _ -> rand_poly 1)) in
-  let poly = List.fold_left ~init:Poly.one ~f:Poly.mult terms in
-  let roots = Decode.factor poly in
-  let orig_roots =
-    ZZp.zset_of_list (List.map ~f:(fun p -> ZZp.neg (Poly.to_array p).(0)) terms)
-  in
-  test "factor equality" (ZSet.equal orig_roots roots)
-*/
+	// TODO: test roots against z0 constants in the linears
 }
 
 func TestFactorization(t *testing.T) {
@@ -78,4 +64,71 @@ func TestFactorization(t *testing.T) {
 		t.Logf("Factorization #%d", i)
 		factorTest(t)
 	}
+}
+
+func TestInterpolation(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		t.Logf("Interpolation #%d", i)
+		interpTest(t)
+	}
+}
+
+func interpTest(t *testing.T) {
+	var err error
+	p := big.NewInt(int64(97))
+	deg := randInt(10) + 1
+	numDeg := randInt(deg)
+	denomDeg := deg - numDeg
+	num := randLinearProd(p, numDeg)
+	denom := randLinearProd(p, denomDeg)
+	assert.Equal(t, num.degree, numDeg)
+	assert.Equal(t, denom.degree, denomDeg)
+    t.Logf("num: (%v) denom: (%v)", num, denom)
+	mbar := randInt(9) + 1
+	n := mbar + 1
+	//toobig := deg + 1 > mbar
+	values := make([]*Zp, n)
+	points := make([]*Zp, n)
+	for i := 0; i < n; i++ {
+		var pi int
+		if i % 2 == 0 {
+			pi = ((i + 1) / 2) * 1
+		} else {
+			pi = ((i + 1) / 2) * -1
+		}
+		points[i] = Zi(p, pi)
+		values[i] = Z(p).Div(num.Eval(points[i]), denom.Eval(points[i]))
+		assert.Equal(t, err, nil)
+	}
+	rfn, err := Interpolate(values, points, numDeg - denomDeg)
+	assert.Equal(t, err, nil)
+    t.Logf("mbar: %d, num_deg: %d, denom_deg: %d", mbar, numDeg, denomDeg)
+    t.Logf("num: (%v) === (%v)", num, rfn.Num)
+    t.Logf("denom: (%v) === (%v)", denom, rfn.Denom)
+/*
+  let toobig = deg + 1 > mbar in
+  let values  = ZZp.mut_array_to_array (ZZp.svalues n) in
+  let points = ZZp.points n in
+  for i = 0 to Array.length values - 1 do
+    values.(i) <- Poly.eval num points.(i) /: Poly.eval denom points.(i)
+  done;
+  try
+    let (found_num,found_denom) =
+      Decode.interpolate ~values ~points ~d:(num_deg - denom_deg)
+    in
+(*    printf "mbar: %d, num_deg: %d, denom_deg: %d\n" mbar num_deg denom_deg;
+    printf "num: %s\ndenom: %s\n%!" (Poly.to_string num) (Poly.to_string denom);
+    printf "gcd: %s\n" (Poly.to_string (Poly.gcd num denom));
+    printf "found num: %s\nfound denom: %s\n%!"
+      (Poly.to_string found_num) (Poly.to_string found_denom); *)
+    test "degree equality" (toobig
+                            || (Poly.degree found_num = Poly.degree num
+                                && Poly.degree found_denom = Poly.degree denom));
+    test "num equality" (toobig || Poly.eq found_num num);
+    test "denom equality" (toobig || Poly.eq found_denom denom);
+ with
+     Interpolation_failure ->
+       test (sprintf "interpolation failed (deg:%d,mbar:%d)" deg mbar)
+         (deg + 1 > mbar)
+*/
 }
