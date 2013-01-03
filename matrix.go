@@ -23,7 +23,9 @@
 package conflux
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 )
 
 type Matrix struct {
@@ -33,8 +35,8 @@ type Matrix struct {
 
 func NewMatrix(columns, rows int, x *Zp) *Matrix {
 	matrix := &Matrix{
-		columns: columns,
 		rows:    rows,
+		columns: columns,
 		cells:   make([]*Zp, columns*rows)}
 	for i := 0; i < len(matrix.cells); i++ {
 		matrix.cells[i] = x.Copy()
@@ -42,12 +44,12 @@ func NewMatrix(columns, rows int, x *Zp) *Matrix {
 	return matrix
 }
 
-func (m *Matrix) Get(col, row int) *Zp {
-	return m.cells[col+(row*m.columns)]
+func (m *Matrix) Get(i, j int) *Zp {
+	return m.cells[i+(j*m.columns)]
 }
 
-func (m *Matrix) Set(col, row int, x *Zp) {
-	m.cells[col+(row*m.columns)] = x.Copy()
+func (m *Matrix) Set(i, j int, x *Zp) {
+	m.cells[i+(j*m.columns)] = x.Copy()
 }
 
 var MatrixTooNarrow = errors.New("Matrix is too narrow to reduce")
@@ -56,68 +58,69 @@ func (m *Matrix) Reduce() (err error) {
 	if m.columns < m.rows {
 		return MatrixTooNarrow
 	}
-	for row := 0; row < m.rows; row++ {
-		err = m.processRow(row)
-		return
+	for j := 0; j < m.rows; j++ {
+		err = m.processRowForward(j)
+		if err != nil {
+			return
+		}
 	}
-	for row := m.rows - 1; row > 0; row-- {
-		m.backsub(row)
+	for j := m.rows - 1; j > 0; j-- {
+		m.backSubstitute(j)
 	}
 	return
 }
 
-func (m *Matrix) backsub(row int) {
-	if m.Get(row, row).Int64() == int64(1) {
+func (m *Matrix) backSubstitute(j int) {
+	if m.Get(j, j).Int64() == int64(1) {
 		last := m.rows - 1
-		for j := row - 1; j >= 0; j-- {
-			scmult := m.Get(row, j)
-			m.rowsub(last, row, j, scmult)
-			m.Set(row, j, Zi(scmult.P, 0))
+		for j2 := j - 1; j2 >= 0; j2-- {
+			scmult := m.Get(j, j2).Copy()
+			m.rowsub(last, j, j2, scmult)
+			m.Set(j, j2, Zi(scmult.P, 0))
 		}
 	}
 }
 
 var SwapRowNotFound = errors.New("Swap row not found")
 
-func (m *Matrix) processRow(row int) error {
-	v := m.Get(row, row)
-	if !v.IsZero() {
-		rowSwap := -1
-		for j := row + 1; j < m.rows; j++ {
-			if !m.Get(row, j).IsZero() {
-				rowSwap = j
+func (m *Matrix) processRowForward(j int) error {
+	v := m.Get(j, j)
+	if v.IsZero() {
+		jswap := -1
+		for jf := j + 1; jf < m.rows; jf++ {
+			if !m.Get(j, jf).IsZero() {
+				jswap = jf
+				break
 			}
 		}
-		if rowSwap == -1 {
-			return SwapRowNotFound
+		if jswap == -1 {
+			return nil
 		}
-		m.swapRows(row, rowSwap)
-		v = m.Get(row, row)
+		m.swapRows(j, jswap)
+		v = m.Get(j, j)
 	}
 	if v.Int64() != int64(1) {
-		m.scmultRow(row, v.Copy().Inv())
+		m.scmultRow(j, j, v.Copy().Inv())
 	}
-	for j := row + 1; j < m.rows; j++ {
-		if row != j {
-			m.rowsub(row, row, j, m.Get(row, j))
-		}
+	for j2 := j + 1; j2 < m.rows; j2++ {
+		m.rowsub(j, j, j2, m.Get(j, j2).Copy())
 	}
 	return nil
 }
 
-func (m *Matrix) swapRows(row1, row2 int) {
-	start1 := row1 * m.columns
-	start2 := row2 * m.columns
-	for col := 0; col < m.columns; col++ {
-		m.cells[start1+col], m.cells[start2+col] = m.cells[start2+col], m.cells[start1+col]
+func (m *Matrix) swapRows(j1, j2 int) {
+	start1 := j1 * m.columns
+	start2 := j2 * m.columns
+	for i := 0; i < m.columns; i++ {
+		m.cells[start1+i], m.cells[start2+i] = m.cells[start2+i], m.cells[start1+i]
 	}
 }
 
-func (m *Matrix) scmultRow(row int, v *Zp) {
-	start := row * m.columns
-	for col := 0; col < m.columns; col++ {
-		z := m.cells[start+col]
-		z.Mul(z, v)
+func (m *Matrix) scmultRow(scol, j int, sc *Zp) {
+	start := j * m.columns
+	for i := scol; i < m.columns; i++ {
+		v := m.cells[start+i]
+		v.Mul(v, sc)
 	}
 }
 
@@ -125,13 +128,24 @@ func (m *Matrix) rowsub(scol, src, dst int, scmult *Zp) {
 	for i := scol; i < m.columns; i++ {
 		sval := m.Get(i, src)
 		if !sval.IsZero() {
-			var newval *Zp
-			if scmult.Cmp(Zi(scmult.P, 1)) != 0 {
-				newval = Z(scmult.P).Sub(m.Get(i, dst), Z(scmult.P).Mul(sval, scmult))
+			v := m.Get(i, dst)
+			if scmult.Int64() != int64(1) {
+				v.Sub(v, Z(scmult.P).Mul(sval, scmult))
 			} else {
-				newval = Z(scmult.P).Sub(m.Get(i, dst), sval)
+				v.Sub(v, sval)
 			}
-			m.Set(i, dst, newval)
 		}
 	}
+}
+
+func (m *Matrix) String() string {
+	buf := bytes.NewBuffer(nil)
+	for row := 0; row < m.rows; row++ {
+		fmt.Fprintf(buf, "| ")
+		for col := 0; col < m.columns; col++ {
+			fmt.Fprintf(buf, "%v ", m.Get(col, row))
+		}
+		fmt.Fprintf(buf, "|\n")
+	}
+	return string(buf.Bytes())
 }

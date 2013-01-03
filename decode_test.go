@@ -66,6 +66,45 @@ func TestFactorization(t *testing.T) {
 	}
 }
 
+func TestCannedInterpolation(t *testing.T) {
+/*
+interpolate
+values=[50209572917763804813893169477404135246 523915264287429384599917983489241637041 193879208340335596473327301694891073112 336257832174512052845041381684545224326 525220581565510310465258018589146771167 369646301408454767673033771110855434260 371821946850459872311187739000814476019 144426966457292640051271632674756114101 379207879747256731229136438792149285186 46108152160169587744128314614996604924 227801899428306415871207999262631174702 207497927707680176901864453717256663645 190227327194805171829784109272423912872 ]
+points=[0 -1 1 -2 2 -3 3 -4 4 -5 5 -6 6 ]
+d=-11
+num=1 z^1 + 201510631159794911579036209221877731351
+denom=1 z^12 + 129168611341530605578585909520009112853 z^11 + 49011742009925395272518613422388842885 z^10 + 209097283573511646123086148468849229449 z^9 + 91519704684961309708461769260348368047 z^8 + 451945789461805767613376502019011847396 z^7 + 278888159583692127965164290452048385915 z^6 + 323796663999875107447504850182776354321 z^5 + 276914137420158008254462690448206036905 z^4 + 496937274460702615962215989437926963535 z^3 + 213853624487129571321714452851928100712 z^2 + 295519390096665634601203803035473291375 z^1 + 471406228141421561633415986254867829648
+*/
+	p := P_SKS
+	values := []*Zp{Zs(p, "50209572917763804813893169477404135246"), Zs(p, "523915264287429384599917983489241637041"), Zs(p, "193879208340335596473327301694891073112"), Zs(p, "336257832174512052845041381684545224326"), Zs(p, "525220581565510310465258018589146771167"), Zs(p, "369646301408454767673033771110855434260"), Zs(p, "371821946850459872311187739000814476019"), Zs(p, "144426966457292640051271632674756114101"), Zs(p, "379207879747256731229136438792149285186"), Zs(p, "46108152160169587744128314614996604924"), Zs(p, "227801899428306415871207999262631174702"), Zs(p, "207497927707680176901864453717256663645"), Zs(p, "190227327194805171829784109272423912872")}
+	points := []*Zp{Zi(p, 0), Zi(p, -1), Zi(p, 1), Zi(p, -2), Zi(p, 2), Zi(p, -3), Zi(p, 3), Zi(p, -4), Zi(p, 4), Zi(p, -5), Zi(p, 5), Zi(p, -6), Zi(p, 6)}
+	d :=- 11
+	rfn, err := Interpolate(values, points, d)
+	assert.Equal(t, err, nil)
+	t.Logf("num=%v denom=%v", rfn.Num, rfn.Denom)
+	numExpect := []*Zp{Zs(p, "201510631159794911579036209221877731351"), Zi(p, 1)}
+	denomExpect := []*Zp{
+		Zs(p, "471406228141421561633415986254867829648"),
+		Zs(p, "295519390096665634601203803035473291375"),
+		Zs(p, "213853624487129571321714452851928100712"),
+		Zs(p, "496937274460702615962215989437926963535"),
+		Zs(p, "276914137420158008254462690448206036905"),
+		Zs(p, "323796663999875107447504850182776354321"),
+		Zs(p, "278888159583692127965164290452048385915"),
+		Zs(p, "451945789461805767613376502019011847396"),
+		Zs(p, "91519704684961309708461769260348368047"),
+		Zs(p, "209097283573511646123086148468849229449"),
+		Zs(p, "49011742009925395272518613422388842885"),
+		Zs(p, "129168611341530605578585909520009112853"),
+		Zi(p, 1)}
+	for i, z := range numExpect {
+		assert.Equal(t, z.String(), rfn.Num.coeff[i].String())
+	}
+	for i, z := range denomExpect {
+		assert.Equal(t, z.String(), rfn.Denom.coeff[i].String())
+	}
+}
+
 func TestInterpolation(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		t.Logf("Interpolation #%d", i)
@@ -75,7 +114,7 @@ func TestInterpolation(t *testing.T) {
 
 func interpTest(t *testing.T) {
 	var err error
-	p := big.NewInt(int64(97))
+	p := P_SKS
 	deg := randInt(10) + 1
 	numDeg := randInt(deg)
 	denomDeg := deg - numDeg
@@ -86,7 +125,7 @@ func interpTest(t *testing.T) {
     t.Logf("num: (%v) denom: (%v)", num, denom)
 	mbar := randInt(9) + 1
 	n := mbar + 1
-	//toobig := deg + 1 > mbar
+	toobig := deg + 1 > mbar
 	values := make([]*Zp, n)
 	points := make([]*Zp, n)
 	for i := 0; i < n; i++ {
@@ -98,37 +137,15 @@ func interpTest(t *testing.T) {
 		}
 		points[i] = Zi(p, pi)
 		values[i] = Z(p).Div(num.Eval(points[i]), denom.Eval(points[i]))
+	}
+	t.Logf("values=(%v) points=(%v) degDiff=(%v)", values, points, abs(numDeg - denomDeg))
+	rfn, err := Interpolate(values, points, numDeg - denomDeg)
+	if toobig {
+		return
+	} else {
 		assert.Equal(t, err, nil)
 	}
-	rfn, err := Interpolate(values, points, numDeg - denomDeg)
-	assert.Equal(t, err, nil)
-    t.Logf("mbar: %d, num_deg: %d, denom_deg: %d", mbar, numDeg, denomDeg)
-    t.Logf("num: (%v) === (%v)", num, rfn.Num)
-    t.Logf("denom: (%v) === (%v)", denom, rfn.Denom)
-/*
-  let toobig = deg + 1 > mbar in
-  let values  = ZZp.mut_array_to_array (ZZp.svalues n) in
-  let points = ZZp.points n in
-  for i = 0 to Array.length values - 1 do
-    values.(i) <- Poly.eval num points.(i) /: Poly.eval denom points.(i)
-  done;
-  try
-    let (found_num,found_denom) =
-      Decode.interpolate ~values ~points ~d:(num_deg - denom_deg)
-    in
-(*    printf "mbar: %d, num_deg: %d, denom_deg: %d\n" mbar num_deg denom_deg;
-    printf "num: %s\ndenom: %s\n%!" (Poly.to_string num) (Poly.to_string denom);
-    printf "gcd: %s\n" (Poly.to_string (Poly.gcd num denom));
-    printf "found num: %s\nfound denom: %s\n%!"
-      (Poly.to_string found_num) (Poly.to_string found_denom); *)
-    test "degree equality" (toobig
-                            || (Poly.degree found_num = Poly.degree num
-                                && Poly.degree found_denom = Poly.degree denom));
-    test "num equality" (toobig || Poly.eq found_num num);
-    test "denom equality" (toobig || Poly.eq found_denom denom);
- with
-     Interpolation_failure ->
-       test (sprintf "interpolation failed (deg:%d,mbar:%d)" deg mbar)
-         (deg + 1 > mbar)
-*/
+    //t.Logf("mbar: %d, num_deg: %d, denom_deg: %d", mbar, numDeg, denomDeg)
+	assert.Tf(t, num.Equal(rfn.Num), "num: (%v) != (%v)", num, rfn.Num)
+	assert.Tf(t, denom.Equal(rfn.Denom), "denom: (%v) != (%v)", denom, rfn.Denom)
 }

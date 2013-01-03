@@ -95,6 +95,17 @@ func Zi(p *big.Int, n int) *Zp {
 	return zp
 }
 
+// Zs creates an integer from base10 string s in the finite field p.
+func Zs(p *big.Int, s string) *Zp {
+	i, ok := big.NewInt(0).SetString(s, 10)
+	if !ok {
+		return nil
+	}
+	zp := &Zp{Int: i, P: p}
+	zp.Norm()
+	return zp
+}
+
 func Zrand(p *big.Int) *Zp {
 	n, err := rand.Prime(rand.Reader, p.BitLen())
 	if err != nil {

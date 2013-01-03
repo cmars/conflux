@@ -44,10 +44,8 @@ func Interpolate(values []*Zp, points []*Zp, degDiff int) (rfn *RationalFn, err 
 	}
 	p := values[0].P
 	mbar := len(values)
-	if (len(values)+degDiff)%2 != 0 {
-		mbar = len(values) - 1
-	} else {
-		mbar = len(values)
+	if (mbar+degDiff)%2 != 0 {
+		mbar--
 	}
 	ma := (mbar + degDiff) / 2
 	mb := (mbar - degDiff) / 2
@@ -58,13 +56,13 @@ func Interpolate(values []*Zp, points []*Zp, degDiff int) (rfn *RationalFn, err 
 		fj := values[j]
 		for i := 0; i < ma; i++ {
 			matrix.Set(i, j, accum)
-			accum.Mul(accum, kj)
+			accum = Z(p).Mul(accum, kj)
 		}
 		kjma := accum.Copy()
 		accum = fj.Copy().Neg()
 		for i := ma; i < mbar; i++ {
 			matrix.Set(i, j, accum)
-			accum.Mul(accum, kj)
+			accum = Z(p).Mul(accum, kj)
 		}
 		fjkjmb := accum.Copy().Neg()
 		matrix.Set(mbar, j, Z(p).Sub(fjkjmb, kjma))
