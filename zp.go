@@ -116,6 +116,14 @@ func Zrand(p *big.Int) *Zp {
 	return zp
 }
 
+func Zarray(p *big.Int, n int, v *Zp) []*Zp {
+	result := make([]*Zp, n)
+	for i := 0; i < n; i++ {
+		result[i] = v.Copy()
+	}
+	return result
+}
+
 // Copy the integer, since operations are mutable.
 func (zp *Zp) Copy() *Zp {
 	return &Zp{Int: big.NewInt(0).Set(zp.Int), P: zp.P}
@@ -206,7 +214,7 @@ type ZSet struct {
 }
 
 func NewZSet() *ZSet {
-	return &ZSet{ s: make(map[string]bool) }
+	return &ZSet{s: make(map[string]bool)}
 }
 
 func (zs *ZSet) Add(v *Zp) {
@@ -227,6 +235,25 @@ func (zs *ZSet) Has(v *Zp) bool {
 	return has
 }
 
+func (zs *ZSet) Equal(other *ZSet) bool {
+	if len(zs.s) != len(other.s) {
+		return false
+	}
+	for k, _ := range zs.s {
+		_, has := other.s[k]
+		if !has {
+			return false
+		}
+	}
+	return true
+}
+
+func (zs *ZSet) AddSlice(other []*Zp) {
+	for _, v := range other {
+		zs.s[v.String()] = true
+	}
+}
+
 func (zs *ZSet) AddAll(other *ZSet) {
 	for k, _ := range other.s {
 		zs.s[k] = true
@@ -237,7 +264,7 @@ func (zs *ZSet) Items() (result []*Zp) {
 	for k, _ := range zs.s {
 		n := big.NewInt(int64(0))
 		n.SetString(k, 10)
-		result = append(result, &Zp{ Int: n, P: zs.p })
+		result = append(result, &Zp{Int: n, P: zs.p})
 	}
 	return
 }

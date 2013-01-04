@@ -185,7 +185,7 @@ func (p *Poly) factor() (factors []*Poly, err error) {
 	}
 	for len(factors) < p.degree {
 		//r := Zrand(p.p).Mod(Zi(p.p, (2*p.degree) - 1))
-		r := PolyRand(p.p, 2*p.degree - 1)
+		r := PolyRand(p.p, 2*p.degree-1)
 		qh := big.NewInt(int64(0)).Sub(q, big.NewInt(int64(0)))
 		qh.Div(qh, big.NewInt(int64(2)))
 		if err != nil {
@@ -220,6 +220,21 @@ func (p *Poly) factor() (factors []*Poly, err error) {
 
 func factorCheck(p *Poly) bool {
 	panic("TODO")
+}
+
+// Generate points for rational function interpolation.
+func Zpoints(p *big.Int, n int) []*Zp {
+	points := make([]*Zp, n)
+	for i := 0; i < n; i++ {
+		var pi int
+		if i%2 == 0 {
+			pi = ((i + 1) / 2) * 1
+		} else {
+			pi = ((i + 1) / 2) * -1
+		}
+		points[i] = Zi(p, pi)
+	}
+	return points
 }
 
 func Reconcile(values []*Zp, points []*Zp, degDiff int) (*ZSet, *ZSet, error) {
