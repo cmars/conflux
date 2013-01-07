@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	//"os"
 )
 
 var InterpolationFailure = errors.New("Interpolation failed")
@@ -219,7 +220,34 @@ func (p *Poly) factor() (factors []*Poly, err error) {
 }
 
 func factorCheck(p *Poly) bool {
-	panic("TODO")
+	if p.degree <= 1 {
+		return true
+	}
+	z := NewPoly(Zi(p.p, 0), Zi(p.p, 1))
+	zq, err := polyPowMod(z, P_SKS, p)
+	if err != nil {
+		return false
+	}
+	//fmt.Fprintf(os.Stderr, "zq=%v\n", zq.String())
+	for i := 0; i <= z.degree; i++ {
+		z.coeff[i] = Z(p.p).Mul(z.coeff[i], Zi(p.p, -1))
+	}
+	//fmt.Fprintf(os.Stderr, "mz=%v\n", z.String())
+	zqmz, err := PolyMod(NewPoly().Add(zq, z), p)
+	//fmt.Fprintf(os.Stderr, "zqmz=%v\n", zqmz.String())
+	if err != nil {
+		return false
+	}
+	return zqmz.degree == 0 || (zqmz.degree == 1 && zqmz.coeff[0].IsZero())
+/*
+if Poly.degree x = 1 || Poly.degree x = 0 then true
+else
+  let z = Poly.of_array [| ZZp.zero; ZZp.one |] in
+  let zq = powmod ~modulus:x z !ZZp.order in
+  let mz = Poly.scmult z (ZZp.of_int (-1)) in
+  let zqmz = Poly.modulo (Poly.add zq mz) x in
+  Poly.eq zqmz Poly.zero
+*/
 }
 
 // Generate points for rational function interpolation.
@@ -249,6 +277,8 @@ func Reconcile(values []*Zp, points []*Zp, degDiff int) (*ZSet, *ZSet, error) {
 	lastValue := values[len(values)-1]
 	if valFromPoly.Cmp(lastValue) != 0 ||
 		!factorCheck(rfn.Num) || !factorCheck(rfn.Denom) {
+		//fmt.Fprintf(os.Stderr, "lowmbar: valFromPoly=%v lastValue=%v num=%v denom=%v\n",
+			//valFromPoly, lastValue, rfn.Num, rfn.Denom)
 		return nil, nil, LowMBar
 	}
 	numF, err := rfn.Num.Factor()

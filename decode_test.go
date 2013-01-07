@@ -198,7 +198,7 @@ func reconcileTest(t *testing.T) {
 	diff1, diff2, err := Reconcile(values, points, m1-m2)
 	if err != nil {
 		t.Logf("Low MBar")
-		assert.Tf(t, err == LowMBar, "error: %v", err)
+		assert.Tf(t, err != nil, "error: %v", err)
 		assert.Tf(t, m > mbar, "m %d > mbar %d", m, mbar)
 		return
 	}
@@ -207,4 +207,13 @@ func reconcileTest(t *testing.T) {
 	t.Logf("recon compare: %v ==? %v", diff2, set2)
 	assert.T(t, diff1.Equal(set1))
 	assert.T(t, diff2.Equal(set2))
+}
+
+func TestFactorCheck(t *testing.T) {
+	//factor_check x=1 z^2 + 117479252320778380699969369242473163812 z^1 + 23910866165498202015403350789738609658 zq=1 z^1 + 0 mz=530512889551602322505127520352579437338 z^1 + 0 zqmz=0
+	p := P_SKS
+	x := NewPoly(Zs(p, "23910866165498202015403350789738609658"),
+			Zs(p, "117479252320778380699969369242473163812"),
+			Zs(p, "1"))
+	assert.Tf(t, factorCheck(x), "%v", x)
 }
