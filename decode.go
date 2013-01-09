@@ -172,7 +172,7 @@ func (p *Poly) Factor() (roots *ZSet, err error) {
 		if f.degree != 1 {
 			return nil, errors.New(fmt.Sprintf("Invalid factor: (%v)", f))
 		}
-		roots.Add(f.coeff[0].Copy())
+		roots.Add(f.coeff[0].Copy().Neg())
 	}
 	return
 }
@@ -190,7 +190,8 @@ func (p *Poly) factor() (factors []*Poly, err error) {
 	for len(factors) < p.degree {
 		//r := Zrand(p.p).Mod(Zi(p.p, (2*p.degree) - 1))
 		r := PolyRand(p.p, 2*p.degree-1)
-		qh := big.NewInt(int64(0)).Sub(q, big.NewInt(int64(0)))
+		qh := big.NewInt(int64(0))
+		qh.Sub(q, qh)
 		qh.Div(qh, big.NewInt(int64(2)))
 		if err != nil {
 			return nil, err

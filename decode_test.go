@@ -38,13 +38,13 @@ func randInt(max int) int {
 }
 
 // randLinearProd randomly generates a product of
-// linears (x + a0)(x + a1)...(x + an).
+// linears (x - a0)(x - a1)...(x - an).
 func randLinearProd(p *big.Int, n int) (*Poly, *ZSet) {
 	result := NewPoly(Zi(p, 1))
 	roots := NewZSet()
 	for i := 0; i < n; i++ {
 		pr := PolyRand(p, 1)
-		roots.Add(pr.coeff[0])
+		roots.Add(pr.coeff[0].Copy().Neg())  // The root is negated: a0 from (z - a0)
 		result = NewPoly().Mul(result, pr)
 	}
 	return result, roots
@@ -167,15 +167,9 @@ func TestCannedReconcile(t *testing.T) {
 	p := P_SKS
 	set1 := NewZSet()
 	s1items := []*Zp{Zs(p, "8952777669297728851091848378379377617"), Zs(p, "162085839528403560100929159811161460293"), Zs(p, "181484969924633124558171484324504401075"), Zs(p, "229305846979453177871691812413112208676"), Zs(p, "284001389401364703525738874626145923778"), Zs(p, "333026889954813771673937036618957938545"), Zs(p, "401537002901186069501925598757914356337"), Zs(p, "408597178507212301417184698839771487762"), Zs(p, "419504520512224794235831228788173561599"), Zs(p, "454233583376105592897174699470827876606")}
-	for _, s1z := range s1items {
-		s1z.Neg()
-	}
 	set1.AddSlice(s1items)
 	set2 := NewZSet()
 	s2items := []*Zp{Zs(p, "110633522524732890588089295220994803977"), Zs(p, "194223389264051186134544082841809104115"), Zs(p, "332150253195118153886619367406744054566"), Zs(p, "431844203966462129313295191768688911950"), Zs(p, "505931393060085050712145173574130038354")}
-	for _, s2z := range s2items {
-		s2z.Neg()
-	}
 	set2.AddSlice(s2items)
 	values := []*Zp{Zs(p, "325567491442841181381134847399735305017"), Zs(p, "395037391445571452972721527936312200522"), Zs(p, "383458038386494547334014086327713094385"), Zs(p, "217174866600085692973450729194577792210"), Zs(p, "385011357579896657977528957507240613253"), Zs(p, "402781597512949507740967136267068344630"), Zs(p, "232703526201630690874279192086579665024"), Zs(p, "517714262168165665799778316804817689980"), Zs(p, "32661406820901877880191293945563287049"), Zs(p, "367894599536965704928081351211416869922"), Zs(p, "277789799296462035245112840153664041656"), Zs(p, "55517351568679792361000876949275186668"), Zs(p, "262234380059790006121506334185487551936"), Zs(p, "269358796384139303257285300138875449325"), Zs(p, "230494386168101481930613981157929389116"), Zs(p, "497730714764611287106884245786790787566"), Zs(p, "51691307971910305814631217339926265833"), Zs(p, "290446399753991600191456012845409641740"), Zs(p, "427530032313331291010476618229794543878"), Zs(p, "120344848642406229503266522177541779886"), Zs(p, "399989145164239204145711147975735514135")}
 	points := []*Zp{Zi(p, 0), Zi(p, -1), Zi(p, 1), Zi(p, -2), Zi(p, 2), Zi(p, -3), Zi(p, 3), Zi(p, -4), Zi(p, 4), Zi(p, -5), Zi(p, 5), Zi(p, -6), Zi(p, 6), Zi(p, -7), Zi(p, 7), Zi(p, -8), Zi(p, 8), Zi(p, -9), Zi(p, 9), Zi(p, -10), Zi(p, 10)}
@@ -208,15 +202,7 @@ func reconcileTest(t *testing.T) {
 	m1 := randInt(m)
 	m2 := m - m1
 	set1 := setInit(m1, func() *Zp { return Zrand(p) })
-	set1Inv := NewZSet()
-	for _, sv := range set1.Items() {
-		set1Inv.Add(sv.Copy().Neg())
-	}
 	set2 := setInit(m2, func() *Zp { return Zrand(p) })
-	set2Inv := NewZSet()
-	for _, sv := range set2.Items() {
-		set2Inv.Add(sv.Copy().Neg())
-	}
 	t.Logf("mbar: %d, n: %d, m: %d, m1: %d, m2: %d", mbar, n, m, m1, m2)
 	for _, s1i := range set1.Items() {
 		for i := 0; i < n; i++ {
@@ -240,10 +226,10 @@ func reconcileTest(t *testing.T) {
 		return
 	}
 	assert.Equal(t, err, nil)
-	t.Logf("recon compare: %v ==? %v", diff1, set1Inv)
-	t.Logf("recon compare: %v ==? %v", diff2, set2Inv)
-	assert.T(t, diff1.Equal(set1Inv))
-	assert.T(t, diff2.Equal(set2Inv))
+	t.Logf("recon compare: %v ==? %v", diff1, set1)
+	t.Logf("recon compare: %v ==? %v", diff2, set2)
+	assert.T(t, diff1.Equal(set1))
+	assert.T(t, diff2.Equal(set2))
 }
 
 func TestLowMBar(t *testing.T) {
