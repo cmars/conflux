@@ -108,7 +108,7 @@ func Zs(p *big.Int, s string) *Zp {
 
 func randbits(nbits int) *big.Int {
 	nbytes := nbits / 8
-	if nbits % 8 != 0 {
+	if nbits%8 != 0 {
 		nbytes++
 	}
 	rstring := make([]byte, nbytes)
@@ -122,7 +122,7 @@ func randbits(nbits int) *big.Int {
 func randint(high *big.Int) *big.Int {
 	nbits := high.BitLen()
 	nbytes := nbits / 8
-	if nbits % 8 != 0 {
+	if nbits%8 != 0 {
 		nbytes++
 	}
 	rstring := make([]byte, nbytes)
@@ -133,7 +133,7 @@ func randint(high *big.Int) *big.Int {
 }
 
 func Zrand(p *big.Int) *Zp {
-	return &Zp{ Int: randint(p), P: p }
+	return &Zp{Int: randint(p), P: p}
 }
 
 func Zarray(p *big.Int, n int, v *Zp) []*Zp {

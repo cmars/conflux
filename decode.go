@@ -172,7 +172,7 @@ func (p *Poly) Factor() (roots *ZSet, err error) {
 		if f.degree != 1 {
 			return nil, errors.New(fmt.Sprintf("Invalid factor: (%v)", f))
 		}
-		roots.Add(f.coeff[0])
+		roots.Add(f.coeff[0].Copy())
 	}
 	return
 }
