@@ -213,11 +213,9 @@ func (p *Poly) IsConstant(c *Zp) bool {
 }
 
 func (p *Poly) Eval(z *Zp) *Zp {
-	zd := Zi(p.p, 1)
 	sum := Zi(p.p, 0)
 	for d := 0; d <= p.degree; d++ {
-		sum.Add(sum, Z(p.p).Mul(p.coeff[d], zd))
-		zd.Mul(zd, z)
+		sum.Add(sum.Copy(), Z(p.p).Mul(p.coeff[d], Z(p.p).Exp(z, Zi(p.p, d))))
 	}
 	return sum
 }
