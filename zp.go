@@ -106,14 +106,34 @@ func Zs(p *big.Int, s string) *Zp {
 	return zp
 }
 
-func Zrand(p *big.Int) *Zp {
-	n, err := rand.Prime(rand.Reader, p.BitLen())
-	if err != nil {
-		panic(err)
+func randbits(nbits int) *big.Int {
+	nbytes := nbits / 8
+	if nbits % 8 != 0 {
+		nbytes++
 	}
-	zp := &Zp{Int: n, P: p}
-	zp.Norm()
-	return zp
+	rstring := make([]byte, nbytes)
+	rand.Reader.Read(rstring)
+	rval := big.NewInt(int64(0)).SetBytes(rstring)
+	high := big.NewInt(int64(0)).Exp(big.NewInt(int64(2)), big.NewInt(int64(nbits-1)), nil)
+	rval.Add(high, big.NewInt(int64(0)).Mod(rval, high))
+	return rval
+}
+
+func randint(high *big.Int) *big.Int {
+	nbits := high.BitLen()
+	nbytes := nbits / 8
+	if nbits % 8 != 0 {
+		nbytes++
+	}
+	rstring := make([]byte, nbytes)
+	rand.Reader.Read(rstring)
+	rval := big.NewInt(int64(0)).SetBytes(rstring)
+	rval.Mod(rval, high)
+	return rval
+}
+
+func Zrand(p *big.Int) *Zp {
+	return &Zp{ Int: randint(p), P: p }
 }
 
 func Zarray(p *big.Int, n int, v *Zp) []*Zp {
