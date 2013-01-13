@@ -82,8 +82,13 @@ func readString(r io.Reader) (string, error) {
 	return string(buf), err
 }
 
-func writeString(w io.Writer, text string) error {
-	panic("not impl")
+func writeString(w io.Writer, text string) (err error) {
+	err = writeInt(w, len(text))
+	if err != nil {
+		return
+	}
+	_, err = w.Write([]byte(text))
+	return
 }
 
 func readBitstring(r io.Reader) ([]byte, error) {
@@ -101,6 +106,10 @@ func readBitstring(r io.Reader) ([]byte, error) {
 	return buf, err
 }
 
+func writeBitstring(w io.Writer, buf []byte) error {
+	panic("not impl")
+}
+
 func readZZarray(r io.Reader) ([]*conflux.Zp, error) {
 	panic("not impl")
 }
@@ -109,8 +118,15 @@ func readZSet(r io.Reader) (*conflux.ZSet, error) {
 	panic("not impl")
 }
 
+func writeZZarray(w io.Writer, arr []*conflux.Zp) error {
+	panic("not impl")
+}
+
+func writeZSet(w io.Writer, set *conflux.ZSet) error {
+	panic("not impl")
+}
+
 type ReconRqstPoly struct {
-	*notImplMsg
 	Prefix []byte
 	Size int
 	Samples []*conflux.Zp
@@ -118,6 +134,19 @@ type ReconRqstPoly struct {
 
 func (msg *ReconRqstPoly) MsgType() MsgType {
 	return MsgTypeReconRqstPoly
+}
+
+func (msg *ReconRqstPoly) marshal(w io.Writer) (err error) {
+	err = writeBitstring(w, msg.Prefix)
+	if err != nil {
+		return
+	}
+	err = writeInt(w, msg.Size)
+	if err != nil {
+		return
+	}
+	err = writeZZarray(w, msg.Samples)
+	return
 }
 
 func (msg *ReconRqstPoly) unmarshal(r io.Reader) (err error) {
@@ -134,13 +163,21 @@ func (msg *ReconRqstPoly) unmarshal(r io.Reader) (err error) {
 }
 
 type ReconRqstFull struct {
-	*notImplMsg
 	Prefix []byte
 	Elements *conflux.ZSet
 }
 
 func (msg *ReconRqstFull) MsgType() MsgType {
 	return MsgTypeReconRqstFull
+}
+
+func (msg *ReconRqstFull) marshal(w io.Writer) (err error) {
+	err = writeBitstring(w, msg.Prefix)
+	if err != nil {
+		return
+	}
+	err = writeZSet(w, msg.Elements)
+	return
 }
 
 func (msg *ReconRqstFull) unmarshal(r io.Reader) (err error) {
@@ -153,19 +190,39 @@ func (msg *ReconRqstFull) unmarshal(r io.Reader) (err error) {
 }
 
 type Elements struct {
-	*notImplMsg
+	*conflux.ZSet
 }
 
 func (msg *Elements) MsgType() MsgType {
 	return MsgTypeElements
 }
 
+func (msg *Elements) marshal(w io.Writer) (err error) {
+	err = writeZSet(w, msg.ZSet)
+	return
+}
+
+func (msg *Elements) unmarshal(r io.Reader) (err error) {
+	msg.ZSet, err = readZSet(r)
+	return
+}
+
 type FullElements struct {
-	*notImplMsg
+	*conflux.ZSet
 }
 
 func (msg *FullElements) MsgType() MsgType {
 	return MsgTypeFullElements
+}
+
+func (msg *FullElements) marshal(w io.Writer) (err error) {
+	err = writeZSet(w, msg.ZSet)
+	return
+}
+
+func (msg *FullElements) unmarshal(r io.Reader) (err error) {
+	msg.ZSet, err = readZSet(r)
+	return
 }
 
 type SyncFail struct {
