@@ -1,12 +1,22 @@
-package conflux
+package sks
 
 import (
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
-	"github.com/cmars/conflux"
+	"math/big"
+	. "github.com/cmars/conflux"
 )
+
+var sksZpNbytes int
+
+func init() {
+	sksZpNbytes = P_SKS.BitLen() / 8
+	if P_SKS.BitLen() % 8 != 0 {
+		sksZpNbytes++
+	}
+}
 
 type MsgType uint8
 
@@ -106,30 +116,79 @@ func readBitstring(r io.Reader) ([]byte, error) {
 	return buf, err
 }
 
-func writeBitstring(w io.Writer, buf []byte) error {
-	panic("not impl")
+func writeBitstring(w io.Writer, buf []byte) (err error) {
+	err = writeInt(w, len(buf) * 8)
+	if err != nil {
+		return
+	}
+	_, err = w.Write(buf)
+	return
 }
 
-func readZZarray(r io.Reader) ([]*conflux.Zp, error) {
-	panic("not impl")
+func readZZarray(r io.Reader) ([]*Zp, error) {
+	n, err := readInt(r)
+	if err != nil {
+		return nil, err
+	}
+	arr := make([]*Zp, n)
+	for i := 0; i < n; i++ {
+		arr[i], err = readZp(r)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return arr, nil
 }
 
-func readZSet(r io.Reader) (*conflux.ZSet, error) {
-	panic("not impl")
+func writeZZarray(w io.Writer, arr []*Zp) (err error) {
+	err = writeInt(w, len(arr))
+	if err != nil {
+		return
+	}
+	for _, z := range arr {
+		err = writeZp(w, z)
+		if err != nil {
+			return
+		}
+	}
+	return
 }
 
-func writeZZarray(w io.Writer, arr []*conflux.Zp) error {
-	panic("not impl")
+func readZSet(r io.Reader) (*ZSet, error) {
+	arr, err := readZZarray(r)
+	if err != nil {
+		return nil, err
+	}
+	zset := NewZSet()
+	zset.AddSlice(arr)
+	return zset, nil
 }
 
-func writeZSet(w io.Writer, set *conflux.ZSet) error {
-	panic("not impl")
+func writeZSet(w io.Writer, zset *ZSet) error {
+	return writeZZarray(w, zset.Items())
+}
+
+func readZp(r io.Reader) (*Zp, error) {
+	buf := make([]byte, sksZpNbytes)
+	_, err := r.Read(buf)
+	if err != nil {
+		return nil, err
+	}
+	v := big.NewInt(0).SetBytes(buf)
+	z := &Zp{ Int: v, P: P_SKS }
+	z.Norm()
+	return z, nil
+}
+
+func writeZp(w io.Writer, z *Zp) error {
+	_, err := w.Write(z.Int.Bytes())
+	return err
 }
 
 type ReconRqstPoly struct {
 	Prefix []byte
 	Size int
-	Samples []*conflux.Zp
+	Samples []*Zp
 }
 
 func (msg *ReconRqstPoly) MsgType() MsgType {
@@ -164,7 +223,7 @@ func (msg *ReconRqstPoly) unmarshal(r io.Reader) (err error) {
 
 type ReconRqstFull struct {
 	Prefix []byte
-	Elements *conflux.ZSet
+	Elements *ZSet
 }
 
 func (msg *ReconRqstFull) MsgType() MsgType {
@@ -190,7 +249,7 @@ func (msg *ReconRqstFull) unmarshal(r io.Reader) (err error) {
 }
 
 type Elements struct {
-	*conflux.ZSet
+	*ZSet
 }
 
 func (msg *Elements) MsgType() MsgType {
@@ -208,7 +267,7 @@ func (msg *Elements) unmarshal(r io.Reader) (err error) {
 }
 
 type FullElements struct {
-	*conflux.ZSet
+	*ZSet
 }
 
 func (msg *FullElements) MsgType() MsgType {
@@ -250,7 +309,7 @@ func (msg *Flush) MsgType() MsgType {
 }
 
 type Error struct {
-	*notImplMsg
+	*textMsg
 }
 
 func (msg *Error) MsgType() MsgType {
@@ -258,7 +317,7 @@ func (msg *Error) MsgType() MsgType {
 }
 
 type DbRqst struct {
-	*notImplMsg
+	*textMsg
 }
 
 func (msg *DbRqst) MsgType() MsgType {
@@ -266,7 +325,7 @@ func (msg *DbRqst) MsgType() MsgType {
 }
 
 type DbRepl struct {
-	*notImplMsg
+	*textMsg
 }
 
 func (msg *DbRepl) MsgType() MsgType {
@@ -274,7 +333,6 @@ func (msg *DbRepl) MsgType() MsgType {
 }
 
 type Config struct {
-	*notImplMsg
 	Contents map[string]string
 }
 
@@ -282,8 +340,42 @@ func (msg *Config) MsgType() MsgType {
 	return MsgTypeConfig
 }
 
-func (msg *Config) unmarshal(r io.Reader) (err error) {
-	panic("not impl")
+func (msg *Config) marshal(w io.Writer) (err error) {
+	err = writeInt(w, len(msg.Contents))
+	if err != nil {
+		return
+	}
+	for k, v := range(msg.Contents) {
+		err = writeString(w, k)
+		if err != nil {
+			return
+		}
+		err = writeString(w, v)
+		if err != nil {
+			return
+		}
+	}
+	return
+}
+
+func (msg *Config) unmarshal(r io.Reader) error {
+	n, err := readInt(r)
+	if err != nil {
+		return err
+	}
+	msg.Contents = make(map[string]string)
+	for i := 0; i < n; i++ {
+		k, err := readString(r)
+		if err != nil {
+			return err
+		}
+		v, err := readString(r)
+		if err != nil {
+			return err
+		}
+		msg.Contents[k] = v
+	}
+	return nil
 }
 
 func ReadMsg(r io.Reader) (msg ReconMsg, err error) {
