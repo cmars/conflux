@@ -44,7 +44,7 @@ func randLinearProd(p *big.Int, n int) (*Poly, *ZSet) {
 	roots := NewZSet()
 	for i := 0; i < n; i++ {
 		pr := PolyRand(p, 1)
-		roots.Add(pr.coeff[0].Copy().Neg())  // The root is negated: a0 from (z - a0)
+		roots.Add(pr.coeff[0].Copy().Neg()) // The root is negated: a0 from (z - a0)
 		result = NewPoly().Mul(result, pr)
 	}
 	return result, roots
