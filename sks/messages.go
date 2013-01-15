@@ -4,16 +4,16 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	. "github.com/cmars/conflux"
 	"io"
 	"math/big"
-	. "github.com/cmars/conflux"
 )
 
 var sksZpNbytes int
 
 func init() {
 	sksZpNbytes = P_SKS.BitLen() / 8
-	if P_SKS.BitLen() % 8 != 0 {
+	if P_SKS.BitLen()%8 != 0 {
 		sksZpNbytes++
 	}
 }
@@ -23,15 +23,15 @@ type MsgType uint8
 const (
 	MsgTypeReconRqstPoly = MsgType(0)
 	MsgTypeReconRqstFull = MsgType(1)
-	MsgTypeElements = MsgType(2)
-	MsgTypeFullElements = MsgType(3)
-	MsgTypeSyncFail = MsgType(4)
-	MsgTypeDone = MsgType(5)
-	MsgTypeFlush = MsgType(6)
-	MsgTypeError = MsgType(7)
-	MsgTypeDbRqst = MsgType(8)
-	MsgTypeDbRepl = MsgType(9)
-	MsgTypeConfig = MsgType(10)
+	MsgTypeElements      = MsgType(2)
+	MsgTypeFullElements  = MsgType(3)
+	MsgTypeSyncFail      = MsgType(4)
+	MsgTypeDone          = MsgType(5)
+	MsgTypeFlush         = MsgType(6)
+	MsgTypeError         = MsgType(7)
+	MsgTypeDbRqst        = MsgType(8)
+	MsgTypeDbRepl        = MsgType(9)
+	MsgTypeConfig        = MsgType(10)
 )
 
 type ReconMsg interface {
@@ -40,13 +40,13 @@ type ReconMsg interface {
 	marshal(w io.Writer) error
 }
 
-type emptyMsg struct {}
+type emptyMsg struct{}
 
 func (msg *emptyMsg) unmarshal(r io.Reader) error { return nil }
 
 func (msg *emptyMsg) marshal(w io.Writer) error { return nil }
 
-type textMsg struct { Text string }
+type textMsg struct{ Text string }
 
 func (msg *textMsg) unmarshal(r io.Reader) (err error) {
 	msg.Text, err = readString(r)
@@ -57,7 +57,7 @@ func (msg *textMsg) marshal(w io.Writer) error {
 	return writeString(w, msg.Text)
 }
 
-type notImplMsg struct {}
+type notImplMsg struct{}
 
 func (msg *notImplMsg) unmarshal(r io.Reader) error {
 	panic("not implemented")
@@ -108,7 +108,7 @@ func readBitstring(r io.Reader) ([]byte, error) {
 		return nil, err
 	}
 	nbytes := n / 8
-	if n % 8 > 0 {
+	if n%8 > 0 {
 		nbytes++
 	}
 	buf := make([]byte, nbytes)
@@ -117,7 +117,7 @@ func readBitstring(r io.Reader) ([]byte, error) {
 }
 
 func writeBitstring(w io.Writer, buf []byte) (err error) {
-	err = writeInt(w, len(buf) * 8)
+	err = writeInt(w, len(buf)*8)
 	if err != nil {
 		return
 	}
@@ -175,7 +175,7 @@ func readZp(r io.Reader) (*Zp, error) {
 		return nil, err
 	}
 	v := big.NewInt(0).SetBytes(buf)
-	z := &Zp{ Int: v, P: P_SKS }
+	z := &Zp{Int: v, P: P_SKS}
 	z.Norm()
 	return z, nil
 }
@@ -186,8 +186,8 @@ func writeZp(w io.Writer, z *Zp) error {
 }
 
 type ReconRqstPoly struct {
-	Prefix []byte
-	Size int
+	Prefix  []byte
+	Size    int
 	Samples []*Zp
 }
 
@@ -222,7 +222,7 @@ func (msg *ReconRqstPoly) unmarshal(r io.Reader) (err error) {
 }
 
 type ReconRqstFull struct {
-	Prefix []byte
+	Prefix   []byte
 	Elements *ZSet
 }
 
@@ -345,7 +345,7 @@ func (msg *Config) marshal(w io.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	for k, v := range(msg.Contents) {
+	for k, v := range msg.Contents {
 		err = writeString(w, k)
 		if err != nil {
 			return
@@ -385,7 +385,7 @@ func ReadMsg(r io.Reader) (msg ReconMsg, err error) {
 		return nil, err
 	}
 	msgType := MsgType(buf[0])
-	switch (msgType) {
+	switch msgType {
 	case MsgTypeReconRqstPoly:
 		msg = &ReconRqstPoly{}
 	case MsgTypeReconRqstFull:

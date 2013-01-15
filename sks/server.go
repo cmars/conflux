@@ -1,30 +1,41 @@
 package sks
 
 import (
+	"errors"
 	"fmt"
+	. "github.com/cmars/conflux"
 	"io"
 	"net"
 )
-
-type Request struct {
-	// Recon protocol message received
-	Msg ReconMsg
-	// Response channel
-	Response ResponseChan
-}
 
 type Response interface {
 	Error() error
 	WriteTo(w io.Writer)
 }
 
-type RequestChan chan *Request
+type Recover struct {
+	RemoteAddr     net.Addr
+	RemoteElements *ZSet
+}
 
-type ResponseChan chan Response
+type RecoverChan chan *Recover
+
+type PTree interface { /* TODO */
+}
+
+type ReconConfig interface {
+	Version() string
+	HttpPort() int
+	BitQuantum() int
+	MBar() int
+	Filters() []string
+}
 
 type ReconServer struct {
-	Port int
-	Requests RequestChan
+	Port        int
+	RecoverChan RecoverChan
+	Tree        PTree
+	Settings    ReconConfig
 }
 
 func (rs *ReconServer) Serve() error {
@@ -43,17 +54,71 @@ func (rs *ReconServer) Serve() error {
 	return nil
 }
 
+type msgProgress struct {
+	elements *ZSet
+	err      error
+}
+
+type msgProgressChan chan *msgProgress
+
+var ReconDone = errors.New("Reconciliation Done")
+
 func (rs *ReconServer) handleConnection(conn net.Conn) {
-	msg, err := ReadMsg(conn)
-	if err != nil {
-		// TODO: log error
-		return
+	var respSet *ZSet = NewZSet()
+	for step := range rs.interact(conn) {
+		if step.err != nil {
+			if step.err == ReconDone {
+				break
+			}
+			// log error
+			return
+		} else {
+			respSet.AddAll(step.elements)
+		}
 	}
-	respChan := make(ResponseChan)
-	req := &Request{
-		Msg: msg,
-		Response: respChan }
-	rs.Requests <-req
-	resp := <-respChan
-	resp.WriteTo(conn)
+	rs.RecoverChan <- &Recover{
+		RemoteAddr:     conn.RemoteAddr(),
+		RemoteElements: respSet}
+}
+
+func (rs *ReconServer) interact(conn net.Conn) msgProgressChan {
+	out := make(msgProgressChan)
+	go func() {
+		var resp *msgProgress
+		for resp == nil || resp.err == nil {
+			msg, err := ReadMsg(conn)
+			if err != nil {
+				out <- &msgProgress{err: err}
+				return
+			}
+			switch m := msg.(type) {
+			case *ReconRqstPoly:
+				panic("todo")
+			case *ReconRqstFull:
+				panic("todo")
+			case *Elements:
+				resp = &msgProgress{elements: m.ZSet}
+			case *FullElements:
+				panic("todo")
+			case *SyncFail:
+				panic("todo")
+			case *Done:
+				resp = &msgProgress{err: ReconDone}
+			case *Flush:
+				panic("todo")
+			case *Error:
+				panic("todo")
+			case *DbRqst:
+				panic("todo")
+			case *DbRepl:
+				panic("todo")
+			case *Config:
+				panic("todo")
+			default:
+				resp = &msgProgress{err: errors.New(fmt.Sprintf("Unsupported message type: %v", m))}
+			}
+			out <- resp
+		}
+	}()
+	return out
 }
