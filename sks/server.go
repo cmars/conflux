@@ -21,7 +21,19 @@ type Recover struct {
 type RecoverChan chan *Recover
 
 type PTree interface { /* TODO */
+	Points() []*Zp
+	GetNodeKey([]byte) (PNode, error)
+	NumElements(PNode) int
 }
+
+type PNode interface {
+	SValues() []*Zp
+	Size() int
+	IsLeaf() bool
+	Elements() *ZSet
+}
+
+var PNodeNotFound error = errors.New("Prefix-tree node not found")
 
 type ReconConfig interface {
 	Version() string
@@ -29,6 +41,7 @@ type ReconConfig interface {
 	BitQuantum() int
 	MBar() int
 	Filters() []string
+	ReconThreshMult() int
 }
 
 type ReconServer struct {
@@ -93,32 +106,55 @@ func (rs *ReconServer) interact(conn net.Conn) msgProgressChan {
 			}
 			switch m := msg.(type) {
 			case *ReconRqstPoly:
-				panic("todo")
+				resp = rs.handleReconRqstPoly(m, conn)
 			case *ReconRqstFull:
 				panic("todo")
 			case *Elements:
 				resp = &msgProgress{elements: m.ZSet}
-			case *FullElements:
-				panic("todo")
-			case *SyncFail:
-				panic("todo")
 			case *Done:
 				resp = &msgProgress{err: ReconDone}
 			case *Flush:
 				panic("todo")
-			case *Error:
-				panic("todo")
-			case *DbRqst:
-				panic("todo")
-			case *DbRepl:
-				panic("todo")
-			case *Config:
-				panic("todo")
 			default:
-				resp = &msgProgress{err: errors.New(fmt.Sprintf("Unsupported message type: %v", m))}
+				resp = &msgProgress{err: errors.New(fmt.Sprintf("Unexpected message: %v", m))}
 			}
 			out <- resp
 		}
 	}()
 	return out
+}
+
+var ReconRqstPolyNotFound = errors.New("Server should not receive a request for a non-existant node in ReconRqstPoly")
+
+func (rs *ReconServer) handleReconRqstPoly(rp *ReconRqstPoly, conn net.Conn) *msgProgress {
+	remoteSize := rp.Size
+	points := rs.Tree.Points()
+	remoteSamples := rp.Samples
+	node, err := rs.Tree.GetNodeKey(rp.Prefix)
+	if err == PNodeNotFound {
+		return &msgProgress{err: ReconRqstPolyNotFound}
+	}
+	localSamples := node.SValues()
+	localSize := node.Size()
+	remoteSet, localSet, err := solve(
+		remoteSamples, localSamples, remoteSize, localSize, points)
+	if err == LowMBar {
+		if node.IsLeaf() || rs.Tree.NumElements(node) < (rs.Settings.ReconThreshMult()*rs.Settings.MBar()) {
+			(&FullElements{ZSet: node.Elements()}).marshal(conn)
+			return &msgProgress{elements: NewZSet()}
+		} else {
+			(&SyncFail{}).marshal(conn)
+			return &msgProgress{elements: NewZSet()}
+		}
+	}
+	(&Elements{ZSet: localSet}).marshal(conn)
+	return &msgProgress{elements: remoteSet}
+}
+
+func solve(remoteSamples, localSamples []*Zp, remoteSize, localSize int, points []*Zp) (*ZSet, *ZSet, error) {
+	var values []*Zp
+	for i, x := range remoteSamples {
+		values = append(values, Z(x.P).Div(x, localSamples[i]))
+	}
+	return Reconcile(values, points, remoteSize-localSize)
 }
