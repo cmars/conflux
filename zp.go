@@ -304,3 +304,14 @@ func (zs *ZSet) String() string {
 	fmt.Fprintf(buf, "}")
 	return string(buf.Bytes())
 }
+
+func ZSetDiff(a *ZSet, b *ZSet) *ZSet {
+	result := NewZSet()
+	for k, v := range b.s {
+		_, has := a.s[k]
+		if !has {
+			result.s[k] = v
+		}
+	}
+	return result
+}

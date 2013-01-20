@@ -20,7 +20,7 @@ type Recover struct {
 
 type RecoverChan chan *Recover
 
-type PTree interface { /* TODO */
+type PTree interface {
 	Points() []*Zp
 	GetNodeKey([]byte) (PNode, error)
 	NumElements(PNode) int
@@ -108,13 +108,13 @@ func (rs *ReconServer) interact(conn net.Conn) msgProgressChan {
 			case *ReconRqstPoly:
 				resp = rs.handleReconRqstPoly(m, conn)
 			case *ReconRqstFull:
-				panic("todo")
+				resp = rs.handleReconRqstFull(m, conn)
 			case *Elements:
 				resp = &msgProgress{elements: m.ZSet}
 			case *Done:
 				resp = &msgProgress{err: ReconDone}
 			case *Flush:
-				panic("todo")
+				resp = &msgProgress{elements: NewZSet()}
 			default:
 				resp = &msgProgress{err: errors.New(fmt.Sprintf("Unexpected message: %v", m))}
 			}
@@ -157,4 +157,16 @@ func solve(remoteSamples, localSamples []*Zp, remoteSize, localSize int, points 
 		values = append(values, Z(x.P).Div(x, localSamples[i]))
 	}
 	return Reconcile(values, points, remoteSize-localSize)
+}
+
+func (rs *ReconServer) handleReconRqstFull(rf *ReconRqstFull, conn net.Conn) *msgProgress {
+	node, err := rs.Tree.GetNodeKey(rf.Prefix)
+	if err == PNodeNotFound {
+		return &msgProgress{err: ReconRqstPolyNotFound}
+	}
+	localset := node.Elements()
+	localdiff := ZSetDiff(localset, rf.Elements)
+	remotediff := ZSetDiff(rf.Elements, localset)
+	(&Elements{ZSet: localdiff}).marshal(conn)
+	return &msgProgress{elements:remotediff}
 }
