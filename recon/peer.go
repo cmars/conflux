@@ -92,10 +92,6 @@ func (p *Peer) Stop() {
 	close(p.stop)
 }
 
-type gossipControl struct {
-	enable bool
-}
-
 func (p *Peer) Serve() {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", p.Port))
 	if err != nil {
@@ -109,12 +105,128 @@ func (p *Peer) Serve() {
 				return
 			}
 		}
-		/*conn*/ _, err := ln.Accept()
+		conn, err := ln.Accept()
 		if err != nil {
 			// TODO: log error
 			continue
 		}
-		// TODO: handle incoming connections
-		panic("not impl")
+		err = p.interactWithClient(conn, make([]byte, 0))
+		if err != nil {
+			// TODO: log error
+		}
 	}
+}
+
+type requestEntry struct {
+	node PNode
+	key  []byte
+}
+
+type bottomEntry struct {
+	*requestEntry
+	state reconState
+}
+
+type reconState uint8
+
+const (
+	reconStateFlushEnded = reconState(iota)
+	reconStateBottom     = reconState(iota)
+)
+
+type reconWithClient struct {
+	requestQ []*requestEntry
+	bottomQ  []*bottomEntry
+	rcvrSet  *ZSet
+}
+
+func (rwc *reconWithClient) pushBottom(bottom *bottomEntry) {
+	rwc.bottomQ = append(rwc.bottomQ, bottom)
+}
+
+func (rwc *reconWithClient) pushRequest(req *requestEntry) {
+	rwc.requestQ = append(rwc.requestQ, req)
+}
+
+func (rwc *reconWithClient) topBottom() *bottomEntry {
+	if len(rwc.bottomQ) == 0 {
+		return nil
+	}
+	return rwc.bottomQ[0]
+}
+
+func (rwc *reconWithClient) popBottom() *bottomEntry {
+	if len(rwc.bottomQ) == 0 {
+		return nil
+	}
+	result := rwc.bottomQ[0]
+	rwc.bottomQ = rwc.bottomQ[1:]
+	return result
+}
+
+func (rwc *reconWithClient) popRequest() *requestEntry {
+	if len(rwc.requestQ) == 0 {
+		return nil
+	}
+	result := rwc.requestQ[0]
+	rwc.requestQ = rwc.requestQ[1:]
+	return result
+}
+
+func (rwc *reconWithClient) isDone() bool {
+	return len(rwc.requestQ) == 0 && len(rwc.bottomQ) == 0
+}
+
+func readAllMsgs(r io.Reader) chan ReconMsg {
+	c := make(chan ReconMsg)
+	go func() {
+		for {
+			msg, err := ReadMsg(r)
+			if err != nil {
+				close(c)
+				return
+			}
+			c <- msg
+		}
+	}()
+	return c
+}
+
+func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) {
+	panic("not impl")
+}
+
+func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, bottom *bottomEntry) {
+	panic("not impl")
+}
+
+func (p *Peer) interactWithClient(conn net.Conn, bitstring []byte) error {
+	//var flushing bool
+	recon := reconWithClient{}
+	msgChan := readAllMsgs(conn)
+	for !recon.isDone() {
+		bottom := recon.topBottom()
+		switch {
+		case bottom == nil:
+			req := recon.popRequest()
+			recon.sendRequest(p, req)
+		case bottom.state == reconStateFlushEnded:
+			recon.popBottom()
+			//flushing = false
+		case bottom.state == reconStateBottom:
+			// TODO: log queue length
+			msg, has := <-msgChan
+			if has {
+				recon.popBottom()
+				recon.handleReply(p, msg, bottom)
+			} else {
+				panic("not impl")
+			}
+		}
+	}
+	(&Done{}).marshal(conn)
+	p.RecoverChan <- &Recover{
+		RemoteAddr:     conn.RemoteAddr(),
+		RemoteElements: recon.rcvrSet}
+	return nil
 }

@@ -95,7 +95,7 @@ func (p *Peer) clientRecon(conn net.Conn) error {
 		return err
 	}
 	var respSet *ZSet = NewZSet()
-	for step := range p.interactAsClient(conn) {
+	for step := range p.interactWithServer(conn) {
 		if step.err != nil {
 			if step.err == ReconDone {
 				break
@@ -111,7 +111,7 @@ func (p *Peer) clientRecon(conn net.Conn) error {
 	return nil
 }
 
-func (p *Peer) interactAsClient(conn net.Conn) msgProgressChan {
+func (p *Peer) interactWithServer(conn net.Conn) msgProgressChan {
 	out := make(msgProgressChan)
 	go func() {
 		var resp *msgProgress
