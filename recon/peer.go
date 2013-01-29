@@ -46,6 +46,8 @@ type PTree interface {
 	Points() []*Zp
 	GetNodeKey([]byte) (PNode, error)
 	NumElements(PNode) int
+	ChildKeys([]byte) [][]byte
+	GetZzpElements(PNode) *ZSet
 }
 
 type PNode interface {
@@ -65,6 +67,7 @@ type ReconConfig interface {
 	Filters() []string
 	ReconThreshMult() int
 	GossipIntervalSecs() int
+	MaxOutstandingReconRequests() int
 }
 
 type serverStop chan interface{}
@@ -138,6 +141,8 @@ type reconWithClient struct {
 	requestQ []*requestEntry
 	bottomQ  []*bottomEntry
 	rcvrSet  *ZSet
+	flushing bool
+	conn net.Conn
 }
 
 func (rwc *reconWithClient) pushBottom(bottom *bottomEntry) {
@@ -177,6 +182,7 @@ func (rwc *reconWithClient) isDone() bool {
 	return len(rwc.requestQ) == 0 && len(rwc.bottomQ) == 0
 }
 
+// TODO: need to send error back on chan as well
 func readAllMsgs(r io.Reader) chan ReconMsg {
 	c := make(chan ReconMsg)
 	go func() {
@@ -193,16 +199,66 @@ func readAllMsgs(r io.Reader) chan ReconMsg {
 }
 
 func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) {
-	panic("not impl")
+	var msg ReconMsg
+	if req.node.IsLeaf() || (
+			p.Tree.NumElements(req.node) < p.Settings.MBar()) {
+		msg = &ReconRqstFull{
+			Prefix: req.key,
+			Elements: req.node.Elements() }
+	} else {
+		msg = &ReconRqstPoly{
+			Prefix: req.key,
+			Size: req.node.Size(),
+			Samples: req.node.SValues() }
+	}
+	msg.marshal(rwc.conn)
+	rwc.pushBottom(&bottomEntry{ requestEntry: req })
 }
 
-func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, bottom *bottomEntry) {
-	panic("not impl")
+func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry) (err error) {
+	switch m := msg.(type) {
+	case *SyncFail:
+		if req.node.IsLeaf() {
+			return errors.New("Syncfail received at leaf node")
+		}
+		children := p.Tree.ChildKeys(req.key)
+		var nodes []PNode
+		var node PNode
+		for _, key := range children {
+			node, err = p.Tree.GetNodeKey(key)
+			if err != nil {
+				return
+			}
+			nodes = append(nodes, node)
+		}
+/*
+    children in
+(* update requestQ with requests corresponding to
+   children of present node *)
+List.iter  ~f:(fun req -> Queue.push req requestQ)
+  (List.combine nodes children)
+*/
+	case *Elements:
+		rwc.rcvrSet.AddAll(m.ZSet)
+	case *FullElements:
+		local := p.Tree.GetZzpElements(req.node)
+		localdiff := ZSetDiff(local, m.ZSet)
+		remotediff := ZSetDiff(m.ZSet, local)
+		(&Elements{ ZSet: localdiff }).marshal(rwc.conn)
+		rwc.rcvrSet.AddAll(remotediff)
+	default:
+		err = errors.New(fmt.Sprintf("unexpected message: %v", m))
+	}
+	return
 }
 
-func (p *Peer) interactWithClient(conn net.Conn, bitstring []byte) error {
-	//var flushing bool
-	recon := reconWithClient{}
+func (rwc *reconWithClient) flushQueue() {
+	rwc.pushBottom(&bottomEntry{ state: reconStateFlushEnded })
+	rwc.flushing = true
+}
+
+func (p *Peer) interactWithClient(conn net.Conn, bitstring []byte) (err error) {
+	recon := reconWithClient{ conn: conn }
 	msgChan := readAllMsgs(conn)
 	for !recon.isDone() {
 		bottom := recon.topBottom()
@@ -212,21 +268,39 @@ func (p *Peer) interactWithClient(conn net.Conn, bitstring []byte) error {
 			recon.sendRequest(p, req)
 		case bottom.state == reconStateFlushEnded:
 			recon.popBottom()
-			//flushing = false
+			recon.flushing = false
 		case bottom.state == reconStateBottom:
 			// TODO: log queue length
-			msg, has := <-msgChan
-			if has {
-				recon.popBottom()
-				recon.handleReply(p, msg, bottom)
-			} else {
-				panic("not impl")
+			var msg ReconMsg
+			hasMsg := false
+			select {
+			case msg = <-msgChan:
+				hasMsg = true
 			}
+			if hasMsg {
+				recon.popBottom()
+				err = recon.handleReply(p, msg, bottom.requestEntry)
+			} else if (len(recon.bottomQ) > p.Settings.MaxOutstandingReconRequests() ||
+					len(recon.requestQ) == 0) {
+				if !recon.flushing {
+					recon.flushQueue()
+				} else {
+					recon.popBottom()
+					msg = <-msgChan
+					err = recon.handleReply(p, msg, bottom.requestEntry)
+				}
+			} else {
+				req := recon.popRequest()
+				recon.sendRequest(p, req)
+			}
+		}
+		if err != nil {
+			return
 		}
 	}
 	(&Done{}).marshal(conn)
 	p.RecoverChan <- &Recover{
 		RemoteAddr:     conn.RemoteAddr(),
 		RemoteElements: recon.rcvrSet}
-	return nil
+	return
 }
