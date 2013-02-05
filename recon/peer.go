@@ -52,6 +52,10 @@ type PTree interface {
 	GetNode([]byte) (PNode, error)
 	// Get the child keys of given key
 	ChildKeys([]byte) [][]byte
+	// Insert an integer
+	Insert(*Zp)
+	// Delete an integer
+	Delete(*Zp)
 }
 
 type PNode interface {
