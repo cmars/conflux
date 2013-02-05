@@ -27,7 +27,10 @@ import (
 	"fmt"
 	. "github.com/cmars/conflux"
 	"io"
+	"log"
 	"net"
+	"os"
+	"path/filepath"
 )
 
 type Response interface {
@@ -43,11 +46,12 @@ type Recover struct {
 type RecoverChan chan *Recover
 
 type PTree interface {
+	// Interpolation sample points
 	Points() []*Zp
-	GetNodeKey([]byte) (PNode, error)
-	NumElements(PNode) int
+	// Get the node for specified key
+	GetNode([]byte) (PNode, error)
+	// Get the child keys of given key
 	ChildKeys([]byte) [][]byte
-	GetZzpElements(PNode) *ZSet
 }
 
 type PNode interface {
@@ -79,11 +83,16 @@ type Peer struct {
 	RecoverChan  RecoverChan
 	Tree         PTree
 	Settings     ReconConfig
+	l            *log.Logger
 	stop         serverStop
 	gossipEnable gossipEnable
 }
 
 func (p *Peer) Start() {
+	if p.l == nil {
+		p.l = log.New(os.Stderr, fmt.Sprintf("[%s]", filepath.Base(os.Args[0])),
+			log.LstdFlags|log.Lshortfile)
+	}
 	p.stop = make(serverStop)
 	p.gossipEnable = make(gossipEnable)
 	go p.Serve()
@@ -98,7 +107,7 @@ func (p *Peer) Stop() {
 func (p *Peer) Serve() {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", p.Port))
 	if err != nil {
-		// TODO: log error
+		p.l.Print(err)
 		return
 	}
 	for {
@@ -110,12 +119,12 @@ func (p *Peer) Serve() {
 		}
 		conn, err := ln.Accept()
 		if err != nil {
-			// TODO: log error
+			p.l.Print(err)
 			continue
 		}
 		err = p.interactWithClient(conn, make([]byte, 0))
 		if err != nil {
-			// TODO: log error
+			p.l.Print(err)
 		}
 	}
 }
@@ -142,7 +151,7 @@ type reconWithClient struct {
 	bottomQ  []*bottomEntry
 	rcvrSet  *ZSet
 	flushing bool
-	conn net.Conn
+	conn     net.Conn
 }
 
 func (rwc *reconWithClient) pushBottom(bottom *bottomEntry) {
@@ -200,19 +209,18 @@ func readAllMsgs(r io.Reader) chan ReconMsg {
 
 func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) {
 	var msg ReconMsg
-	if req.node.IsLeaf() || (
-			p.Tree.NumElements(req.node) < p.Settings.MBar()) {
+	if req.node.IsLeaf() || (req.node.Size() < p.Settings.MBar()) {
 		msg = &ReconRqstFull{
-			Prefix: req.key,
-			Elements: req.node.Elements() }
+			Prefix:   req.key,
+			Elements: req.node.Elements()}
 	} else {
 		msg = &ReconRqstPoly{
-			Prefix: req.key,
-			Size: req.node.Size(),
-			Samples: req.node.SValues() }
+			Prefix:  req.key,
+			Size:    req.node.Size(),
+			Samples: req.node.SValues()}
 	}
 	msg.marshal(rwc.conn)
-	rwc.pushBottom(&bottomEntry{ requestEntry: req })
+	rwc.pushBottom(&bottomEntry{requestEntry: req})
 }
 
 func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry) (err error) {
@@ -222,29 +230,21 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 			return errors.New("Syncfail received at leaf node")
 		}
 		children := p.Tree.ChildKeys(req.key)
-		var nodes []PNode
 		var node PNode
 		for _, key := range children {
-			node, err = p.Tree.GetNodeKey(key)
+			node, err = p.Tree.GetNode(key)
 			if err != nil {
 				return
 			}
-			nodes = append(nodes, node)
+			rwc.pushRequest(&requestEntry{key: key, node: node})
 		}
-/*
-    children in
-(* update requestQ with requests corresponding to
-   children of present node *)
-List.iter  ~f:(fun req -> Queue.push req requestQ)
-  (List.combine nodes children)
-*/
 	case *Elements:
 		rwc.rcvrSet.AddAll(m.ZSet)
 	case *FullElements:
-		local := p.Tree.GetZzpElements(req.node)
+		local := req.node.Elements()
 		localdiff := ZSetDiff(local, m.ZSet)
 		remotediff := ZSetDiff(m.ZSet, local)
-		(&Elements{ ZSet: localdiff }).marshal(rwc.conn)
+		(&Elements{ZSet: localdiff}).marshal(rwc.conn)
 		rwc.rcvrSet.AddAll(remotediff)
 	default:
 		err = errors.New(fmt.Sprintf("unexpected message: %v", m))
@@ -253,12 +253,12 @@ List.iter  ~f:(fun req -> Queue.push req requestQ)
 }
 
 func (rwc *reconWithClient) flushQueue() {
-	rwc.pushBottom(&bottomEntry{ state: reconStateFlushEnded })
+	rwc.pushBottom(&bottomEntry{state: reconStateFlushEnded})
 	rwc.flushing = true
 }
 
 func (p *Peer) interactWithClient(conn net.Conn, bitstring []byte) (err error) {
-	recon := reconWithClient{ conn: conn }
+	recon := reconWithClient{conn: conn}
 	msgChan := readAllMsgs(conn)
 	for !recon.isDone() {
 		bottom := recon.topBottom()
@@ -270,7 +270,7 @@ func (p *Peer) interactWithClient(conn net.Conn, bitstring []byte) (err error) {
 			recon.popBottom()
 			recon.flushing = false
 		case bottom.state == reconStateBottom:
-			// TODO: log queue length
+			p.l.Print("Queue length:", len(recon.bottomQ))
 			var msg ReconMsg
 			hasMsg := false
 			select {
@@ -280,8 +280,8 @@ func (p *Peer) interactWithClient(conn net.Conn, bitstring []byte) (err error) {
 			if hasMsg {
 				recon.popBottom()
 				err = recon.handleReply(p, msg, bottom.requestEntry)
-			} else if (len(recon.bottomQ) > p.Settings.MaxOutstandingReconRequests() ||
-					len(recon.requestQ) == 0) {
+			} else if len(recon.bottomQ) > p.Settings.MaxOutstandingReconRequests() ||
+				len(recon.requestQ) == 0 {
 				if !recon.flushing {
 					recon.flushQueue()
 				} else {

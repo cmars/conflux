@@ -46,12 +46,12 @@ func (p *Peer) Gossip() {
 		}
 		peer, err := p.choosePartner()
 		if err != nil {
-			// TODO: log error
+			p.l.Print(err)
 			goto DELAY
 		}
 		err = p.initiateRecon(peer)
 		if err != nil {
-			// TODO: log recon client error
+			p.l.Print(err)
 		}
 	DELAY:
 		delay := time.Duration(p.Settings.GossipIntervalSecs()) * time.Second
@@ -147,7 +147,7 @@ func (p *Peer) handleReconRqstPoly(rp *ReconRqstPoly, conn net.Conn) *msgProgres
 	remoteSize := rp.Size
 	points := p.Tree.Points()
 	remoteSamples := rp.Samples
-	node, err := p.Tree.GetNodeKey(rp.Prefix)
+	node, err := p.Tree.GetNode(rp.Prefix)
 	if err == PNodeNotFound {
 		return &msgProgress{err: ReconRqstPolyNotFound}
 	}
@@ -156,7 +156,7 @@ func (p *Peer) handleReconRqstPoly(rp *ReconRqstPoly, conn net.Conn) *msgProgres
 	remoteSet, localSet, err := solve(
 		remoteSamples, localSamples, remoteSize, localSize, points)
 	if err == LowMBar {
-		if node.IsLeaf() || p.Tree.NumElements(node) < (p.Settings.ReconThreshMult()*p.Settings.MBar()) {
+		if node.IsLeaf() || node.Size() < (p.Settings.ReconThreshMult()*p.Settings.MBar()) {
 			(&FullElements{ZSet: node.Elements()}).marshal(conn)
 			return &msgProgress{elements: NewZSet()}
 		} else {
@@ -177,7 +177,7 @@ func solve(remoteSamples, localSamples []*Zp, remoteSize, localSize int, points 
 }
 
 func (p *Peer) handleReconRqstFull(rf *ReconRqstFull, conn net.Conn) *msgProgress {
-	node, err := p.Tree.GetNodeKey(rf.Prefix)
+	node, err := p.Tree.GetNode(rf.Prefix)
 	if err == PNodeNotFound {
 		return &msgProgress{err: ReconRqstPolyNotFound}
 	}
