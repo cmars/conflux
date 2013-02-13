@@ -46,6 +46,7 @@ type Recover struct {
 type RecoverChan chan *Recover
 
 type PTree interface {
+	Root() PNode
 	// Interpolation sample points
 	Points() []*Zp
 	// Get the node for specified key
@@ -263,6 +264,7 @@ func (rwc *reconWithClient) flushQueue() {
 
 func (p *Peer) interactWithClient(conn net.Conn, bitstring []byte) (err error) {
 	recon := reconWithClient{conn: conn}
+	recon.pushRequest(&requestEntry{ node: p.Tree.Root(), key: bitstring })
 	msgChan := readAllMsgs(conn)
 	for !recon.isDone() {
 		bottom := recon.topBottom()

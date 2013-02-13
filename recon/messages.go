@@ -71,12 +71,12 @@ func (msg *emptyMsg) marshal(w io.Writer) error { return nil }
 type textMsg struct{ Text string }
 
 func (msg *textMsg) unmarshal(r io.Reader) (err error) {
-	msg.Text, err = readString(r)
+	msg.Text, err = ReadString(r)
 	return
 }
 
 func (msg *textMsg) marshal(w io.Writer) error {
-	return writeString(w, msg.Text)
+	return WriteString(w, msg.Text)
 }
 
 type notImplMsg struct{}
@@ -89,23 +89,23 @@ func (msg *notImplMsg) marshal(w io.Writer) error {
 	panic("not implemented")
 }
 
-func readInt(r io.Reader) (n int, err error) {
+func ReadInt(r io.Reader) (n int, err error) {
 	buf := make([]byte, 4)
 	_, err = r.Read(buf)
 	n = int(binary.BigEndian.Uint32(buf))
 	return
 }
 
-func writeInt(w io.Writer, n int) (err error) {
+func WriteInt(w io.Writer, n int) (err error) {
 	buf := make([]byte, 4)
 	binary.BigEndian.PutUint32(buf, uint32(n))
 	_, err = w.Write(buf)
 	return
 }
 
-func readString(r io.Reader) (string, error) {
+func ReadString(r io.Reader) (string, error) {
 	var n int
-	n, err := readInt(r)
+	n, err := ReadInt(r)
 	if err != nil {
 		return "", err
 	}
@@ -114,8 +114,8 @@ func readString(r io.Reader) (string, error) {
 	return string(buf), err
 }
 
-func writeString(w io.Writer, text string) (err error) {
-	err = writeInt(w, len(text))
+func WriteString(w io.Writer, text string) (err error) {
+	err = WriteInt(w, len(text))
 	if err != nil {
 		return
 	}
@@ -123,9 +123,9 @@ func writeString(w io.Writer, text string) (err error) {
 	return
 }
 
-func readBitstring(r io.Reader) ([]byte, error) {
+func ReadBitstring(r io.Reader) ([]byte, error) {
 	var n int
-	n, err := readInt(r)
+	n, err := ReadInt(r)
 	if err != nil {
 		return nil, err
 	}
@@ -138,8 +138,8 @@ func readBitstring(r io.Reader) ([]byte, error) {
 	return buf, err
 }
 
-func writeBitstring(w io.Writer, buf []byte) (err error) {
-	err = writeInt(w, len(buf)*8)
+func WriteBitstring(w io.Writer, buf []byte) (err error) {
+	err = WriteInt(w, len(buf)*8)
 	if err != nil {
 		return
 	}
@@ -147,14 +147,14 @@ func writeBitstring(w io.Writer, buf []byte) (err error) {
 	return
 }
 
-func readZZarray(r io.Reader) ([]*Zp, error) {
-	n, err := readInt(r)
+func ReadZZarray(r io.Reader) ([]*Zp, error) {
+	n, err := ReadInt(r)
 	if err != nil {
 		return nil, err
 	}
 	arr := make([]*Zp, n)
 	for i := 0; i < n; i++ {
-		arr[i], err = readZp(r)
+		arr[i], err = ReadZp(r)
 		if err != nil {
 			return nil, err
 		}
@@ -162,13 +162,13 @@ func readZZarray(r io.Reader) ([]*Zp, error) {
 	return arr, nil
 }
 
-func writeZZarray(w io.Writer, arr []*Zp) (err error) {
-	err = writeInt(w, len(arr))
+func WriteZZarray(w io.Writer, arr []*Zp) (err error) {
+	err = WriteInt(w, len(arr))
 	if err != nil {
 		return
 	}
 	for _, z := range arr {
-		err = writeZp(w, z)
+		err = WriteZp(w, z)
 		if err != nil {
 			return
 		}
@@ -176,8 +176,8 @@ func writeZZarray(w io.Writer, arr []*Zp) (err error) {
 	return
 }
 
-func readZSet(r io.Reader) (*ZSet, error) {
-	arr, err := readZZarray(r)
+func ReadZSet(r io.Reader) (*ZSet, error) {
+	arr, err := ReadZZarray(r)
 	if err != nil {
 		return nil, err
 	}
@@ -186,11 +186,11 @@ func readZSet(r io.Reader) (*ZSet, error) {
 	return zset, nil
 }
 
-func writeZSet(w io.Writer, zset *ZSet) error {
-	return writeZZarray(w, zset.Items())
+func WriteZSet(w io.Writer, zset *ZSet) error {
+	return WriteZZarray(w, zset.Items())
 }
 
-func readZp(r io.Reader) (*Zp, error) {
+func ReadZp(r io.Reader) (*Zp, error) {
 	buf := make([]byte, sksZpNbytes)
 	_, err := r.Read(buf)
 	if err != nil {
@@ -202,7 +202,7 @@ func readZp(r io.Reader) (*Zp, error) {
 	return z, nil
 }
 
-func writeZp(w io.Writer, z *Zp) error {
+func WriteZp(w io.Writer, z *Zp) error {
 	_, err := w.Write(z.Int.Bytes())
 	return err
 }
@@ -218,28 +218,28 @@ func (msg *ReconRqstPoly) MsgType() MsgType {
 }
 
 func (msg *ReconRqstPoly) marshal(w io.Writer) (err error) {
-	err = writeBitstring(w, msg.Prefix)
+	err = WriteBitstring(w, msg.Prefix)
 	if err != nil {
 		return
 	}
-	err = writeInt(w, msg.Size)
+	err = WriteInt(w, msg.Size)
 	if err != nil {
 		return
 	}
-	err = writeZZarray(w, msg.Samples)
+	err = WriteZZarray(w, msg.Samples)
 	return
 }
 
 func (msg *ReconRqstPoly) unmarshal(r io.Reader) (err error) {
-	msg.Prefix, err = readBitstring(r)
+	msg.Prefix, err = ReadBitstring(r)
 	if err != nil {
 		return
 	}
-	msg.Size, err = readInt(r)
+	msg.Size, err = ReadInt(r)
 	if err != nil {
 		return
 	}
-	msg.Samples, err = readZZarray(r)
+	msg.Samples, err = ReadZZarray(r)
 	return
 }
 
@@ -253,20 +253,20 @@ func (msg *ReconRqstFull) MsgType() MsgType {
 }
 
 func (msg *ReconRqstFull) marshal(w io.Writer) (err error) {
-	err = writeBitstring(w, msg.Prefix)
+	err = WriteBitstring(w, msg.Prefix)
 	if err != nil {
 		return
 	}
-	err = writeZSet(w, msg.Elements)
+	err = WriteZSet(w, msg.Elements)
 	return
 }
 
 func (msg *ReconRqstFull) unmarshal(r io.Reader) (err error) {
-	msg.Prefix, err = readBitstring(r)
+	msg.Prefix, err = ReadBitstring(r)
 	if err != nil {
 		return
 	}
-	msg.Elements, err = readZSet(r)
+	msg.Elements, err = ReadZSet(r)
 	return
 }
 
@@ -279,12 +279,12 @@ func (msg *Elements) MsgType() MsgType {
 }
 
 func (msg *Elements) marshal(w io.Writer) (err error) {
-	err = writeZSet(w, msg.ZSet)
+	err = WriteZSet(w, msg.ZSet)
 	return
 }
 
 func (msg *Elements) unmarshal(r io.Reader) (err error) {
-	msg.ZSet, err = readZSet(r)
+	msg.ZSet, err = ReadZSet(r)
 	return
 }
 
@@ -297,12 +297,12 @@ func (msg *FullElements) MsgType() MsgType {
 }
 
 func (msg *FullElements) marshal(w io.Writer) (err error) {
-	err = writeZSet(w, msg.ZSet)
+	err = WriteZSet(w, msg.ZSet)
 	return
 }
 
 func (msg *FullElements) unmarshal(r io.Reader) (err error) {
-	msg.ZSet, err = readZSet(r)
+	msg.ZSet, err = ReadZSet(r)
 	return
 }
 
@@ -363,16 +363,16 @@ func (msg *Config) MsgType() MsgType {
 }
 
 func (msg *Config) marshal(w io.Writer) (err error) {
-	err = writeInt(w, len(msg.Contents))
+	err = WriteInt(w, len(msg.Contents))
 	if err != nil {
 		return
 	}
 	for k, v := range msg.Contents {
-		err = writeString(w, k)
+		err = WriteString(w, k)
 		if err != nil {
 			return
 		}
-		err = writeString(w, v)
+		err = WriteString(w, v)
 		if err != nil {
 			return
 		}
@@ -381,17 +381,17 @@ func (msg *Config) marshal(w io.Writer) (err error) {
 }
 
 func (msg *Config) unmarshal(r io.Reader) error {
-	n, err := readInt(r)
+	n, err := ReadInt(r)
 	if err != nil {
 		return err
 	}
 	msg.Contents = make(map[string]string)
 	for i := 0; i < n; i++ {
-		k, err := readString(r)
+		k, err := ReadString(r)
 		if err != nil {
 			return err
 		}
-		v, err := readString(r)
+		v, err := ReadString(r)
 		if err != nil {
 			return err
 		}
