@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"strings"
 	. "github.com/cmars/conflux"
@@ -33,7 +35,7 @@ func main() {
 			state = DataKeyState
 			continue
 		case state == HeaderState:
-			fmt.Printf("header: %s\n", line)
+			//fmt.Printf("header: %s\n", line)
 			continue
 		case line == "DATA=END":
 			return
@@ -75,15 +77,10 @@ func parseKey(line string) []byte {
 	return buf
 }
 
-type Bitstring struct {
-	Buf []byte
-	BitLen int
-}
-
 type Node struct {
 	SValues []*Zp
 	NumElements int
-	Key *Bitstring
+	Key *big.Int
 	Leaf bool
 	Fingerprints []*Zp
 }
@@ -126,12 +123,16 @@ func unmarshalNode(buf []byte, bitQuantum int, numSamples int) (node *Node, err 
 	if keyBits % 8 > 0 {
 		keyBytes++
 	}
+	if keyBytes <= 0 {
+		err = errors.New(fmt.Sprintf("Invalid bitstring length == %d", keyBytes))
+		return
+	}
 	keyData := make([]byte, keyBytes)
 	_, err = r.Read(keyData)
 	if err != nil {
 		return
 	}
-	key := &Bitstring{ Buf: keyData, BitLen: keyBits }
+	key := big.NewInt(int64(0)).SetBytes(keyData)
 	svalues := make([]*Zp, numSamples)
 	for i := 0; i < numSamples; i++ {
 		svalues[i], err = recon.ReadZp(r)
