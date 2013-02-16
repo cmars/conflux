@@ -25,9 +25,9 @@ package recon
 import (
 	_ "github.com/bmizerany/assert"
 	. "github.com/cmars/conflux"
+	"github.com/petar/GoLLRB/llrb"
 	"math/rand"
 	"testing"
-	"github.com/petar/GoLLRB/llrb"
 )
 
 /*
@@ -133,61 +133,61 @@ func TestPrefixTree(t *testing.T) {
 		addOrDelete(set, tree, 0.52)
 	}
 	panic("you shall not pass (until that commented code below is ported).")
-/*
-  let pt_set = PTree.elements tree (PTree.root tree) in
-  if Set.equal !set pt_set
-  then 
-    print_string "Set and PTree report identical elements\n"
-  else (
-    print_string "Failure: Set and PTree report different elements\n";
-    printf "Set:  \t%d, %s\n" (Set.cardinal !set) (ZZp.to_string (Set.min_elt !set));
-    printf "Tree: \t%d, %s\n" (Set.cardinal pt_set) (ZZp.to_string (Set.min_elt pt_set));
-    if Set.subset !set pt_set then
-      printf "set is subset of tree\n"
-    else if Set.subset pt_set !set then
-      printf "tree is susbet of set\n"
-    else 
-      printf "No subset relationship\n"
-      
-  );
+	/*
+	  let pt_set = PTree.elements tree (PTree.root tree) in
+	  if Set.equal !set pt_set
+	  then 
+	    print_string "Set and PTree report identical elements\n"
+	  else (
+	    print_string "Failure: Set and PTree report different elements\n";
+	    printf "Set:  \t%d, %s\n" (Set.cardinal !set) (ZZp.to_string (Set.min_elt !set));
+	    printf "Tree: \t%d, %s\n" (Set.cardinal pt_set) (ZZp.to_string (Set.min_elt pt_set));
+	    if Set.subset !set pt_set then
+	      printf "set is subset of tree\n"
+	    else if Set.subset pt_set !set then
+	      printf "tree is susbet of set\n"
+	    else 
+	      printf "No subset relationship\n"
 
-  if PTree.is_leaf (PTree.root tree) 
-  then print_string "Root is leaf\n";
+	  );
 
-  let points = PTree.points tree in
+	  if PTree.is_leaf (PTree.root tree) 
+	  then print_string "Root is leaf\n";
 
-  let rec verify key = 
-    let node = PTree.get_node_key tree key in
-    let elements = PTree.elements tree node in
-    let svalues_computed = compute_svalues points elements in
-    let svalues = PTree.svalues node in
-    if not (zza_equal svalues_computed svalues)
-    then (
-      print_vec svalues; print_newline ();
-      print_vec svalues_computed; print_newline ();
-      failwith "svalues do not match";
-    );
-    let len = Set.cardinal elements 
-    and reported_len = PTree.size node in
-    if not (len = reported_len)
-    then ( failwith 
-	     (sprintf "element size %d does not match reported size %d"
-		len reported_len ));
-    if debug 
-    then printf "Key: %s,\t num elements: %d\n" 
-      (Bitstring.to_string key) (Set.cardinal elements);
-    Set.iter ~f:(fun el -> 
-		   if not (keymatch ~key (ZZp.to_bytes el))
-		   then failwith "Elements don't match key!") elements;
-    let keys = PTree.child_keys tree key in
-    if not (PTree.is_leaf node) then
-      List.iter ~f:verify keys
-  in
-  try
-    verify (Bitstring.create 0);
-    print_string "Verification succesful\n";
-  with 
-      Failure s -> 
-	print_string (sprintf "Verification failed: %s\n" s);
-*/
+	  let points = PTree.points tree in
+
+	  let rec verify key = 
+	    let node = PTree.get_node_key tree key in
+	    let elements = PTree.elements tree node in
+	    let svalues_computed = compute_svalues points elements in
+	    let svalues = PTree.svalues node in
+	    if not (zza_equal svalues_computed svalues)
+	    then (
+	      print_vec svalues; print_newline ();
+	      print_vec svalues_computed; print_newline ();
+	      failwith "svalues do not match";
+	    );
+	    let len = Set.cardinal elements 
+	    and reported_len = PTree.size node in
+	    if not (len = reported_len)
+	    then ( failwith 
+		     (sprintf "element size %d does not match reported size %d"
+			len reported_len ));
+	    if debug 
+	    then printf "Key: %s,\t num elements: %d\n" 
+	      (Bitstring.to_string key) (Set.cardinal elements);
+	    Set.iter ~f:(fun el -> 
+			   if not (keymatch ~key (ZZp.to_bytes el))
+			   then failwith "Elements don't match key!") elements;
+	    let keys = PTree.child_keys tree key in
+	    if not (PTree.is_leaf node) then
+	      List.iter ~f:verify keys
+	  in
+	  try
+	    verify (Bitstring.create 0);
+	    print_string "Verification succesful\n";
+	  with 
+	      Failure s -> 
+		print_string (sprintf "Verification failed: %s\n" s);
+	*/
 }

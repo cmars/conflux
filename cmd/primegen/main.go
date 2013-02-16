@@ -28,7 +28,7 @@ import (
 )
 
 func main() {
-	for _, n := range []int{ 128, 160, 256, 512 } {
+	for _, n := range []int{128, 160, 256, 512} {
 		p, err := rand.Prime(rand.Reader, n+1)
 		if err != nil {
 			panic(err)
@@ -39,7 +39,7 @@ func main() {
 			if i > 0 {
 				fmt.Printf(",")
 			}
-			if i < len(data) - 1 && i % 8 == 0 {
+			if i < len(data)-1 && i%8 == 0 {
 				fmt.Printf("\n\t")
 			}
 			fmt.Printf("0x%x", b)

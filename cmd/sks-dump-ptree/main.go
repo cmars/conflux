@@ -27,15 +27,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
-	"strings"
 	. "github.com/cmars/conflux"
 	"github.com/cmars/conflux/recon"
+	"os"
+	"strings"
 )
 
 const (
-	HeaderState = 0
-	DataKeyState = iota
+	HeaderState    = 0
+	DataKeyState   = iota
 	DataValueState = iota
 )
 
@@ -93,12 +93,12 @@ func parseKey(line string) []byte {
 }
 
 type Node struct {
-	SValues []*Zp
-	NumElements int
-	Key *Bitstring
-	Leaf bool
+	SValues      []*Zp
+	NumElements  int
+	Key          *Bitstring
+	Leaf         bool
 	Fingerprints []*Zp
-	Children []*Bitstring
+	Children     []*Bitstring
 }
 
 func (n *Node) String() string {
@@ -134,7 +134,7 @@ func unmarshalNode(buf []byte, bitQuantum int, numSamples int) (node *Node, err 
 		return
 	}
 	keyBytes := keyBits / 8
-	if keyBits % 8 > 0 {
+	if keyBits%8 > 0 {
 		keyBytes++
 	}
 	if keyBytes <= 0 {
@@ -162,10 +162,10 @@ func unmarshalNode(buf []byte, bitQuantum int, numSamples int) (node *Node, err 
 		return
 	}
 	node = &Node{
-		SValues: svalues,
+		SValues:     svalues,
 		NumElements: numElements,
-		Key: key,
-		Leaf: b[0] == 1}
+		Key:         key,
+		Leaf:        b[0] == 1}
 	if node.Leaf {
 		var size int
 		size, err = recon.ReadInt(r)
@@ -178,13 +178,13 @@ func unmarshalNode(buf []byte, bitQuantum int, numSamples int) (node *Node, err 
 		}
 	} else {
 		for i := 0; i < 1<<uint(bitQuantum); i++ {
-			child := NewBitstring(key.BitLen()+bitQuantum)
+			child := NewBitstring(key.BitLen() + bitQuantum)
 			child.SetBytes(key.Bytes())
 			for j := 0; j < bitQuantum; j++ {
-				if i & (1<<uint(j)) != 0 {
-					child.Set(key.BitLen()+j)
+				if i&(1<<uint(j)) != 0 {
+					child.Set(key.BitLen() + j)
 				} else {
-					child.Unset(key.BitLen()+j)
+					child.Unset(key.BitLen() + j)
 				}
 			}
 			node.Children = append(node.Children, child)

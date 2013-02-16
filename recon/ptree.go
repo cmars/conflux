@@ -48,6 +48,9 @@ type PrefixNode interface {
 var NodeNotFoundError error = errors.New("Node not found")
 
 const memBitQuantum = 2
+const memMbar = 5
+const memPTreeThreshMult = 10
+
 var memRootKey *Bitstring = NewBitstring(memBitQuantum)
 
 type memPrefixTree struct {
@@ -55,15 +58,15 @@ type memPrefixTree struct {
 }
 
 type memPrefixNode struct {
-	key *Bitstring
+	key      *Bitstring
 	elements []*Zp
-	isLeaf bool
-	svalues []*Zp
+	isLeaf   bool
+	svalues  []*Zp
 }
 
 func NewMemPrefixTree() PrefixTree {
 	t := &memPrefixTree{}
-	t.nodes[string(memRootKey.Bytes())] = &memPrefixNode{ key: memRootKey }
+	t.nodes[string(memRootKey.Bytes())] = &memPrefixNode{key: memRootKey}
 	return t
 }
 
@@ -81,9 +84,9 @@ func (t *memPrefixTree) Root() (PrefixNode, error) {
 
 func (t *memPrefixTree) Points() []*Zp { panic("todo") }
 
-func (t *memPrefixTree) SplitThreshold() int { panic("todo") }
+func (t *memPrefixTree) SplitThreshold() int { return memThresh * memMbar }
 
-func (t *memPrefixTree) JoinThreshold() int { panic("todo") }
+func (t *memPrefixTree) JoinThreshold() int { return t.SplitThreshold() / 2 }
 
 func (t *memPrefixTree) BitQuantum() int { return memBitQuantum }
 
@@ -102,13 +105,13 @@ func (n *memPrefixNode) Elements() []*Zp {
 func (n *memPrefixNode) Children() []*Bitstring {
 	children := make([]*Bitstring, 1<<uint(memBitQuantum))
 	for i := 0; i < len(children); i++ {
-		child := NewBitstring(n.key.BitLen()+memBitQuantum)
+		child := NewBitstring(n.key.BitLen() + memBitQuantum)
 		child.SetBytes(n.key.Bytes())
 		for j := 0; j < memBitQuantum; j++ {
-			if i & (1<<uint(j)) != 0 {
-				child.Set(n.key.BitLen()+j)
+			if i&(1<<uint(j)) != 0 {
+				child.Set(n.key.BitLen() + j)
 			} else {
-				child.Unset(n.key.BitLen()+j)
+				child.Unset(n.key.BitLen() + j)
 			}
 		}
 		children[i] = child

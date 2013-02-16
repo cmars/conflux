@@ -23,21 +23,21 @@ package conflux
 
 import (
 	"bytes"
-	"math/big"
 	"fmt"
+	"math/big"
 )
 
 type Bitstring struct {
-	buf []byte
+	buf  []byte
 	bits int
 }
 
 func NewBitstring(bits int) *Bitstring {
 	n := bits / 8
-	if bits % 8 != 0 {
+	if bits%8 != 0 {
 		n++
 	}
-	return &Bitstring{ buf: make([]byte, n), bits: bits }
+	return &Bitstring{buf: make([]byte, n), bits: bits}
 }
 
 func (bs *Bitstring) BitLen() int {
@@ -54,7 +54,7 @@ func (bs *Bitstring) bitIndex(bit int) (int, uint) {
 
 func (bs *Bitstring) Get(bit int) int {
 	bytePos, bitPos := bs.bitIndex(bit)
-	if (bs.buf[bytePos] & (byte(1)<<(8-bitPos-1))) != 0 {
+	if (bs.buf[bytePos] & (byte(1) << (8 - bitPos - 1))) != 0 {
 		return 1
 	}
 	return 0
@@ -62,17 +62,17 @@ func (bs *Bitstring) Get(bit int) int {
 
 func (bs *Bitstring) Set(bit int) {
 	bytePos, bitPos := bs.bitIndex(bit)
-	bs.buf[bytePos] |= (byte(1)<<(8-bitPos-1))
+	bs.buf[bytePos] |= (byte(1) << (8 - bitPos - 1))
 }
 
 func (bs *Bitstring) Unset(bit int) {
 	bytePos, bitPos := bs.bitIndex(bit)
-	bs.buf[bytePos] &^= (byte(1)<<(8-bitPos-1))
+	bs.buf[bytePos] &^= (byte(1) << (8 - bitPos - 1))
 }
 
 func (bs *Bitstring) Flip(bit int) {
 	bytePos, bitPos := bs.bitIndex(bit)
-	bs.buf[bytePos] ^= (byte(1)<<(8-bitPos-1))
+	bs.buf[bytePos] ^= (byte(1) << (8 - bitPos - 1))
 }
 
 func (bs *Bitstring) SetBytes(buf []byte) {
@@ -85,7 +85,7 @@ func (bs *Bitstring) SetBytes(buf []byte) {
 	}
 	bytePos, bitPos := bs.bitIndex(bs.bits)
 	if bitPos != 0 {
-		mask := ^((byte(1)<<(8-bitPos))-1)
+		mask := ^((byte(1) << (8 - bitPos)) - 1)
 		bs.buf[bytePos] &= mask
 	}
 }
@@ -115,4 +115,3 @@ func (bs *Bitstring) Bytes() []byte {
 	w.Write(bs.buf)
 	return w.Bytes()
 }
-
