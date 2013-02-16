@@ -49,12 +49,14 @@ var NodeNotFoundError error = errors.New("Node not found")
 
 const memBitQuantum = 2
 const memMbar = 5
-const memPTreeThreshMult = 10
+const memThreshMult = 10
+const memNumSamples = memMbar + 1
 
 var memRootKey *Bitstring = NewBitstring(memBitQuantum)
 
 type memPrefixTree struct {
 	nodes map[string]*memPrefixNode
+	points []*Zp
 }
 
 type memPrefixNode struct {
@@ -67,6 +69,7 @@ type memPrefixNode struct {
 func NewMemPrefixTree() PrefixTree {
 	t := &memPrefixTree{}
 	t.nodes[string(memRootKey.Bytes())] = &memPrefixNode{key: memRootKey}
+	t.points = Zpoints(P_SKS, memNumSamples)
 	return t
 }
 
@@ -82,9 +85,9 @@ func (t *memPrefixTree) Root() (PrefixNode, error) {
 	return t.Node(memRootKey)
 }
 
-func (t *memPrefixTree) Points() []*Zp { panic("todo") }
+func (t *memPrefixTree) Points() []*Zp { return t.points }
 
-func (t *memPrefixTree) SplitThreshold() int { return memThresh * memMbar }
+func (t *memPrefixTree) SplitThreshold() int { return memThreshMult * memMbar }
 
 func (t *memPrefixTree) JoinThreshold() int { return t.SplitThreshold() / 2 }
 
