@@ -46,7 +46,8 @@ type PrefixNode interface {
 	IsLeaf() bool
 }
 
-var NodeNotFoundError error = errors.New("Node not found")
+var NodeNotFoundErr error = errors.New("Node not found")
+var IndexOutOfRangeErr error = errors.New("Index out of range")
 
 const memBitQuantum = 2
 const memMbar = 5
@@ -81,7 +82,7 @@ func (t *memPrefixTree) Node(key *Bitstring) (PrefixNode, error) {
 	if has {
 		return node, nil
 	}
-	return nil, NodeNotFoundError
+	return nil, NodeNotFoundErr
 }
 
 func (t *memPrefixTree) Root() (PrefixNode, error) {
@@ -123,15 +124,18 @@ func (t *memPrefixTree) insertAtDepth(z *Zp, marray []*Zp) (err error) {
 			if len(node.Elements()) > t.SplitThreshold() {
 				t.splitAtDepth(node, z, depth)
 			}
-			return
+			return nil
 		} else {
 			// Keep adding to node until leaf is reached
 			cIndex := t.stringIndex(z, depth)
-			prefixNode = t.loadChild(node, cIndex)
+			prefixNode, err = t.loadChild(node, cIndex)
+			if err != nil {
+				return err
+			}
 			node = prefixNode.(*memPrefixNode)
 		}
 	}
-	return
+	panic("unreachable")
 }
 
 func (n *memPrefixNode) Add(z *Zp, marray []*Zp) {
@@ -146,6 +150,9 @@ func (n *memPrefixNode) Add(z *Zp, marray []*Zp) {
 }
 
 func (t *memPrefixTree) splitAtDepth(node PrefixNode, z *Zp, depth int) {
+	if !node.IsLeaf() {
+		panic("Cannot split non-leaf node")
+	}
 	panic("TODO")
 }
 
@@ -171,37 +178,13 @@ func (t *memPrefixTree) stringIndex(z *Zp, depth int) int {
 	return key1 | key2
 }
 
-func (t *memPrefixTree) loadChild(node PrefixNode, cIndex int) PrefixNode {
-	panic("TODO")
+func (t *memPrefixTree) loadChild(node PrefixNode, cIndex int) (PrefixNode, error) {
+	if cIndex < len(node.Children()) {
+		key := node.Children()[cIndex]
+		return t.Node(key)
+	}
+	return nil, IndexOutOfRangeErr
 }
-
-/*
-let rec insert_at_depth t zz zzs node marray depth =
-  add_to_node t node zz zzs marray;
-  (match node.children with
-     | Leaf elements ->
-     if node.num_elements > t.split_thresh
-     then split_at_depth t zz zzs node depth
-     | Children children -> (* insertion must continue at next depth *)
-     let cindex = string_index t depth zzs in
-     let cnode = load_child t children cindex in
-     insert_at_depth t zz zzs cnode marray (depth + 1)
-  )
-*/
-
-/*
-let add_to_node t node zz zzs marray =
-  ZZp.mult_array ~svalues:node.svalues marray;
-  node.num_elements <- node.num_elements + 1;
-  node.wstatus <- Dirty;
-  match node.children with
-    | Leaf elements ->
-    node.children <-
-    if Set.mem zzs elements
-    then failwith "add_to_node: attempt to reinsert element into prefix tree"
-    else Leaf (Set.add zzs elements)
-    | _ -> ()
-*/
 
 func (t *memPrefixTree) prune() error {
 	panic("todo")
