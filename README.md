@@ -16,3 +16,8 @@ This algorithm is described in the papers, ["Set Reconciliation with
 Nearly Optimal Communication Complexity"](http://ipsit.bu.edu/documents/ieee-it3-web.pdf) and 
 ["Practical Set Reconciliation"](http://ipsit.bu.edu/documents/BUTR2002-01.ps).
 
+The reconciliation algorithm are released under the GNU General Public License version 3.
+The reconciliation network protocol and prefix tree data storage interfaces
+are released under the Affero General Public License version 3.
+
+Copyright (C) 2012  Casey Marshall <casey.marshall@gmail.com>
