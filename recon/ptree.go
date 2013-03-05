@@ -33,7 +33,7 @@ type PrefixTree interface {
 	JoinThreshold() int
 	BitQuantum() int
 	Insert(z *Zp) error
-	Remove(z *Zp) error
+	Delete(z *Zp) error
 }
 
 type PrefixNode interface {
@@ -103,10 +103,6 @@ func (t *memPrefixTree) Insert(z *Zp) (err error) {
 		marray = append(marray, Z(z.P).Add(z, point))
 	}
 	err = t.insertAtDepth(z, marray)
-	if err != nil {
-		return
-	}
-	err = t.prune()
 	return
 }
 
@@ -149,11 +145,27 @@ func (n *memPrefixNode) Add(z *Zp, marray []*Zp) {
 	n.elements = append(n.elements, z)
 }
 
-func (t *memPrefixTree) splitAtDepth(node PrefixNode, z *Zp, depth int) {
+func (t *memPrefixTree) splitAtDepth(node PrefixNode, z *Zp, depth int) error {
 	if !node.IsLeaf() {
 		panic("Cannot split non-leaf node")
 	}
-	panic("TODO")
+	for _, childKey := range node.Children() {
+		childNode := &memPrefixNode{ memPrefixTree: t, key: childKey }
+		t.nodes[string(childKey.Bytes())] = childNode
+	}
+	for _, z := range node.Elements() {
+		cIndex := t.stringIndex(z, depth)
+		var marray []*Zp
+		for _, point := range t.Points() {
+			marray = append(marray, Z(z.P).Add(z, point))
+		}
+		childNode, err := t.loadChild(node, cIndex)
+		if err != nil {
+			return err
+		}
+		childNode.Add(z, marray)
+	}
+	return nil
 }
 
 func rmask(i int) int { return 0xff << uint(8-i) }
@@ -179,18 +191,17 @@ func (t *memPrefixTree) stringIndex(z *Zp, depth int) int {
 }
 
 func (t *memPrefixTree) loadChild(node PrefixNode, cIndex int) (PrefixNode, error) {
-	if cIndex < len(node.Children()) {
-		key := node.Children()[cIndex]
+	children := node.Children()
+	if cIndex < len(children) {
+		key := children[cIndex]
 		return t.Node(key)
 	}
 	return nil, IndexOutOfRangeErr
 }
 
-func (t *memPrefixTree) prune() error {
-	panic("todo")
+func (t *memPrefixTree) Delete(z *Zp) error {
+	panic("TODO")
 }
-
-func (t *memPrefixTree) Remove(z *Zp) error { panic("todo") }
 
 func (n *memPrefixNode) Key() *Bitstring {
 	return n.key
