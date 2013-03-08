@@ -22,6 +22,7 @@ package recon
 
 import (
 	"errors"
+	"fmt"
 	. "github.com/cmars/conflux"
 )
 
@@ -39,7 +40,7 @@ type PrefixTree interface {
 type PrefixNode interface {
 	Key() *Bitstring
 	Elements() []*Zp
-	Children() []*Bitstring
+	ChildKeys() []*Bitstring
 	Size() int
 	SValues() []*Zp
 	Add(z *Zp, marray []*Zp)
@@ -70,11 +71,19 @@ type memPrefixNode struct {
 }
 
 func NewMemPrefixTree() PrefixTree {
-	t := &memPrefixTree{}
-	t.nodes[string(memRootKey.Bytes())] = &memPrefixNode{
-		memPrefixTree: t, key: memRootKey}
+	t := &memPrefixTree{nodes: make(map[string]*memPrefixNode)}
 	t.points = Zpoints(P_SKS, memNumSamples)
+	t.nodes[string(memRootKey.Bytes())] = newMemPrefixNode(t, memRootKey).(*memPrefixNode)
 	return t
+}
+
+func newMemPrefixNode(t *memPrefixTree, key *Bitstring) PrefixNode {
+	n := &memPrefixNode{memPrefixTree: t, key: key}
+	n.svalues = make([]*Zp, len(n.memPrefixTree.points))
+	for i := 0; i < len(n.svalues); i++ {
+		n.svalues[i] = Zi(P_SKS, 1)
+	}
+	return n
 }
 
 func (t *memPrefixTree) Node(key *Bitstring) (PrefixNode, error) {
@@ -158,13 +167,30 @@ func (n *memPrefixNode) Add(z *Zp, marray []*Zp) {
 	n.elements = append(n.elements, z)
 }
 
+func (n *memPrefixNode) Remove(z *Zp, marray []*Zp) {
+	if len(marray) != len(n.Points()) {
+		panic("array sizes do not match")
+	}
+	for i := 0; i < len(marray); i++ {
+		n.svalues[i] = Z(z.P).Mul(n.svalues[i], marray[i])
+	}
+	// TODO: assert element already exists at node
+	var newElements []*Zp
+	for _, elt := range n.elements {
+		if elt.Cmp(z) != 0 {
+			newElements = append(newElements, elt)
+		}
+	}
+	n.elements = newElements
+}
+
 func (t *memPrefixTree) splitAtDepth(node PrefixNode, z *Zp, depth int) error {
 	if !node.IsLeaf() {
 		panic("Cannot split non-leaf node")
 	}
-	for _, childKey := range node.Children() {
-		childNode := &memPrefixNode{memPrefixTree: t, key: childKey}
-		t.nodes[string(childKey.Bytes())] = childNode
+	for _, childKey := range node.ChildKeys() {
+		childNode := newMemPrefixNode(t, childKey)
+		t.nodes[string(childKey.Bytes())] = childNode.(*memPrefixNode)
 	}
 	for _, z := range node.Elements() {
 		cIndex := t.stringIndex(z, depth)
@@ -201,7 +227,7 @@ func (t *memPrefixTree) stringIndex(z *Zp, depth int) int {
 }
 
 func (t *memPrefixTree) loadChild(node PrefixNode, cIndex int) (PrefixNode, error) {
-	children := node.Children()
+	children := node.ChildKeys()
 	if cIndex < len(children) {
 		key := children[cIndex]
 		return t.Node(key)
@@ -222,18 +248,55 @@ func (t *memPrefixTree) deleteAtDepth(z *Zp, marray []*Zp) error {
 	node := prefixNode.(*memPrefixNode)
 	for depth := 0; ; depth++ {
 		// Delete from node
-		node.deleteAtDepth(z, marray)
+		node.Remove(z, marray)
 		if !node.isLeaf {
-			// Split if number of elements beyond threshold
+			// Join if number of elements below threshold
 			if len(node.Elements()) <= t.JoinThreshold() {
-				panic("TODO: turn node into leaf")
+				var newElements []*Zp
+				for elt := range node.allElements() {
+					if elt.Cmp(z) != 0 {
+						newElements = append(newElements, elt)
+					}
+				}
+				node.elements = newElements
+				node.isLeaf = true
+				return nil
 			} else {
-				panic("TODO: remove elements from leaf")
+				// Keep adding to node until leaf is reached
+				cIndex := t.stringIndex(z, depth)
+				prefixNode, err = t.loadChild(node, cIndex)
+				if err != nil {
+					return err
+				}
+				node = prefixNode.(*memPrefixNode)
 			}
-			node = prefixNode.(*memPrefixNode)
+		} else {
+			return nil
 		}
 	}
 	return nil
+}
+
+func (n *memPrefixNode) allElements() (chan *Zp) {
+	iter := make(chan *Zp)
+	go func(){
+		nodes := []*memPrefixNode{n}
+		for len(nodes) > 0 {
+			node := nodes[len(nodes)-1]
+			fmt.Println(node.key)
+			for _, elt := range node.Elements() {
+				iter <- elt
+			}
+			nodes = nodes[:len(nodes)-1]
+			fmt.Println("len=", len(nodes))
+			for _, childNode := range node.ChildNodes() {
+				nodes = append(nodes, childNode.(*memPrefixNode))
+			}
+			fmt.Println("len=", len(nodes))
+		}
+		close(iter)
+	}()
+	return iter
 }
 
 func (n *memPrefixNode) Key() *Bitstring {
@@ -248,7 +311,20 @@ func (n *memPrefixNode) Elements() []*Zp {
 	return n.elements
 }
 
-func (n *memPrefixNode) Children() []*Bitstring {
+func (n *memPrefixNode) ChildNodes() (result []PrefixNode) {
+	if n.isLeaf {
+		return
+	}
+	for _, key := range n.ChildKeys() {
+		childNode, has := n.memPrefixTree.nodes[string(key.Bytes())]
+		if has && string(n.key.Bytes()) != string(childNode.key.Bytes()) {
+			result = append(result, childNode)
+		}
+	}
+	return
+}
+
+func (n *memPrefixNode) ChildKeys() []*Bitstring {
 	children := make([]*Bitstring, 1<<uint(memBitQuantum))
 	for i := 0; i < len(children); i++ {
 		child := NewBitstring(n.key.BitLen() + memBitQuantum)
