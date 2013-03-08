@@ -97,11 +97,24 @@ func (t *memPrefixTree) JoinThreshold() int { return t.SplitThreshold() / 2 }
 
 func (t *memPrefixTree) BitQuantum() int { return memBitQuantum }
 
-func (t *memPrefixTree) Insert(z *Zp) (err error) {
+func addElementArray(z *Zp, points []*Zp) []*Zp {
 	var marray []*Zp
-	for _, point := range t.Points() {
+	for _, point := range points {
 		marray = append(marray, Z(z.P).Add(z, point))
 	}
+	return marray
+}
+
+func delElementArray(z *Zp, points []*Zp) []*Zp {
+	var marray []*Zp
+	for _, point := range points {
+		marray = append(marray, Z(z.P).Add(z, point).Inv())
+	}
+	return marray
+}
+
+func (t *memPrefixTree) Insert(z *Zp) (err error) {
+	marray := addElementArray(z, t.Points())
 	err = t.insertAtDepth(z, marray)
 	return
 }
@@ -150,15 +163,12 @@ func (t *memPrefixTree) splitAtDepth(node PrefixNode, z *Zp, depth int) error {
 		panic("Cannot split non-leaf node")
 	}
 	for _, childKey := range node.Children() {
-		childNode := &memPrefixNode{ memPrefixTree: t, key: childKey }
+		childNode := &memPrefixNode{memPrefixTree: t, key: childKey}
 		t.nodes[string(childKey.Bytes())] = childNode
 	}
 	for _, z := range node.Elements() {
 		cIndex := t.stringIndex(z, depth)
-		var marray []*Zp
-		for _, point := range t.Points() {
-			marray = append(marray, Z(z.P).Add(z, point))
-		}
+		marray := addElementArray(z, t.Points())
 		childNode, err := t.loadChild(node, cIndex)
 		if err != nil {
 			return err
@@ -200,7 +210,30 @@ func (t *memPrefixTree) loadChild(node PrefixNode, cIndex int) (PrefixNode, erro
 }
 
 func (t *memPrefixTree) Delete(z *Zp) error {
-	panic("TODO")
+	marray := delElementArray(z, t.Points())
+	return t.deleteAtDepth(z, marray)
+}
+
+func (t *memPrefixTree) deleteAtDepth(z *Zp, marray []*Zp) error {
+	prefixNode, err := t.Root()
+	if err != nil {
+		return err
+	}
+	node := prefixNode.(*memPrefixNode)
+	for depth := 0; ; depth++ {
+		// Delete from node
+		node.deleteAtDepth(z, marray)
+		if !node.isLeaf {
+			// Split if number of elements beyond threshold
+			if len(node.Elements()) <= t.JoinThreshold() {
+				panic("TODO: turn node into leaf")
+			} else {
+				panic("TODO: remove elements from leaf")
+			}
+			node = prefixNode.(*memPrefixNode)
+		}
+	}
+	return nil
 }
 
 func (n *memPrefixNode) Key() *Bitstring {
