@@ -77,9 +77,10 @@ func parseValue(line string) []byte {
 	}
 	node, err := unmarshalNode(buf, 2, 6)
 	if err != nil {
+		//fmt.Printf("value err: %v\n", err)
 		return nil
 	}
-	fmt.Printf("%v\n", node)
+	fmt.Printf("value: %v\n", node)
 	return buf
 }
 
@@ -88,7 +89,7 @@ func parseKey(line string) []byte {
 	if err != nil {
 		return nil
 	}
-	fmt.Printf("%x\n", buf)
+	fmt.Printf("key: %x\n", buf)
 	return buf
 }
 
@@ -137,7 +138,7 @@ func unmarshalNode(buf []byte, bitQuantum int, numSamples int) (node *Node, err 
 	if keyBits%8 > 0 {
 		keyBytes++
 	}
-	if keyBytes <= 0 {
+	if keyBytes < 0 {
 		err = errors.New(fmt.Sprintf("Invalid bitstring length == %d", keyBytes))
 		return
 	}
