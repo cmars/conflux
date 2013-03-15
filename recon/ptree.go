@@ -1,350 +1,155 @@
-/*
-   conflux - Distributed database synchronization library
-	Based on the algorithm described in
-		"Set Reconciliation with Nearly Optimal	Communication Complexity",
-			Yaron Minsky, Ari Trachtenberg, and Richard Zippel, 2004.
-
-   Copyright (C) 2012  Casey Marshall <casey.marshall@gmail.com>
-
-   This program is free software: you can redistribute it and/or modify
-   it under the terms of the GNU Affero General Public License as published by
-   the Free Software Foundation, version 3.
-
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU Affero General Public License for more details.
-
-   You should have received a copy of the GNU Affero General Public License
-   along with this program.  If not, see <http://www.gnu.org/licenses/>.
-*/
 package recon
 
 import (
-	"errors"
-	"fmt"
 	. "github.com/cmars/conflux"
 )
 
-type PrefixTree interface {
-	Node(key *Bitstring) (PrefixNode, error)
-	Root() (PrefixNode, error)
-	Points() []*Zp
-	SplitThreshold() int
-	JoinThreshold() int
-	BitQuantum() int
-	Insert(z *Zp) error
-	Delete(z *Zp) error
-}
+const DefaultBitQuantum = 2
+const DefaultSplitThreshold = 2
+const DefaultJoinThreshold = 2
+const DefaultMBar = 5
+const DefaultNumSamples = DefaultMBar + 1
 
-type PrefixNode interface {
-	Key() *Bitstring
-	Elements() []*Zp
-	ChildKeys() []*Bitstring
-	Size() int
-	SValues() []*Zp
-	Add(z *Zp, marray []*Zp)
-	IsLeaf() bool
-}
-
-var NodeNotFoundErr error = errors.New("Node not found")
-var IndexOutOfRangeErr error = errors.New("Index out of range")
-
-const memBitQuantum = 2
-const memMbar = 5
-const memThreshMult = 10
-const memNumSamples = memMbar + 1
-
-var memRootKey *Bitstring = NewBitstring(memBitQuantum)
-
-type memPrefixTree struct {
-	nodes  map[string]*memPrefixNode
+type PrefixTree struct {
+	// Tree configuration options
+	SplitThreshold int
+	JoinThreshold int
+	BitQuantum int
+	MBar int
+	NumSamples int
+	// Sample data points for interpolation
 	points []*Zp
+	// Tree's root node
+	root *PrefixNode
 }
 
-type memPrefixNode struct {
-	*memPrefixTree
-	key      *Bitstring
-	elements []*Zp
-	isLeaf   bool
-	svalues  []*Zp
-}
-
-func NewMemPrefixTree() PrefixTree {
-	t := &memPrefixTree{nodes: make(map[string]*memPrefixNode)}
-	t.points = Zpoints(P_SKS, memNumSamples)
-	t.nodes[string(memRootKey.Bytes())] = newMemPrefixNode(t, memRootKey).(*memPrefixNode)
-	return t
-}
-
-func newMemPrefixNode(t *memPrefixTree, key *Bitstring) PrefixNode {
-	n := &memPrefixNode{memPrefixTree: t, key: key}
-	n.svalues = make([]*Zp, len(n.memPrefixTree.points))
-	for i := 0; i < len(n.svalues); i++ {
-		n.svalues[i] = Zi(P_SKS, 1)
+// Init configures the tree with default settings if not already set,
+// and initializes the internal state with sample data points, root node, etc.
+func (t *PrefixTree) Init() {
+	if t.BitQuantum == 0 {
+		t.BitQuantum = DefaultBitQuantum
 	}
-	return n
-}
-
-func (t *memPrefixTree) Node(key *Bitstring) (PrefixNode, error) {
-	node, has := t.nodes[string(key.Bytes())]
-	if has {
-		return node, nil
+	if t.SplitThreshold == 0 {
+		t.SplitThreshold = DefaultSplitThreshold
 	}
-	return nil, NodeNotFoundErr
+	if t.JoinThreshold == 0 {
+		t.JoinThreshold = DefaultJoinThreshold
+	}
+	if t.MBar == 0 {
+		t.MBar = DefaultMBar
+	}
+	if t.NumSamples == 0 {
+		t.NumSamples = DefaultNumSamples
+	}
+	t.points = Zpoints(P_SKS, t.NumSamples)
+	t.root = new(PrefixNode)
+	t.root.init(t)
 }
 
-func (t *memPrefixTree) Root() (PrefixNode, error) {
-	return t.Node(memRootKey)
-}
-
-func (t *memPrefixTree) Points() []*Zp { return t.points }
-
-func (t *memPrefixTree) SplitThreshold() int { return memThreshMult * memMbar }
-
-func (t *memPrefixTree) JoinThreshold() int { return t.SplitThreshold() / 2 }
-
-func (t *memPrefixTree) BitQuantum() int { return memBitQuantum }
-
-func addElementArray(z *Zp, points []*Zp) []*Zp {
-	var marray []*Zp
-	for _, point := range points {
+func (t *PrefixTree) addElementArray(z *Zp) (marray []*Zp) {
+	for _, point := range t.points {
 		marray = append(marray, Z(z.P).Add(z, point))
 	}
-	return marray
+	return
 }
 
-func delElementArray(z *Zp, points []*Zp) []*Zp {
-	var marray []*Zp
-	for _, point := range points {
+func (t *PrefixTree) delElementArray(z *Zp) (marray []*Zp) {
+	for _, point := range t.points {
 		marray = append(marray, Z(z.P).Add(z, point).Inv())
 	}
-	return marray
-}
-
-func (t *memPrefixTree) Insert(z *Zp) (err error) {
-	marray := addElementArray(z, t.Points())
-	err = t.insertAtDepth(z, marray)
 	return
 }
 
-func (t *memPrefixTree) insertAtDepth(z *Zp, marray []*Zp) (err error) {
-	prefixNode, err := t.Root()
-	if err != nil {
-		return
-	}
-	node := prefixNode.(*memPrefixNode)
-	for depth := 0; ; depth++ {
-		// Add to node
-		node.Add(z, marray)
-		if node.isLeaf {
-			// Split if number of elements beyond threshold
-			if len(node.Elements()) > t.SplitThreshold() {
-				t.splitAtDepth(node, z, depth)
-			}
-			return nil
-		} else {
-			// Keep adding to node until leaf is reached
-			cIndex := t.stringIndex(z, depth)
-			prefixNode, err = t.loadChild(node, cIndex)
-			if err != nil {
-				return err
-			}
-			node = prefixNode.(*memPrefixNode)
-		}
-	}
-	panic("unreachable")
+// Insert a Z/Zp integer into the prefix tree
+func (t *PrefixTree) Insert(z *Zp) error {
+	return t.root.insert(z, t.addElementArray(z))
 }
 
-func (n *memPrefixNode) Add(z *Zp, marray []*Zp) {
-	if len(marray) != len(n.Points()) {
-		panic("array sizes do not match")
+// Remove a Z/Zp integer from the prefix tree
+func (t *PrefixTree) Remove(z *Zp) error {
+	return t.root.remove(z, t.delElementArray(z))
+}
+
+type PrefixNode struct {
+	// All nodes share the tree definition as a common context
+	*PrefixTree
+	// Parent of this node. Root's parent == nil
+	parent *PrefixNode
+	// Child nodes, indexed by bitstring counting order
+	// Each node will have 2**bitquantum children when leaf == false
+	children []*PrefixNode
+	// Zp elements stored at this node, if it's a leaf node
+	elements []*Zp
+	// Sample values at this node
+	svalues []*Zp
+}
+
+func (n *PrefixNode) init(t *PrefixTree) {
+	n.PrefixTree = t
+	n.svalues = make([]*Zp, t.NumSamples)
+	for i := 0; i < t.NumSamples; i++ {
+		n.svalues[i] = Zi(P_SKS, 1)
+	}
+}
+
+func (n *PrefixNode) IsLeaf() bool {
+	return len(n.children) == 0
+}
+
+func (n *PrefixNode) insert(z *Zp, marray []*Zp) error {
+	n.updateSvalues(z, marray)
+	if n.IsLeaf() {
+		if len(n.elements) > n.SplitThreshold {
+			n.split()
+		} else {
+			n.elements = append(n.elements, z)
+			return nil
+		}
+	}
+	child := n.nextChild(z)
+	return child.insert(z, marray)
+}
+
+func (n *PrefixNode) split() {
+	panic("TODO")
+}
+
+func (n *PrefixNode) nextChild(z *Zp) *PrefixNode {
+	panic("TODO")
+}
+
+func (n *PrefixNode) updateSvalues(z *Zp, marray []*Zp) {
+	if len(marray) != len(n.points) {
+		panic("Inconsistent NumSamples size")
 	}
 	for i := 0; i < len(marray); i++ {
 		n.svalues[i] = Z(z.P).Mul(n.svalues[i], marray[i])
 	}
-	// TODO: if not leaf, check that element does not already exist at node
-	n.elements = append(n.elements, z)
 }
 
-func (n *memPrefixNode) Remove(z *Zp, marray []*Zp) {
-	if len(marray) != len(n.Points()) {
-		panic("array sizes do not match")
-	}
-	for i := 0; i < len(marray); i++ {
-		n.svalues[i] = Z(z.P).Mul(n.svalues[i], marray[i])
-	}
-	// TODO: assert element already exists at node
-	var newElements []*Zp
-	for _, elt := range n.elements {
-		if elt.Cmp(z) != 0 {
-			newElements = append(newElements, elt)
-		}
-	}
-	n.elements = newElements
-}
-
-func (t *memPrefixTree) splitAtDepth(node PrefixNode, z *Zp, depth int) error {
-	if !node.IsLeaf() {
-		panic("Cannot split non-leaf node")
-	}
-	for _, childKey := range node.ChildKeys() {
-		childNode := newMemPrefixNode(t, childKey)
-		t.nodes[string(childKey.Bytes())] = childNode.(*memPrefixNode)
-	}
-	for _, z := range node.Elements() {
-		cIndex := t.stringIndex(z, depth)
-		marray := addElementArray(z, t.Points())
-		childNode, err := t.loadChild(node, cIndex)
-		if err != nil {
-			return err
-		}
-		childNode.Add(z, marray)
-	}
-	return nil
-}
-
-func rmask(i int) int { return 0xff << uint(8-i) }
-
-func lmask(i int) int { return 0xff >> uint(8-i) }
-
-func (t *memPrefixTree) stringIndex(z *Zp, depth int) int {
-	lowBit := depth * t.BitQuantum()
-	highBit := lowBit + t.BitQuantum() - 1
-	lowByte := lowBit / 8
-	lowBit = lowBit % 8
-	highByte := highBit / 8
-	highBit = highBit % 8
-	if lowByte == highByte {
-		result := int(z.Bytes()[lowByte])
-		return (result >> uint(7-highBit)) & lmask(highBit-lowBit+1)
-	}
-	b1 := int(z.Bytes()[lowByte])
-	b2 := int(z.Bytes()[highByte])
-	key1 := (b1 & lmask(8-lowBit)) << uint(highBit+1)
-	key2 := (b2 & rmask(highBit+1)) >> uint(7-highBit)
-	return key1 | key2
-}
-
-func (t *memPrefixTree) loadChild(node PrefixNode, cIndex int) (PrefixNode, error) {
-	children := node.ChildKeys()
-	if cIndex < len(children) {
-		key := children[cIndex]
-		return t.Node(key)
-	}
-	return nil, IndexOutOfRangeErr
-}
-
-func (t *memPrefixTree) Delete(z *Zp) error {
-	marray := delElementArray(z, t.Points())
-	return t.deleteAtDepth(z, marray)
-}
-
-func (t *memPrefixTree) deleteAtDepth(z *Zp, marray []*Zp) error {
-	prefixNode, err := t.Root()
-	if err != nil {
-		return err
-	}
-	node := prefixNode.(*memPrefixNode)
-	for depth := 0; ; depth++ {
-		// Delete from node
-		node.Remove(z, marray)
-		if !node.isLeaf {
-			// Join if number of elements below threshold
-			if len(node.Elements()) <= t.JoinThreshold() {
-				var newElements []*Zp
-				for elt := range node.allElements() {
-					if elt.Cmp(z) != 0 {
-						newElements = append(newElements, elt)
-					}
-				}
-				node.elements = newElements
-				node.isLeaf = true
-				return nil
-			} else {
-				// Keep adding to node until leaf is reached
-				cIndex := t.stringIndex(z, depth)
-				prefixNode, err = t.loadChild(node, cIndex)
-				if err != nil {
-					return err
-				}
-				node = prefixNode.(*memPrefixNode)
-			}
+func (n *PrefixNode) remove(z *Zp, marray []*Zp) error {
+	n.updateSvalues(z, marray)
+	if !n.IsLeaf() {
+		if len(n.elements) <= n.JoinThreshold {
+			n.join()
 		} else {
-			return nil
+			child := n.nextChild(z)
+			return child.remove(z, marray)
 		}
 	}
+	n.elements = withRemoved(n.elements, z)
 	return nil
 }
 
-func (n *memPrefixNode) allElements() (chan *Zp) {
-	iter := make(chan *Zp)
-	go func(){
-		nodes := []*memPrefixNode{n}
-		for len(nodes) > 0 {
-			node := nodes[len(nodes)-1]
-			fmt.Println(node.key)
-			for _, elt := range node.Elements() {
-				iter <- elt
-			}
-			nodes = nodes[:len(nodes)-1]
-			fmt.Println("len=", len(nodes))
-			for _, childNode := range node.ChildNodes() {
-				nodes = append(nodes, childNode.(*memPrefixNode))
-			}
-			fmt.Println("len=", len(nodes))
-		}
-		close(iter)
-	}()
-	return iter
+func (n *PrefixNode) join() {
+	panic("TODO")
 }
 
-func (n *memPrefixNode) Key() *Bitstring {
-	return n.key
-}
-
-func (n *memPrefixNode) IsLeaf() bool {
-	return n.isLeaf
-}
-
-func (n *memPrefixNode) Elements() []*Zp {
-	return n.elements
-}
-
-func (n *memPrefixNode) ChildNodes() (result []PrefixNode) {
-	if n.isLeaf {
-		return
-	}
-	for _, key := range n.ChildKeys() {
-		childNode, has := n.memPrefixTree.nodes[string(key.Bytes())]
-		if has && string(n.key.Bytes()) != string(childNode.key.Bytes()) {
-			result = append(result, childNode)
+func withRemoved(elements []*Zp, z *Zp) (result []*Zp) {
+	for _, element := range elements {
+		if element.Cmp(z) != 0 {
+			result = append(result, element)
 		}
 	}
 	return
-}
-
-func (n *memPrefixNode) ChildKeys() []*Bitstring {
-	children := make([]*Bitstring, 1<<uint(memBitQuantum))
-	for i := 0; i < len(children); i++ {
-		child := NewBitstring(n.key.BitLen() + memBitQuantum)
-		child.SetBytes(n.key.Bytes())
-		for j := 0; j < memBitQuantum; j++ {
-			if i&(1<<uint(j)) != 0 {
-				child.Set(n.key.BitLen() + j)
-			} else {
-				child.Unset(n.key.BitLen() + j)
-			}
-		}
-		children[i] = child
-	}
-	return children
-}
-
-func (n *memPrefixNode) Size() int {
-	return len(n.elements)
-}
-
-func (n *memPrefixNode) SValues() []*Zp {
-	return n.svalues
 }
