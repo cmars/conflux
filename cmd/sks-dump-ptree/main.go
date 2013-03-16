@@ -29,6 +29,7 @@ import (
 	"fmt"
 	. "github.com/cmars/conflux"
 	"github.com/cmars/conflux/recon"
+	"io"
 	"os"
 	"strings"
 )
@@ -106,13 +107,13 @@ func (n *Node) String() string {
 	b := bytes.NewBuffer(nil)
 	fmt.Fprintf(b, "Svalues:")
 	for _, sv := range n.SValues {
-		fmt.Fprintf(b, " %x", sv.Bytes())
+		fmt.Fprintf(b, " %s", sv.String())
 	}
 	fmt.Fprintf(b, "\n")
 	fmt.Fprintf(b, "Key: %v\n", n.Key)
 	fmt.Fprintf(b, "Fingerprints:")
 	for _, fp := range n.Fingerprints {
-		fmt.Fprintf(b, " %x", fp.Bytes())
+		fmt.Fprintf(b, " %s", fp.String())
 	}
 	fmt.Fprintf(b, "\n")
 	fmt.Fprintf(b, "Children:")
@@ -121,6 +122,12 @@ func (n *Node) String() string {
 	}
 	fmt.Fprintf(b, "\n\n")
 	return b.String()
+}
+
+func printHex(w io.Writer, buf []byte) {
+	for i := 0; i < len(buf); i++ {
+		fmt.Fprintf(w, "\\x%x", buf[i])
+	}
 }
 
 func unmarshalNode(buf []byte, bitQuantum int, numSamples int) (node *Node, err error) {
