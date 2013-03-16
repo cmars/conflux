@@ -76,12 +76,12 @@ func (t *PrefixTree) delElementArray(z *Zp) (marray []*Zp) {
 
 // Insert a Z/Zp integer into the prefix tree
 func (t *PrefixTree) Insert(z *Zp) error {
-	return t.root.insert(z, t.addElementArray(z))
+	return t.root.insert(z, t.addElementArray(z), 0)
 }
 
 // Remove a Z/Zp integer from the prefix tree
 func (t *PrefixTree) Remove(z *Zp) error {
-	return t.root.remove(z, t.delElementArray(z))
+	return t.root.remove(z, t.delElementArray(z), 0)
 }
 
 type PrefixNode struct {
@@ -115,7 +115,7 @@ func (n *PrefixNode) IsLeaf() bool {
 	return len(n.children) == 0
 }
 
-func (n *PrefixNode) insert(z *Zp, marray []*Zp) error {
+func (n *PrefixNode) insert(z *Zp, marray []*Zp, depth int) error {
 	n.updateSvalues(z, marray)
 	if n.IsLeaf() {
 		if len(n.elements) > n.SplitThreshold() {
@@ -125,15 +125,19 @@ func (n *PrefixNode) insert(z *Zp, marray []*Zp) error {
 			return nil
 		}
 	}
-	child := n.nextChild(z)
-	return child.insert(z, marray)
+	child := n.nextChild(z, depth)
+	return child.insert(z, marray, depth+1)
 }
 
 func (n *PrefixNode) split() {
-	panic("TODO")
+	for i := 0; i < n.BitQuantum(); i++ {
+		child := &PrefixNode{parent:n}
+		child.init(n.PrefixTree)
+		n.children = append(n.children)
+	}
 }
 
-func (n *PrefixNode) nextChild(z *Zp) *PrefixNode {
+func (n *PrefixNode) nextChild(z *Zp, depth int) *PrefixNode {
 	panic("TODO")
 }
 
@@ -146,14 +150,14 @@ func (n *PrefixNode) updateSvalues(z *Zp, marray []*Zp) {
 	}
 }
 
-func (n *PrefixNode) remove(z *Zp, marray []*Zp) error {
+func (n *PrefixNode) remove(z *Zp, marray []*Zp, depth int) error {
 	n.updateSvalues(z, marray)
 	if !n.IsLeaf() {
 		if len(n.elements) <= n.JoinThreshold() {
 			n.join()
 		} else {
-			child := n.nextChild(z)
-			return child.remove(z, marray)
+			child := n.nextChild(z, depth)
+			return child.remove(z, marray, depth+1)
 		}
 	}
 	n.elements = withRemoved(n.elements, z)
