@@ -8,7 +8,7 @@ import (
 )
 
 func TestInsertNodesNoSplit(t *testing.T) {
-	tree := new(PrefixTree)
+	tree := new(MemPrefixTree)
 	tree.Init()
 	tree.Insert(Zi(P_SKS, 100))
 	tree.Insert(Zi(P_SKS, 300))
@@ -25,7 +25,7 @@ func TestInsertNodesNoSplit(t *testing.T) {
 }
 
 func TestJustOneKey(t *testing.T) {
-	tree := new(PrefixTree)
+	tree := new(MemPrefixTree)
 	tree.Init()
 	tree.Insert(Zs(P_SKS, "224045810486609649306292620830306652473"))
 	expect := NewZSet()
@@ -46,7 +46,7 @@ func TestJustOneKey(t *testing.T) {
 }
 
 func TestInsertNodeSplit(t *testing.T) {
-	tree := new(PrefixTree)
+	tree := new(MemPrefixTree)
 	tree.Init()
 	// Add a bunch of nodes, enough to cause splits
 	for i := 0; i < tree.SplitThreshold() * 4; i++ {
