@@ -2,7 +2,6 @@ package recon
 
 import (
 	. "github.com/cmars/conflux"
-	"fmt"
 )
 
 const DefaultThreshMult = 10
@@ -99,6 +98,8 @@ type PrefixNode struct {
 	children []*PrefixNode
 	// Zp elements stored at this node, if it's a leaf node
 	elements []*Zp
+	// Number of total elements at or below this node
+	numElements int
 	// Sample values at this node
 	svalues []*Zp
 }
@@ -122,6 +123,7 @@ func (n *PrefixNode) IsLeaf() bool {
 
 func (n *PrefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) error {
 	n.updateSvalues(z, marray)
+	n.numElements++
 	if n.IsLeaf() {
 		if len(n.elements) > n.SplitThreshold() {
 			n.split(depth)
@@ -173,8 +175,9 @@ func (n *PrefixNode) updateSvalues(z *Zp, marray []*Zp) {
 
 func (n *PrefixNode) remove(z *Zp, marray []*Zp, bs *Bitstring, depth int) error {
 	n.updateSvalues(z, marray)
+	n.numElements--
 	if !n.IsLeaf() {
-		if len(n.elements) <= n.JoinThreshold() {
+		if n.numElements <= n.JoinThreshold() {
 			n.join()
 		} else {
 			child := n.nextChild(bs, depth)
@@ -186,7 +189,14 @@ func (n *PrefixNode) remove(z *Zp, marray []*Zp, bs *Bitstring, depth int) error
 }
 
 func (n *PrefixNode) join() {
-	panic("TODO")
+	var childNode *PrefixNode
+	for len(n.children) > 0 {
+		childNode, n.children = n.children[0], n.children[1:]
+		n.elements = append(n.elements, childNode.elements...)
+		n.children = append(n.children, childNode.children...)
+		childNode.children = nil
+	}
+	n.children = nil
 }
 
 func withRemoved(elements []*Zp, z *Zp) (result []*Zp) {

@@ -48,7 +48,18 @@ func TestJustOneKey(t *testing.T) {
 func TestInsertNodeSplit(t *testing.T) {
 	tree := new(PrefixTree)
 	tree.Init()
-	for i := 0; i < tree.SplitThreshold() * 2; i++ {
+	// Add a bunch of nodes, enough to cause splits
+	for i := 0; i < tree.SplitThreshold() * 4; i++ {
 		tree.Insert(Zi(P_SKS, i+65536))
 	}
+	// Remove a bunch of nodes, enough to cause joins
+	for i := 0; i < tree.SplitThreshold() * 4; i++ {
+		tree.Remove(Zi(P_SKS, i+65536))
+	}
+	// Insert/Remove reversible after splitting & joining?
+	for _, sv := range tree.Root().SValues() {
+		assert.Equal(t, 0, sv.Cmp(Zi(P_SKS, 1)))
+	}
+	assert.Equal(t, 0, len(tree.root.children))
+	assert.Equal(t, 0, len(tree.root.elements))
 }
