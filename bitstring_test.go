@@ -56,10 +56,30 @@ func TestBitstringSet(t *testing.T) {
 	assert.Equal(t, bs.Bytes()[1], byte(0x01))
 }
 
-/*
-func TestLsh(t *testing.T) {
+func TestBsBytes(t *testing.T) {
+	bs := NewBitstring(16)
+	bs.SetBytes([]byte{ 0x80, 0x00 })
+	for i := 0; i < bs.BitLen(); i++ {
+		switch i {
+		case 0:
+			assert.Equal(t, 1, bs.Get(i))
+		default:
+			assert.Equal(t, 0, bs.Get(i))
+		}
+	}
 }
 
-func TestRsh(t *testing.T) {
+func TestReverseByte(t *testing.T) {
+	assert.Equal(t, uint8(0x80), ReverseByte(0x01))
+	assert.Equal(t, uint8(0x18), ReverseByte(0x18))
+	assert.Equal(t, uint8(0x41), ReverseByte(0x82))
 }
-*/
+
+func TestReverseBytes(t *testing.T) {
+	assert.Equal(t, []byte{ 0x01 }, ReverseBytes([]byte{ 0x80 }))
+	assert.Equal(t, []byte{ 0x80 }, ReverseBytes([]byte{ 0x01 }))
+	assert.Equal(t, []byte{ 0x00, 0x00, 0x01 }, ReverseBytes([]byte{ 0x80, 0x00, 0x00 }))
+	assert.Equal(t, []byte{ 0xa5, 0xa5 }, ReverseBytes([]byte{ 0xa5, 0xa5 }))
+	assert.Equal(t, []byte{ 0x41, 0x82 }, ReverseBytes([]byte{ 0x41, 0x82 }))
+	assert.Equal(t, []byte{ 0xb7, 0xd0 }, ReverseBytes([]byte{ 0x0b, 0xed }))
+}

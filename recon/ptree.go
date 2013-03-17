@@ -2,6 +2,7 @@ package recon
 
 import (
 	. "github.com/cmars/conflux"
+	"fmt"
 )
 
 const DefaultThreshMult = 10
@@ -76,12 +77,16 @@ func (t *PrefixTree) delElementArray(z *Zp) (marray []*Zp) {
 
 // Insert a Z/Zp integer into the prefix tree
 func (t *PrefixTree) Insert(z *Zp) error {
-	return t.root.insert(z, t.addElementArray(z), 0)
+	bs := NewBitstring(P_SKS.BitLen())
+	bs.SetBytes(ReverseBytes(z.Bytes()))
+	return t.root.insert(z, t.addElementArray(z), bs, 0)
 }
 
 // Remove a Z/Zp integer from the prefix tree
 func (t *PrefixTree) Remove(z *Zp) error {
-	return t.root.remove(z, t.delElementArray(z), 0)
+	bs := NewBitstring(P_SKS.BitLen())
+	bs.SetBytes(ReverseBytes(z.Bytes()))
+	return t.root.remove(z, t.delElementArray(z), bs, 0)
 }
 
 type PrefixNode struct {
@@ -115,30 +120,46 @@ func (n *PrefixNode) IsLeaf() bool {
 	return len(n.children) == 0
 }
 
-func (n *PrefixNode) insert(z *Zp, marray []*Zp, depth int) error {
+func (n *PrefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) error {
 	n.updateSvalues(z, marray)
 	if n.IsLeaf() {
 		if len(n.elements) > n.SplitThreshold() {
-			n.split()
+			n.split(depth)
 		} else {
 			n.elements = append(n.elements, z)
 			return nil
 		}
 	}
-	child := n.nextChild(z, depth)
-	return child.insert(z, marray, depth+1)
+	child := n.nextChild(bs, depth)
+	return child.insert(z, marray, bs, depth+1)
 }
 
-func (n *PrefixNode) split() {
-	for i := 0; i < n.BitQuantum(); i++ {
+func (n *PrefixNode) split(depth int) {
+	// Create child nodes
+	numChildren := 1<<uint(n.BitQuantum())
+	for i := 0; i < numChildren; i++ {
 		child := &PrefixNode{parent:n}
 		child.init(n.PrefixTree)
-		n.children = append(n.children)
+		n.children = append(n.children, child)
 	}
+	// Move elements into child nodes
+	for _, element := range n.elements {
+		bs := NewBitstring(P_SKS.BitLen())
+		bs.SetBytes(ReverseBytes(element.Bytes()))
+		child := n.nextChild(bs, depth)
+		child.insert(element, n.addElementArray(element), bs, depth+1)
+	}
+	n.elements = nil
 }
 
-func (n *PrefixNode) nextChild(z *Zp, depth int) *PrefixNode {
-	panic("TODO")
+func (n *PrefixNode) nextChild(bs *Bitstring, depth int) *PrefixNode {
+	childIndex := 0
+	for i := 0; i < n.BitQuantum(); i++ {
+		childIndex |= (bs.Get(i)<<uint((depth*n.BitQuantum())+i))
+	}
+	//fmt.Printf("childIndex=%d\n", childIndex)
+	//fmt.Printf("children=%d\n", n.children)
+	return n.children[childIndex]
 }
 
 func (n *PrefixNode) updateSvalues(z *Zp, marray []*Zp) {
@@ -150,14 +171,14 @@ func (n *PrefixNode) updateSvalues(z *Zp, marray []*Zp) {
 	}
 }
 
-func (n *PrefixNode) remove(z *Zp, marray []*Zp, depth int) error {
+func (n *PrefixNode) remove(z *Zp, marray []*Zp, bs *Bitstring, depth int) error {
 	n.updateSvalues(z, marray)
 	if !n.IsLeaf() {
 		if len(n.elements) <= n.JoinThreshold() {
 			n.join()
 		} else {
-			child := n.nextChild(z, depth)
-			return child.remove(z, marray, depth+1)
+			child := n.nextChild(bs, depth)
+			return child.remove(z, marray, bs, depth+1)
 		}
 	}
 	n.elements = withRemoved(n.elements, z)
