@@ -22,7 +22,6 @@
 package recon
 
 import (
-	//"fmt"
 	"github.com/bmizerany/assert"
 	. "github.com/cmars/conflux"
 	"testing"

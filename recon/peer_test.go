@@ -22,19 +22,27 @@
 package recon
 
 import (
+	"github.com/bmizerany/assert"
+	"net"
 	"testing"
 	"time"
 )
 
 func TestJustOneSync(t *testing.T) {
+	peer1ReconAddr, err := net.ResolveTCPAddr("tcp", "localhost:22743")
+	assert.Equal(t, err, nil)
+	peer2ReconAddr, err := net.ResolveTCPAddr("tcp", "localhost:22745")
+	assert.Equal(t, err, nil)
 	peer1 := NewMemPeer()
 	peer1.Settings.(*DefaultSettings).httpPort = 22742
 	peer1.Settings.(*DefaultSettings).reconPort = 22743
 	peer1.Settings.(*DefaultSettings).gossipIntervalSecs = 1
+	peer1.Settings.(*DefaultSettings).partners = []net.Addr{peer2ReconAddr}
 	peer2 := NewMemPeer()
 	peer2.Settings.(*DefaultSettings).httpPort = 22744
 	peer2.Settings.(*DefaultSettings).reconPort = 22745
 	peer2.Settings.(*DefaultSettings).gossipIntervalSecs = 1
+	peer2.Settings.(*DefaultSettings).partners = []net.Addr{peer1ReconAddr}
 	peer1.Start()
 	peer2.Start()
 	// Give peers time to sync
