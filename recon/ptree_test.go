@@ -2,9 +2,9 @@ package recon
 
 import (
 	//"fmt"
-	"testing"
 	"github.com/bmizerany/assert"
 	. "github.com/cmars/conflux"
+	"testing"
 )
 
 func TestInsertNodesNoSplit(t *testing.T) {
@@ -30,12 +30,12 @@ func TestJustOneKey(t *testing.T) {
 	tree.Insert(Zs(P_SKS, "224045810486609649306292620830306652473"))
 	expect := NewZSet()
 	for _, sv := range []string{
-			"306467079064992673198834899522272784866",
-			"306467079064992673198834899522272784865",
-			"306467079064992673198834899522272784867",
-			"306467079064992673198834899522272784864",
-			"306467079064992673198834899522272784868",
-			"306467079064992673198834899522272784863" } {
+		"306467079064992673198834899522272784866",
+		"306467079064992673198834899522272784865",
+		"306467079064992673198834899522272784867",
+		"306467079064992673198834899522272784864",
+		"306467079064992673198834899522272784868",
+		"306467079064992673198834899522272784863"} {
 		expect.Add(Zs(P_SKS, sv))
 	}
 	for _, sv := range tree.Root().SValues() {
@@ -49,11 +49,11 @@ func TestInsertNodeSplit(t *testing.T) {
 	tree := new(MemPrefixTree)
 	tree.Init()
 	// Add a bunch of nodes, enough to cause splits
-	for i := 0; i < tree.SplitThreshold() * 4; i++ {
+	for i := 0; i < tree.SplitThreshold()*4; i++ {
 		tree.Insert(Zi(P_SKS, i+65536))
 	}
 	// Remove a bunch of nodes, enough to cause joins
-	for i := 0; i < tree.SplitThreshold() * 4; i++ {
+	for i := 0; i < tree.SplitThreshold()*4; i++ {
 		tree.Remove(Zi(P_SKS, i+65536))
 	}
 	// Insert/Remove reversible after splitting & joining?

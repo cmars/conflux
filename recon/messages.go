@@ -195,7 +195,7 @@ func WriteZSet(w io.Writer, zset *ZSet) error {
 func ReadZp(r io.Reader) (*Zp, error) {
 	buf := make([]byte, sksZpNbytes)
 	for i := sksZpNbytes - 1; i >= 0; i-- {
-		_, err := r.Read(buf[i:i+1])
+		_, err := r.Read(buf[i : i+1])
 		if err != nil {
 			return nil, err
 		}

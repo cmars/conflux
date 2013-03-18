@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	. "github.com/cmars/conflux"
+	"log"
 	"net"
 	"time"
 )
@@ -45,12 +46,12 @@ func (p *Peer) Gossip() {
 		}
 		peer, err := p.choosePartner()
 		if err != nil {
-			p.l.Print(err)
+			log.Print(err)
 			goto DELAY
 		}
 		err = p.initiateRecon(peer)
 		if err != nil {
-			p.l.Print(err)
+			log.Print(err)
 		}
 	DELAY:
 		delay := time.Duration(p.Settings.GossipIntervalSecs()) * time.Second

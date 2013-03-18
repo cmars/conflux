@@ -1,8 +1,8 @@
 package recon
 
 import (
-	. "github.com/cmars/conflux"
 	"errors"
+	. "github.com/cmars/conflux"
 )
 
 type PrefixTree interface {
@@ -39,10 +39,10 @@ const DefaultNumSamples = DefaultMBar + 1
 type MemPrefixTree struct {
 	// Tree configuration options
 	splitThreshold int
-	joinThreshold int
-	bitQuantum int
-	mBar int
-	numSamples int
+	joinThreshold  int
+	bitQuantum     int
+	mBar           int
+	numSamples     int
 	// Sample data points for interpolation
 	points []*Zp
 	// Tree's root node
@@ -50,12 +50,12 @@ type MemPrefixTree struct {
 }
 
 func (t *MemPrefixTree) SplitThreshold() int { return t.splitThreshold }
-func (t *MemPrefixTree) JoinThreshold() int { return t.joinThreshold }
-func (t *MemPrefixTree) BitQuantum() int { return t.bitQuantum }
-func (t *MemPrefixTree) MBar() int { return t.mBar }
-func (t *MemPrefixTree) NumSamples() int { return t.numSamples }
-func (t *MemPrefixTree) Points() []*Zp { return t.points }
-func (t *MemPrefixTree) Root() PrefixNode { return t.root }
+func (t *MemPrefixTree) JoinThreshold() int  { return t.joinThreshold }
+func (t *MemPrefixTree) BitQuantum() int     { return t.bitQuantum }
+func (t *MemPrefixTree) MBar() int           { return t.mBar }
+func (t *MemPrefixTree) NumSamples() int     { return t.numSamples }
+func (t *MemPrefixTree) Points() []*Zp       { return t.points }
+func (t *MemPrefixTree) Root() PrefixNode    { return t.root }
 
 // Init configures the tree with default settings if not already set,
 // and initializes the internal state with sample data points, root node, etc.
@@ -85,7 +85,7 @@ func (t *MemPrefixTree) Node(bs *Bitstring) (PrefixNode, error) {
 	for i := 0; i < bs.BitLen() && !node.IsLeaf(); i += t.BitQuantum() {
 		childIndex := 0
 		for j := 0; j < t.BitQuantum(); j++ {
-			childIndex |= bs.Get(i)<<uint(j)
+			childIndex |= bs.Get(i) << uint(j)
 		}
 		if node.IsLeaf() {
 			return nil, errors.New("Unexpected leaf node")
@@ -153,11 +153,11 @@ func (n *MemPrefixNode) Key() *Bitstring {
 	for cur := n; cur != nil && cur.parent != nil; cur = cur.parent {
 		keys = append(keys, cur.key)
 	}
-	bs := NewBitstring(len(keys)/n.BitQuantum())
+	bs := NewBitstring(len(keys) / n.BitQuantum())
 	bitNum := 0
 	for i := len(keys) - 1; i >= 0; i-- {
 		for j := 0; j < n.BitQuantum(); j++ {
-			if (keys[i]>>uint(j)) & 0x01 == 1 {
+			if (keys[i]>>uint(j))&0x01 == 1 {
 				bs.Set(bitNum)
 			} else {
 				bs.Unset(bitNum)
@@ -174,8 +174,8 @@ func (n *MemPrefixNode) Children() (result []PrefixNode) {
 	return
 }
 func (n *MemPrefixNode) Elements() []*Zp { return n.elements }
-func (n *MemPrefixNode) Size() int { return n.numElements }
-func (n *MemPrefixNode) SValues() []*Zp { return n.svalues }
+func (n *MemPrefixNode) Size() int       { return n.numElements }
+func (n *MemPrefixNode) SValues() []*Zp  { return n.svalues }
 
 func (n *MemPrefixNode) init(t *MemPrefixTree) {
 	n.MemPrefixTree = t
@@ -206,9 +206,9 @@ func (n *MemPrefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) er
 
 func (n *MemPrefixNode) split(depth int) {
 	// Create child nodes
-	numChildren := 1<<uint(n.BitQuantum())
+	numChildren := 1 << uint(n.BitQuantum())
 	for i := 0; i < numChildren; i++ {
-		child := &MemPrefixNode{parent:n}
+		child := &MemPrefixNode{parent: n}
 		child.init(n.MemPrefixTree)
 		n.children = append(n.children, child)
 	}
@@ -225,7 +225,7 @@ func (n *MemPrefixNode) split(depth int) {
 func (n *MemPrefixNode) nextChild(bs *Bitstring, depth int) *MemPrefixNode {
 	childIndex := 0
 	for i := 0; i < n.BitQuantum(); i++ {
-		childIndex |= (bs.Get(i)<<uint((depth*n.BitQuantum())+i))
+		childIndex |= (bs.Get(i) << uint((depth*n.BitQuantum())+i))
 	}
 	return n.children[childIndex]
 }

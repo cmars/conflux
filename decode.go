@@ -103,9 +103,9 @@ var LowMBar error = errors.New("Low MBar")
 
 var powModSmallN = errors.New("PowMod not implemented for small values of N")
 
-// polyPowMod computes ``f**n`` in ``GF(p)[x]/(g)`` using repeated squaring.             
-// Given polynomials ``f`` and ``g`` in ``GF(p)[x]`` and a non-negative      
-// integer ``n``, efficiently computes ``f**n (mod g)`` i.e. the remainder   
+// polyPowMod computes ``f**n`` in ``GF(p)[x]/(g)`` using repeated squaring.
+// Given polynomials ``f`` and ``g`` in ``GF(p)[x]`` and a non-negative
+// integer ``n``, efficiently computes ``f**n (mod g)`` i.e. the remainder
 // of ``f**n`` from division by ``g``, using the repeated squaring algorithm.
 // This function was ported from sympy.polys.galoistools.
 func polyPowMod(f *Poly, n *big.Int, g *Poly) (h *Poly, err error) {

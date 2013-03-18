@@ -28,8 +28,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"os"
-	"path/filepath"
 )
 
 type Response interface {
@@ -66,16 +64,11 @@ type Peer struct {
 	RecoverChan  RecoverChan
 	Tree         PrefixTree
 	Settings     ReconConfig
-	l            *log.Logger
 	stop         serverStop
 	gossipEnable gossipEnable
 }
 
 func (p *Peer) Start() {
-	if p.l == nil {
-		p.l = log.New(os.Stderr, fmt.Sprintf("[%s]", filepath.Base(os.Args[0])),
-			log.LstdFlags|log.Lshortfile)
-	}
 	p.stop = make(serverStop)
 	p.gossipEnable = make(gossipEnable)
 	go p.Serve()
@@ -90,7 +83,7 @@ func (p *Peer) Stop() {
 func (p *Peer) Serve() {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", p.Port))
 	if err != nil {
-		p.l.Print(err)
+		log.Print(err)
 		return
 	}
 	for {
@@ -102,12 +95,12 @@ func (p *Peer) Serve() {
 		}
 		conn, err := ln.Accept()
 		if err != nil {
-			p.l.Print(err)
+			log.Print(err)
 			continue
 		}
 		err = p.interactWithClient(conn, NewBitstring(0))
 		if err != nil {
-			p.l.Print(err)
+			log.Print(err)
 		}
 	}
 }
@@ -261,7 +254,7 @@ func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err erro
 			recon.popBottom()
 			recon.flushing = false
 		case bottom.state == reconStateBottom:
-			p.l.Print("Queue length:", len(recon.bottomQ))
+			log.Print("Queue length:", len(recon.bottomQ))
 			var msg ReconMsg
 			hasMsg := false
 			select {
