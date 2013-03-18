@@ -20,4 +20,4 @@ The reconciliation algorithm are released under the GNU General Public License v
 The reconciliation network protocol and prefix tree data storage interfaces
 are released under the Affero General Public License version 3.
 
-Copyright (C) 2012  Casey Marshall <casey.marshall@gmail.com>
+Copyright (C) 2012,2013  Casey Marshall <casey.marshall@gmail.com>
