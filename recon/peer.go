@@ -100,8 +100,8 @@ func NewMemPeer() *Peer {
 	tree := new(MemPrefixTree)
 	tree.Init()
 	peer := &Peer{
-		Settings: settings,
-		PrefixTree:  tree}
+		Settings:   settings,
+		PrefixTree: tree}
 	return peer
 }
 

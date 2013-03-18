@@ -44,7 +44,7 @@ func (p *Peer) Gossip() {
 				return
 			}
 		default:
-			;
+
 		}
 		peer, err := p.choosePartner()
 		if err != nil {
