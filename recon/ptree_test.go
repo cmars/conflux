@@ -34,13 +34,15 @@ func TestInsertNodesNoSplit(t *testing.T) {
 	tree.Insert(Zi(P_SKS, 100))
 	tree.Insert(Zi(P_SKS, 300))
 	tree.Insert(Zi(P_SKS, 500))
-	assert.Equal(t, 3, len(tree.Root().Elements()))
-	assert.T(t, tree.Root().IsLeaf())
+	root, err := tree.Root()
+	assert.Equal(t, nil, err)
+	assert.Equal(t, 3, len(root.Elements()))
+	assert.T(t, root.IsLeaf())
 	tree.Remove(Zi(P_SKS, 100))
 	tree.Remove(Zi(P_SKS, 300))
 	tree.Remove(Zi(P_SKS, 500))
-	assert.Equal(t, 0, len(tree.Root().Elements()))
-	for _, sv := range tree.Root().SValues() {
+	assert.Equal(t, 0, len(root.Elements()))
+	for _, sv := range root.SValues() {
 		assert.Equal(t, 0, sv.Cmp(Zi(P_SKS, 1)))
 	}
 }
@@ -59,7 +61,9 @@ func TestJustOneKey(t *testing.T) {
 		"306467079064992673198834899522272784863"} {
 		expect.Add(Zs(P_SKS, sv))
 	}
-	for _, sv := range tree.Root().SValues() {
+	root, err := tree.Root()
+	assert.Equal(t, err, nil)
+	for _, sv := range root.SValues() {
 		assert.T(t, expect.Has(sv))
 		expect.Remove(sv)
 	}
@@ -77,8 +81,10 @@ func TestInsertNodeSplit(t *testing.T) {
 	for i := 0; i < tree.SplitThreshold()*4; i++ {
 		tree.Remove(Zi(P_SKS, i+65536))
 	}
+	root, err := tree.Root()
+	assert.Equal(t, err, nil)
 	// Insert/Remove reversible after splitting & joining?
-	for _, sv := range tree.Root().SValues() {
+	for _, sv := range root.SValues() {
 		assert.Equal(t, 0, sv.Cmp(Zi(P_SKS, 1)))
 	}
 	assert.Equal(t, 0, len(tree.root.children))

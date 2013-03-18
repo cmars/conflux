@@ -37,7 +37,7 @@ type PrefixTree interface {
 	Root() (PrefixNode, error)
 	Node(key *Bitstring) (PrefixNode, error)
 	Insert(z *Zp) error
-	Delete(z *Zp) error
+	Remove(z *Zp) error
 }
 
 type PrefixNode interface {
@@ -70,13 +70,13 @@ type MemPrefixTree struct {
 	root *MemPrefixNode
 }
 
-func (t *MemPrefixTree) SplitThreshold() int { return t.splitThreshold }
-func (t *MemPrefixTree) JoinThreshold() int  { return t.joinThreshold }
-func (t *MemPrefixTree) BitQuantum() int     { return t.bitQuantum }
-func (t *MemPrefixTree) MBar() int           { return t.mBar }
-func (t *MemPrefixTree) NumSamples() int     { return t.numSamples }
-func (t *MemPrefixTree) Points() []*Zp       { return t.points }
-func (t *MemPrefixTree) Root() PrefixNode    { return t.root }
+func (t *MemPrefixTree) SplitThreshold() int       { return t.splitThreshold }
+func (t *MemPrefixTree) JoinThreshold() int        { return t.joinThreshold }
+func (t *MemPrefixTree) BitQuantum() int           { return t.bitQuantum }
+func (t *MemPrefixTree) MBar() int                 { return t.mBar }
+func (t *MemPrefixTree) NumSamples() int           { return t.numSamples }
+func (t *MemPrefixTree) Points() []*Zp             { return t.points }
+func (t *MemPrefixTree) Root() (PrefixNode, error) { return t.root, nil }
 
 // Init configures the tree with default settings if not already set,
 // and initializes the internal state with sample data points, root node, etc.

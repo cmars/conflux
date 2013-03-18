@@ -44,15 +44,42 @@ type RecoverChan chan *Recover
 
 var PNodeNotFound error = errors.New("Prefix-tree node not found")
 
-type ReconConfig interface {
+type Settings interface {
+	Init()
 	Version() string
 	HttpPort() int
-	BitQuantum() int
-	MBar() int
+	ReconPort() int
 	Filters() []string
-	ReconThreshMult() int
+	ThreshMult() int
 	GossipIntervalSecs() int
 	MaxOutstandingReconRequests() int
+}
+
+type DefaultSettings struct {
+	version                     string
+	httpPort                    int
+	reconPort                   int
+	filters                     []string
+	threshMult                  int
+	gossipIntervalSecs          int
+	maxOutstandingReconRequests int
+}
+
+func (s *DefaultSettings) Version() string                  { return s.version }
+func (s *DefaultSettings) HttpPort() int                    { return s.httpPort }
+func (s *DefaultSettings) ReconPort() int                   { return s.reconPort }
+func (s *DefaultSettings) Filters() []string                { return s.filters }
+func (s *DefaultSettings) ThreshMult() int                  { return s.threshMult }
+func (s *DefaultSettings) GossipIntervalSecs() int          { return s.gossipIntervalSecs }
+func (s *DefaultSettings) MaxOutstandingReconRequests() int { return s.maxOutstandingReconRequests }
+
+func (s *DefaultSettings) Init() {
+	s.version = "experimental"
+	s.reconPort = 11370
+	s.httpPort = 11371
+	s.threshMult = DefaultThreshMult
+	s.gossipIntervalSecs = 60
+	s.maxOutstandingReconRequests = 100
 }
 
 type serverStop chan interface{}
@@ -60,12 +87,22 @@ type serverStop chan interface{}
 type gossipEnable chan bool
 
 type Peer struct {
-	Port         int
+	Settings
+	PrefixTree
 	RecoverChan  RecoverChan
-	Tree         PrefixTree
-	Settings     ReconConfig
 	stop         serverStop
 	gossipEnable gossipEnable
+}
+
+func NewMemPeer() *Peer {
+	settings := new(DefaultSettings)
+	settings.Init()
+	tree := new(MemPrefixTree)
+	tree.Init()
+	peer := &Peer{
+		Settings: settings,
+		PrefixTree:  tree}
+	return peer
 }
 
 func (p *Peer) Start() {
@@ -81,7 +118,7 @@ func (p *Peer) Stop() {
 }
 
 func (p *Peer) Serve() {
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", p.Port))
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", p.ReconPort()))
 	if err != nil {
 		log.Print(err)
 		return
@@ -185,7 +222,7 @@ func readAllMsgs(r io.Reader) chan ReconMsg {
 
 func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) {
 	var msg ReconMsg
-	if req.node.IsLeaf() || (req.node.Size() < p.Settings.MBar()) {
+	if req.node.IsLeaf() || (req.node.Size() < p.MBar()) {
 		msg = &ReconRqstFull{
 			Prefix:   req.key,
 			Elements: NewZSet(req.node.Elements()...)}
@@ -206,7 +243,7 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 			return errors.New("Syncfail received at leaf node")
 		}
 		var node PrefixNode
-		node, err = p.Tree.Node(req.key)
+		node, err = p.Node(req.key)
 		if err != nil {
 			return
 		}
@@ -238,7 +275,7 @@ func (rwc *reconWithClient) flushQueue() {
 func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err error) {
 	recon := reconWithClient{conn: conn}
 	var root PrefixNode
-	root, err = p.Tree.Root()
+	root, err = p.Root()
 	if err != nil {
 		return
 	}
@@ -264,7 +301,7 @@ func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err erro
 			if hasMsg {
 				recon.popBottom()
 				err = recon.handleReply(p, msg, bottom.requestEntry)
-			} else if len(recon.bottomQ) > p.Settings.MaxOutstandingReconRequests() ||
+			} else if len(recon.bottomQ) > p.MaxOutstandingReconRequests() ||
 				len(recon.requestQ) == 0 {
 				if !recon.flushing {
 					recon.flushQueue()

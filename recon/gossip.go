@@ -37,12 +37,14 @@ func (p *Peer) Gossip() {
 	for {
 		select {
 		case enabled, isOpen = <-p.gossipEnable:
+			if !enabled {
+				continue
+			}
 			if !isOpen {
 				return
 			}
-		}
-		if !enabled {
-			continue
+		default:
+			;
 		}
 		peer, err := p.choosePartner()
 		if err != nil {
@@ -54,7 +56,7 @@ func (p *Peer) Gossip() {
 			log.Print(err)
 		}
 	DELAY:
-		delay := time.Duration(p.Settings.GossipIntervalSecs()) * time.Second
+		delay := time.Duration(p.GossipIntervalSecs()) * time.Second
 		// jitter the delay
 		time.Sleep(delay)
 	}
@@ -84,7 +86,7 @@ type msgProgressChan chan *msgProgress
 
 var ReconDone = errors.New("Reconciliation Done")
 
-func getRemoteConfig(conn net.Conn) (ReconConfig, error) {
+func getRemoteConfig(conn net.Conn) (Settings, error) {
 	panic("no impl")
 }
 
@@ -145,9 +147,9 @@ var ReconRqstPolyNotFound = errors.New("Peer should not receive a request for a 
 
 func (p *Peer) handleReconRqstPoly(rp *ReconRqstPoly, conn net.Conn) *msgProgress {
 	remoteSize := rp.Size
-	points := p.Tree.Points()
+	points := p.Points()
 	remoteSamples := rp.Samples
-	node, err := p.Tree.Node(rp.Prefix)
+	node, err := p.Node(rp.Prefix)
 	if err == PNodeNotFound {
 		return &msgProgress{err: ReconRqstPolyNotFound}
 	}
@@ -156,7 +158,7 @@ func (p *Peer) handleReconRqstPoly(rp *ReconRqstPoly, conn net.Conn) *msgProgres
 	remoteSet, localSet, err := solve(
 		remoteSamples, localSamples, remoteSize, localSize, points)
 	if err == LowMBar {
-		if node.IsLeaf() || node.Size() < (p.Settings.ReconThreshMult()*p.Settings.MBar()) {
+		if node.IsLeaf() || node.Size() < (p.ThreshMult()*p.MBar()) {
 			(&FullElements{ZSet: NewZSet(node.Elements()...)}).marshal(conn)
 			return &msgProgress{elements: NewZSet()}
 		} else {
@@ -177,7 +179,7 @@ func solve(remoteSamples, localSamples []*Zp, remoteSize, localSize int, points 
 }
 
 func (p *Peer) handleReconRqstFull(rf *ReconRqstFull, conn net.Conn) *msgProgress {
-	node, err := p.Tree.Node(rf.Prefix)
+	node, err := p.Node(rf.Prefix)
 	if err == PNodeNotFound {
 		return &msgProgress{err: ReconRqstPolyNotFound}
 	}
