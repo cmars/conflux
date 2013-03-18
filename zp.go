@@ -233,8 +233,12 @@ type ZSet struct {
 	p *big.Int
 }
 
-func NewZSet() *ZSet {
-	return &ZSet{s: make(map[string]bool)}
+func NewZSet(elements ...*Zp) (zs *ZSet) {
+	zs = &ZSet{s: make(map[string]bool)}
+	for _, element := range elements {
+		zs.Add(element)
+	}
+	return zs
 }
 
 func (zs *ZSet) Add(v *Zp) {

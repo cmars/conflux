@@ -44,27 +44,6 @@ type Recover struct {
 
 type RecoverChan chan *Recover
 
-type PTree interface {
-	Root() PNode
-	// Interpolation sample points
-	Points() []*Zp
-	// Get the node for specified key
-	GetNode([]byte) (PNode, error)
-	// Get the child keys of given key
-	ChildKeys([]byte) [][]byte
-	// Insert an integer
-	Insert(*Zp)
-	// Delete an integer
-	Delete(*Zp)
-}
-
-type PNode interface {
-	SValues() []*Zp
-	Size() int
-	IsLeaf() bool
-	Elements() *ZSet
-}
-
 var PNodeNotFound error = errors.New("Prefix-tree node not found")
 
 type ReconConfig interface {
@@ -85,7 +64,7 @@ type gossipEnable chan bool
 type Peer struct {
 	Port         int
 	RecoverChan  RecoverChan
-	Tree         PTree
+	Tree         PrefixTree
 	Settings     ReconConfig
 	l            *log.Logger
 	stop         serverStop
@@ -126,7 +105,7 @@ func (p *Peer) Serve() {
 			p.l.Print(err)
 			continue
 		}
-		err = p.interactWithClient(conn, make([]byte, 0))
+		err = p.interactWithClient(conn, NewBitstring(0))
 		if err != nil {
 			p.l.Print(err)
 		}
@@ -134,8 +113,8 @@ func (p *Peer) Serve() {
 }
 
 type requestEntry struct {
-	node PNode
-	key  []byte
+	node PrefixNode
+	key  *Bitstring
 }
 
 type bottomEntry struct {
@@ -216,7 +195,7 @@ func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) {
 	if req.node.IsLeaf() || (req.node.Size() < p.Settings.MBar()) {
 		msg = &ReconRqstFull{
 			Prefix:   req.key,
-			Elements: req.node.Elements()}
+			Elements: NewZSet(req.node.Elements()...)}
 	} else {
 		msg = &ReconRqstPoly{
 			Prefix:  req.key,
@@ -233,19 +212,21 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 		if req.node.IsLeaf() {
 			return errors.New("Syncfail received at leaf node")
 		}
-		children := p.Tree.ChildKeys(req.key)
-		var node PNode
-		for _, key := range children {
-			node, err = p.Tree.GetNode(key)
+		var node PrefixNode
+		node, err = p.Tree.Node(req.key)
+		if err != nil {
+			return
+		}
+		for _, childNode := range node.Children() {
 			if err != nil {
 				return
 			}
-			rwc.pushRequest(&requestEntry{key: key, node: node})
+			rwc.pushRequest(&requestEntry{key: childNode.Key(), node: childNode})
 		}
 	case *Elements:
 		rwc.rcvrSet.AddAll(m.ZSet)
 	case *FullElements:
-		local := req.node.Elements()
+		local := NewZSet(req.node.Elements()...)
 		localdiff := ZSetDiff(local, m.ZSet)
 		remotediff := ZSetDiff(m.ZSet, local)
 		(&Elements{ZSet: localdiff}).marshal(rwc.conn)
@@ -261,9 +242,14 @@ func (rwc *reconWithClient) flushQueue() {
 	rwc.flushing = true
 }
 
-func (p *Peer) interactWithClient(conn net.Conn, bitstring []byte) (err error) {
+func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err error) {
 	recon := reconWithClient{conn: conn}
-	recon.pushRequest(&requestEntry{node: p.Tree.Root(), key: bitstring})
+	var root PrefixNode
+	root, err = p.Tree.Root()
+	if err != nil {
+		return
+	}
+	recon.pushRequest(&requestEntry{node: root, key: bitstring})
 	msgChan := readAllMsgs(conn)
 	for !recon.isDone() {
 		bottom := recon.topBottom()

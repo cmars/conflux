@@ -2,6 +2,7 @@ package recon
 
 import (
 	. "github.com/cmars/conflux"
+	"errors"
 )
 
 type PrefixTree interface {
@@ -20,8 +21,9 @@ type PrefixTree interface {
 
 type PrefixNode interface {
 	Parent() (PrefixNode, bool)
+	Key() *Bitstring
 	Elements() []*Zp
-	CumlElements() int
+	Size() int
 	Children() []PrefixNode
 	SValues() []*Zp
 	IsLeaf() bool
@@ -78,6 +80,21 @@ func (t *MemPrefixTree) Init() {
 	t.root.init(t)
 }
 
+func (t *MemPrefixTree) Node(bs *Bitstring) (PrefixNode, error) {
+	node := t.root
+	for i := 0; i < bs.BitLen() && !node.IsLeaf(); i += t.BitQuantum() {
+		childIndex := 0
+		for j := 0; j < t.BitQuantum(); j++ {
+			childIndex |= bs.Get(i)<<uint(j)
+		}
+		if node.IsLeaf() {
+			return nil, errors.New("Unexpected leaf node")
+		}
+		node = node.children[childIndex]
+	}
+	return node, nil
+}
+
 func (t *MemPrefixTree) addElementArray(z *Zp) (marray []*Zp) {
 	marray = make([]*Zp, len(t.points))
 	for i := 0; i < len(t.points); i++ {
@@ -116,6 +133,8 @@ type MemPrefixNode struct {
 	*MemPrefixTree
 	// Parent of this node. Root's parent == nil
 	parent *MemPrefixNode
+	// Key in parent's children collection (0..(1<<bitquantum))
+	key int
 	// Child nodes, indexed by bitstring counting order
 	// Each node will have 2**bitquantum children when leaf == false
 	children []*MemPrefixNode
@@ -128,6 +147,26 @@ type MemPrefixNode struct {
 }
 
 func (n *MemPrefixNode) Parent() (PrefixNode, bool) { return n.parent, n.parent != nil }
+
+func (n *MemPrefixNode) Key() *Bitstring {
+	var keys []int
+	for cur := n; cur != nil && cur.parent != nil; cur = cur.parent {
+		keys = append(keys, cur.key)
+	}
+	bs := NewBitstring(len(keys)/n.BitQuantum())
+	bitNum := 0
+	for i := len(keys) - 1; i >= 0; i-- {
+		for j := 0; j < n.BitQuantum(); j++ {
+			if (keys[i]>>uint(j)) & 0x01 == 1 {
+				bs.Set(bitNum)
+			} else {
+				bs.Unset(bitNum)
+			}
+		}
+	}
+	return bs
+}
+
 func (n *MemPrefixNode) Children() (result []PrefixNode) {
 	for _, child := range n.children {
 		result = append(result, child)
@@ -135,7 +174,7 @@ func (n *MemPrefixNode) Children() (result []PrefixNode) {
 	return
 }
 func (n *MemPrefixNode) Elements() []*Zp { return n.elements }
-func (n *MemPrefixNode) CumlElements() int { return n.numElements }
+func (n *MemPrefixNode) Size() int { return n.numElements }
 func (n *MemPrefixNode) SValues() []*Zp { return n.svalues }
 
 func (n *MemPrefixNode) init(t *MemPrefixTree) {
@@ -188,8 +227,6 @@ func (n *MemPrefixNode) nextChild(bs *Bitstring, depth int) *MemPrefixNode {
 	for i := 0; i < n.BitQuantum(); i++ {
 		childIndex |= (bs.Get(i)<<uint((depth*n.BitQuantum())+i))
 	}
-	//fmt.Printf("childIndex=%d\n", childIndex)
-	//fmt.Printf("children=%d\n", n.children)
 	return n.children[childIndex]
 }
 

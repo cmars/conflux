@@ -146,7 +146,7 @@ func (p *Peer) handleReconRqstPoly(rp *ReconRqstPoly, conn net.Conn) *msgProgres
 	remoteSize := rp.Size
 	points := p.Tree.Points()
 	remoteSamples := rp.Samples
-	node, err := p.Tree.GetNode(rp.Prefix)
+	node, err := p.Tree.Node(rp.Prefix)
 	if err == PNodeNotFound {
 		return &msgProgress{err: ReconRqstPolyNotFound}
 	}
@@ -156,7 +156,7 @@ func (p *Peer) handleReconRqstPoly(rp *ReconRqstPoly, conn net.Conn) *msgProgres
 		remoteSamples, localSamples, remoteSize, localSize, points)
 	if err == LowMBar {
 		if node.IsLeaf() || node.Size() < (p.Settings.ReconThreshMult()*p.Settings.MBar()) {
-			(&FullElements{ZSet: node.Elements()}).marshal(conn)
+			(&FullElements{ZSet: NewZSet(node.Elements()...)}).marshal(conn)
 			return &msgProgress{elements: NewZSet()}
 		} else {
 			(&SyncFail{}).marshal(conn)
@@ -176,11 +176,11 @@ func solve(remoteSamples, localSamples []*Zp, remoteSize, localSize int, points 
 }
 
 func (p *Peer) handleReconRqstFull(rf *ReconRqstFull, conn net.Conn) *msgProgress {
-	node, err := p.Tree.GetNode(rf.Prefix)
+	node, err := p.Tree.Node(rf.Prefix)
 	if err == PNodeNotFound {
 		return &msgProgress{err: ReconRqstPolyNotFound}
 	}
-	localset := node.Elements()
+	localset := NewZSet(node.Elements()...)
 	localdiff := ZSetDiff(localset, rf.Elements)
 	remotediff := ZSetDiff(rf.Elements, localset)
 	(&Elements{ZSet: localdiff}).marshal(conn)

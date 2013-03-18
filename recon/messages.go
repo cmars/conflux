@@ -122,22 +122,25 @@ func WriteString(w io.Writer, text string) (err error) {
 	return
 }
 
-func ReadBitstring(r io.Reader) ([]byte, error) {
+func ReadBitstring(r io.Reader) (*Bitstring, error) {
 	var n int
 	n, err := ReadInt(r)
 	if err != nil {
 		return nil, err
 	}
+	bs := NewBitstring(n)
 	nbytes := n / 8
 	if n%8 > 0 {
 		nbytes++
 	}
 	buf := make([]byte, nbytes)
 	_, err = r.Read(buf)
-	return buf, err
+	bs.SetBytes(buf)
+	return bs, err
 }
 
-func WriteBitstring(w io.Writer, buf []byte) (err error) {
+func WriteBitstring(w io.Writer, bs *Bitstring) (err error) {
+	buf := bs.Bytes()
 	err = WriteInt(w, len(buf)*8)
 	if err != nil {
 		return
@@ -209,7 +212,7 @@ func WriteZp(w io.Writer, z *Zp) error {
 }
 
 type ReconRqstPoly struct {
-	Prefix  []byte
+	Prefix  *Bitstring
 	Size    int
 	Samples []*Zp
 }
@@ -245,7 +248,7 @@ func (msg *ReconRqstPoly) unmarshal(r io.Reader) (err error) {
 }
 
 type ReconRqstFull struct {
-	Prefix   []byte
+	Prefix   *Bitstring
 	Elements *ZSet
 }
 
