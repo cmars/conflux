@@ -26,6 +26,7 @@ import (
 	"fmt"
 	. "github.com/cmars/conflux"
 	"log"
+	"math/rand"
 	"net"
 	"time"
 )
@@ -37,14 +38,13 @@ func (p *Peer) Gossip() {
 	for {
 		select {
 		case enabled, isOpen = <-p.gossipEnable:
-			if !enabled {
-				continue
-			}
 			if !isOpen {
 				return
 			}
+			if !enabled {
+				continue
+			}
 		default:
-
 		}
 		peer, err := p.choosePartner()
 		if err != nil {
@@ -62,9 +62,14 @@ func (p *Peer) Gossip() {
 	}
 }
 
+var NoPartnersError error = errors.New("That feel when no recon partner")
+
 func (p *Peer) choosePartner() (net.Addr, error) {
-	// TODO: choose a remote peer at random
-	panic("not impl")
+	partners := p.Partners()
+	if len(partners) == 0 {
+		return nil, NoPartnersError
+	}
+	return partners[rand.Intn(len(partners))], nil
 }
 
 func (p *Peer) initiateRecon(peer net.Addr) error {

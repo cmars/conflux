@@ -49,6 +49,7 @@ type Settings interface {
 	Version() string
 	HttpPort() int
 	ReconPort() int
+	Partners() []net.Addr
 	Filters() []string
 	ThreshMult() int
 	GossipIntervalSecs() int
@@ -59,6 +60,7 @@ type DefaultSettings struct {
 	version                     string
 	httpPort                    int
 	reconPort                   int
+	partners                    []net.Addr
 	filters                     []string
 	threshMult                  int
 	gossipIntervalSecs          int
@@ -68,6 +70,7 @@ type DefaultSettings struct {
 func (s *DefaultSettings) Version() string                  { return s.version }
 func (s *DefaultSettings) HttpPort() int                    { return s.httpPort }
 func (s *DefaultSettings) ReconPort() int                   { return s.reconPort }
+func (s *DefaultSettings) Partners() []net.Addr             { return s.partners }
 func (s *DefaultSettings) Filters() []string                { return s.filters }
 func (s *DefaultSettings) ThreshMult() int                  { return s.threshMult }
 func (s *DefaultSettings) GossipIntervalSecs() int          { return s.gossipIntervalSecs }
