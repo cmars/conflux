@@ -90,7 +90,7 @@ func (msg *notImplMsg) marshal(w io.Writer) error {
 
 func ReadInt(r io.Reader) (n int, err error) {
 	buf := make([]byte, 4)
-	_, err = r.Read(buf)
+	_, err = io.ReadFull(r, buf)
 	n = int(binary.BigEndian.Uint32(buf))
 	return
 }
@@ -109,7 +109,7 @@ func ReadString(r io.Reader) (string, error) {
 		return "", err
 	}
 	buf := make([]byte, n)
-	_, err = r.Read(buf)
+	_, err = io.ReadFull(r, buf)
 	return string(buf), err
 }
 
@@ -134,7 +134,7 @@ func ReadBitstring(r io.Reader) (*Bitstring, error) {
 		nbytes++
 	}
 	buf := make([]byte, nbytes)
-	_, err = r.Read(buf)
+	_, err = io.ReadFull(r, buf)
 	bs.SetBytes(buf)
 	return bs, err
 }
@@ -195,7 +195,7 @@ func WriteZSet(w io.Writer, zset *ZSet) error {
 func ReadZp(r io.Reader) (*Zp, error) {
 	buf := make([]byte, sksZpNbytes)
 	for i := sksZpNbytes - 1; i >= 0; i-- {
-		_, err := r.Read(buf[i : i+1])
+		_, err := io.ReadFull(r, buf[i:i+1])
 		if err != nil {
 			return nil, err
 		}
@@ -406,7 +406,7 @@ func (msg *Config) unmarshal(r io.Reader) error {
 
 func ReadMsg(r io.Reader) (msg ReconMsg, err error) {
 	buf := make([]byte, 1)
-	_, err = r.Read(buf[:1])
+	_, err = io.ReadFull(r, buf[:1])
 	if err != nil {
 		return nil, err
 	}
@@ -439,4 +439,14 @@ func ReadMsg(r io.Reader) (msg ReconMsg, err error) {
 	}
 	err = msg.unmarshal(r)
 	return
+}
+
+func WriteMsg(w io.Writer, msg ReconMsg) (err error) {
+	buf := make([]byte, 1)
+	buf[0] = byte(msg.MsgType())
+	_, err = w.Write(buf)
+	if err != nil {
+		return
+	}
+	return msg.marshal(w)
 }

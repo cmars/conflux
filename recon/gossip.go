@@ -31,6 +31,8 @@ import (
 	"time"
 )
 
+const GOSSIP = "gossip:"
+
 // Gossip with remote servers, acting as a client.
 func (p *Peer) Gossip() {
 	enabled := true
@@ -48,9 +50,12 @@ func (p *Peer) Gossip() {
 		}
 		peer, err := p.choosePartner()
 		if err != nil {
-			log.Print(err)
+			if err != NoPartnersError {
+				log.Println(err)
+			}
 			goto DELAY
 		}
+		log.Println(GOSSIP, "Initiating recon with peer", peer)
 		err = p.initiateRecon(peer)
 		if err != nil {
 			log.Print(err)
@@ -78,6 +83,7 @@ func (p *Peer) initiateRecon(peer net.Addr) error {
 	if err != nil {
 		return err
 	}
+	log.Println(GOSSIP, "Connected with", peer)
 	// Interact with peer
 	return p.clientRecon(conn)
 }
@@ -91,16 +97,27 @@ type msgProgressChan chan *msgProgress
 
 var ReconDone = errors.New("Reconciliation Done")
 
-func getRemoteConfig(conn net.Conn) (Settings, error) {
-	panic("no impl")
+func getRemoteConfig(conn net.Conn) (*Config, error) {
+	msg, err := ReadMsg(conn)
+	if err != nil {
+		return nil, err
+	}
+	config, is := msg.(*Config)
+	if !is {
+		return nil, errors.New(fmt.Sprintf(
+			"Remote config: expected config message, got %v", msg))
+	}
+	return config, nil
 }
 
 func (p *Peer) clientRecon(conn net.Conn) error {
 	// Get remote config
-	/*remoteConfig*/ _, err := getRemoteConfig(conn)
+	remoteConfig, err := getRemoteConfig(conn)
 	if err != nil {
+		log.Println(GOSSIP, "Failed to get remote config", err)
 		return err
 	}
+	log.Println(GOSSIP, "Got RemoteConfig:", remoteConfig)
 	var respSet *ZSet = NewZSet()
 	for step := range p.interactWithServer(conn) {
 		if step.err != nil {
@@ -125,9 +142,11 @@ func (p *Peer) interactWithServer(conn net.Conn) msgProgressChan {
 		for resp == nil || resp.err == nil {
 			msg, err := ReadMsg(conn)
 			if err != nil {
+				log.Println(GOSSIP, "interact: msg err:", err)
 				out <- &msgProgress{err: err}
 				return
 			}
+			log.Println(GOSSIP, "interact: got msg:", msg)
 			switch m := msg.(type) {
 			case *ReconRqstPoly:
 				resp = p.handleReconRqstPoly(m, conn)

@@ -30,6 +30,8 @@ import (
 	"net"
 )
 
+const SERVE = "serve:"
+
 type Response interface {
 	Error() error
 	WriteTo(w io.Writer)
@@ -132,15 +134,20 @@ func (p *Peer) Serve() {
 			if !isOpen {
 				return
 			}
+		default:
 		}
 		conn, err := ln.Accept()
 		if err != nil {
 			log.Print(err)
 			continue
 		}
+		log.Println(SERVE, "connection from:", conn.RemoteAddr())
+		config := &Config{Contents: map[string]string{"foo": "bar"}}
+		WriteMsg(conn, config)
+		log.Println(SERVE, "sent config")
 		err = p.interactWithClient(conn, NewBitstring(0))
 		if err != nil {
-			log.Print(err)
+			log.Println(err)
 		}
 	}
 }

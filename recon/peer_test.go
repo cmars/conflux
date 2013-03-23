@@ -23,6 +23,7 @@ package recon
 
 import (
 	"github.com/bmizerany/assert"
+	. "github.com/cmars/conflux"
 	"net"
 	"testing"
 	"time"
@@ -31,22 +32,34 @@ import (
 func TestJustOneSync(t *testing.T) {
 	peer1ReconAddr, err := net.ResolveTCPAddr("tcp", "localhost:22743")
 	assert.Equal(t, err, nil)
-	peer2ReconAddr, err := net.ResolveTCPAddr("tcp", "localhost:22745")
-	assert.Equal(t, err, nil)
+	//peer2ReconAddr, err := net.ResolveTCPAddr("tcp", "localhost:22745")
+	//assert.Equal(t, err, nil)
 	peer1 := NewMemPeer()
 	peer1.Settings.(*DefaultSettings).httpPort = 22742
 	peer1.Settings.(*DefaultSettings).reconPort = 22743
 	peer1.Settings.(*DefaultSettings).gossipIntervalSecs = 1
-	peer1.Settings.(*DefaultSettings).partners = []net.Addr{peer2ReconAddr}
+	peer1.Settings.(*DefaultSettings).partners = []net.Addr{ /*peer2ReconAddr*/}
+	peer1.PrefixTree.Insert(Zi(P_SKS, 65537))
 	peer2 := NewMemPeer()
 	peer2.Settings.(*DefaultSettings).httpPort = 22744
 	peer2.Settings.(*DefaultSettings).reconPort = 22745
 	peer2.Settings.(*DefaultSettings).gossipIntervalSecs = 1
 	peer2.Settings.(*DefaultSettings).partners = []net.Addr{peer1ReconAddr}
+	peer2.PrefixTree.Insert(Zi(P_SKS, 65539))
 	peer1.Start()
 	peer2.Start()
-	// Give peers time to sync
-	time.Sleep(3 * time.Second)
+	timer := time.NewTimer(time.Duration(120) * time.Second)
+POLLING:
+	for {
+		select {
+		case r := <-peer1.RecoverChan:
+			t.Logf("Peer1 recover: %v", r)
+		case r := <-peer2.RecoverChan:
+			t.Logf("Peer2 recover: %v", r)
+		case _ = <-timer.C:
+			break POLLING
+		}
+	}
 	peer1.Stop()
 	peer2.Stop()
 }
