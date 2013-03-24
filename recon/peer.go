@@ -157,9 +157,20 @@ type requestEntry struct {
 	key  *Bitstring
 }
 
+func (r *requestEntry) String() string {
+	return fmt.Sprintf("Request entry key=%v", r.key)
+}
+
 type bottomEntry struct {
 	*requestEntry
 	state reconState
+}
+
+func (r *bottomEntry) String() string {
+	if r == nil {
+		return "nil"
+	}
+	return fmt.Sprintf("Bottom entry key=%v state=%v", r.key, r.state)
 }
 
 type reconState uint8
@@ -168,6 +179,16 @@ const (
 	reconStateFlushEnded = reconState(iota)
 	reconStateBottom     = reconState(iota)
 )
+
+func (rs reconState) String() string {
+	switch rs {
+	case reconStateFlushEnded:
+		return "Flush Ended"
+	case reconStateBottom:
+		return "Bottom"
+	}
+	return "Unknown"
+}
 
 type reconWithClient struct {
 	requestQ []*requestEntry
@@ -242,11 +263,13 @@ func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) {
 			Size:    req.node.Size(),
 			Samples: req.node.SValues()}
 	}
-	msg.marshal(rwc.conn)
+	log.Println(SERVE, "sendRequest:", msg)
+	WriteMsg(rwc.conn, msg)
 	rwc.pushBottom(&bottomEntry{requestEntry: req})
 }
 
 func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry) (err error) {
+	log.Println(SERVE, "handleReply:", "got:", msg)
 	switch m := msg.(type) {
 	case *SyncFail:
 		if req.node.IsLeaf() {
@@ -269,7 +292,9 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 		local := NewZSet(req.node.Elements()...)
 		localdiff := ZSetDiff(local, m.ZSet)
 		remotediff := ZSetDiff(m.ZSet, local)
-		(&Elements{ZSet: localdiff}).marshal(rwc.conn)
+		elementsMsg := &Elements{ZSet: localdiff}
+		log.Println(SERVE, "handleReply:", "sending:", elementsMsg)
+		WriteMsg(rwc.conn, elementsMsg)
 		rwc.rcvrSet.AddAll(remotediff)
 	default:
 		err = errors.New(fmt.Sprintf("unexpected message: %v", m))
@@ -283,6 +308,7 @@ func (rwc *reconWithClient) flushQueue() {
 }
 
 func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err error) {
+	log.Println(SERVE, "interacting with client")
 	recon := reconWithClient{conn: conn}
 	var root PrefixNode
 	root, err = p.Root()
@@ -293,15 +319,17 @@ func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err erro
 	msgChan := readAllMsgs(conn)
 	for !recon.isDone() {
 		bottom := recon.topBottom()
+		log.Println(SERVE, "interact: bottom:", bottom)
 		switch {
 		case bottom == nil:
 			req := recon.popRequest()
+			log.Println(SERVE, "interact: popRequest:", req)
 			recon.sendRequest(p, req)
 		case bottom.state == reconStateFlushEnded:
 			recon.popBottom()
 			recon.flushing = false
 		case bottom.state == reconStateBottom:
-			log.Print("Queue length:", len(recon.bottomQ))
+			log.Println("Queue length:", len(recon.bottomQ))
 			var msg ReconMsg
 			hasMsg := false
 			select {
@@ -329,7 +357,8 @@ func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err erro
 			return
 		}
 	}
-	(&Done{}).marshal(conn)
+	msg := &Done{}
+	WriteMsg(conn, msg)
 	p.RecoverChan <- &Recover{
 		RemoteAddr:     conn.RemoteAddr(),
 		RemoteElements: recon.rcvrSet}

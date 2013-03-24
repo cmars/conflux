@@ -22,6 +22,7 @@
 package recon
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -54,6 +55,34 @@ const (
 	MsgTypeDbRepl        = MsgType(9)
 	MsgTypeConfig        = MsgType(10)
 )
+
+func (mt MsgType) String() string {
+	switch mt {
+	case MsgTypeReconRqstPoly:
+		return "ReconRqstPoly"
+	case MsgTypeReconRqstFull:
+		return "ReconRqstFull"
+	case MsgTypeElements:
+		return "Elements"
+	case MsgTypeFullElements:
+		return "FullElements"
+	case MsgTypeSyncFail:
+		return "SyncFail"
+	case MsgTypeDone:
+		return "Done"
+	case MsgTypeFlush:
+		return "Flush"
+	case MsgTypeError:
+		return "Error"
+	case MsgTypeDbRqst:
+		return "DbRqst"
+	case MsgTypeDbRepl:
+		return "DbRepl"
+	case MsgTypeConfig:
+		return "Config"
+	}
+	return "Unknown"
+}
 
 type ReconMsg interface {
 	MsgType() MsgType
@@ -207,7 +236,10 @@ func ReadZp(r io.Reader) (*Zp, error) {
 }
 
 func WriteZp(w io.Writer, z *Zp) error {
-	_, err := w.Write(z.Int.Bytes())
+	num := z.Int.Bytes()
+	_, err := w.Write(num)
+	pad := make([]byte, sksZpNbytes-len(num))
+	w.Write(pad)
 	return err
 }
 
@@ -219,6 +251,10 @@ type ReconRqstPoly struct {
 
 func (msg *ReconRqstPoly) MsgType() MsgType {
 	return MsgTypeReconRqstPoly
+}
+
+func (msg *ReconRqstPoly) String() string {
+	return fmt.Sprintf("%v: prefix=%v size=%v", msg.MsgType(), msg.Prefix, msg.Size)
 }
 
 func (msg *ReconRqstPoly) marshal(w io.Writer) (err error) {
@@ -252,6 +288,10 @@ type ReconRqstFull struct {
 	Elements *ZSet
 }
 
+func (msg *ReconRqstFull) String() string {
+	return fmt.Sprintf("%v: prefix=%v", msg.MsgType(), msg.Prefix)
+}
+
 func (msg *ReconRqstFull) MsgType() MsgType {
 	return MsgTypeReconRqstFull
 }
@@ -278,6 +318,10 @@ type Elements struct {
 	*ZSet
 }
 
+func (msg *Elements) String() string {
+	return fmt.Sprintf("%v", msg.MsgType())
+}
+
 func (msg *Elements) MsgType() MsgType {
 	return MsgTypeElements
 }
@@ -294,6 +338,10 @@ func (msg *Elements) unmarshal(r io.Reader) (err error) {
 
 type FullElements struct {
 	*ZSet
+}
+
+func (msg *FullElements) String() string {
+	return fmt.Sprintf("%v", msg.MsgType())
 }
 
 func (msg *FullElements) MsgType() MsgType {
@@ -314,12 +362,20 @@ type SyncFail struct {
 	*emptyMsg
 }
 
+func (msg *SyncFail) String() string {
+	return fmt.Sprintf("%v", msg.MsgType())
+}
+
 func (msg *SyncFail) MsgType() MsgType {
 	return MsgTypeSyncFail
 }
 
 type Done struct {
 	*emptyMsg
+}
+
+func (msg *Done) String() string {
+	return fmt.Sprintf("%v", msg.MsgType())
 }
 
 func (msg *Done) MsgType() MsgType {
@@ -330,12 +386,20 @@ type Flush struct {
 	*emptyMsg
 }
 
+func (msg *Flush) String() string {
+	return fmt.Sprintf("%v", msg.MsgType())
+}
+
 func (msg *Flush) MsgType() MsgType {
 	return MsgTypeFlush
 }
 
 type Error struct {
 	*textMsg
+}
+
+func (msg *Error) String() string {
+	return fmt.Sprintf("%v: %v", msg.MsgType(), msg.Text)
 }
 
 func (msg *Error) MsgType() MsgType {
@@ -346,6 +410,10 @@ type DbRqst struct {
 	*textMsg
 }
 
+func (msg *DbRqst) String() string {
+	return fmt.Sprintf("%v: %v", msg.MsgType(), msg.Text)
+}
+
 func (msg *DbRqst) MsgType() MsgType {
 	return MsgTypeDbRqst
 }
@@ -354,12 +422,25 @@ type DbRepl struct {
 	*textMsg
 }
 
+func (msg *DbRepl) String() string {
+	return fmt.Sprintf("%v: %v", msg.MsgType(), msg.Text)
+}
+
 func (msg *DbRepl) MsgType() MsgType {
 	return MsgTypeDbRepl
 }
 
 type Config struct {
 	Contents map[string]string
+}
+
+func (msg *Config) String() string {
+	b := bytes.NewBuffer(nil)
+	fmt.Fprintf(b, "%v:", msg.MsgType())
+	for k, v := range msg.Contents {
+		fmt.Fprintf(b, " %v=%v", k, v)
+	}
+	return b.String()
 }
 
 func (msg *Config) MsgType() MsgType {
