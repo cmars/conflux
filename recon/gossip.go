@@ -183,14 +183,14 @@ func (p *Peer) handleReconRqstPoly(rp *ReconRqstPoly, conn net.Conn) *msgProgres
 		remoteSamples, localSamples, remoteSize, localSize, points)
 	if err == LowMBar {
 		if node.IsLeaf() || node.Size() < (p.ThreshMult()*p.MBar()) {
-			(&FullElements{ZSet: NewZSet(node.Elements()...)}).marshal(conn)
+			WriteMsg(conn, &FullElements{ZSet: NewZSet(node.Elements()...)})
 			return &msgProgress{elements: NewZSet()}
 		} else {
-			(&SyncFail{}).marshal(conn)
+			WriteMsg(conn, &SyncFail{})
 			return &msgProgress{elements: NewZSet()}
 		}
 	}
-	(&Elements{ZSet: localSet}).marshal(conn)
+	WriteMsg(conn, &Elements{ZSet: localSet})
 	return &msgProgress{elements: remoteSet}
 }
 
@@ -210,6 +210,6 @@ func (p *Peer) handleReconRqstFull(rf *ReconRqstFull, conn net.Conn) *msgProgres
 	localset := NewZSet(node.Elements()...)
 	localdiff := ZSetDiff(localset, rf.Elements)
 	remotediff := ZSetDiff(rf.Elements, localset)
-	(&Elements{ZSet: localdiff}).marshal(conn)
+	WriteMsg(conn, &Elements{ZSet: localdiff})
 	return &msgProgress{elements: remotediff}
 }

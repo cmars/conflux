@@ -28,6 +28,7 @@ import (
 	"fmt"
 	. "github.com/cmars/conflux"
 	"io"
+	"log"
 	"math/big"
 )
 
@@ -158,23 +159,21 @@ func ReadBitstring(r io.Reader) (*Bitstring, error) {
 		return nil, err
 	}
 	bs := NewBitstring(n)
-	nbytes := n / 8
-	if n%8 > 0 {
-		nbytes++
+	if n == 0 {
+		return bs, nil
 	}
-	buf := make([]byte, nbytes)
+	buf := make([]byte, bs.ByteLen())
 	_, err = io.ReadFull(r, buf)
 	bs.SetBytes(buf)
 	return bs, err
 }
 
 func WriteBitstring(w io.Writer, bs *Bitstring) (err error) {
-	buf := bs.Bytes()
-	err = WriteInt(w, len(buf)*8)
+	err = WriteInt(w, bs.BitLen())
 	if err != nil {
 		return
 	}
-	_, err = w.Write(buf)
+	_, err = w.Write(bs.Bytes())
 	return
 }
 
