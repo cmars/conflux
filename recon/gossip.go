@@ -122,6 +122,7 @@ func (p *Peer) clientRecon(conn net.Conn) error {
 	for step := range p.interactWithServer(conn) {
 		if step.err != nil {
 			if step.err == ReconDone {
+				log.Println(GOSSIP, "Reconcilation done.")
 				break
 			}
 			return step.err
@@ -199,6 +200,7 @@ func solve(remoteSamples, localSamples []*Zp, remoteSize, localSize int, points 
 	for i, x := range remoteSamples {
 		values = append(values, Z(x.P).Div(x, localSamples[i]))
 	}
+	log.Println(GOSSIP, "Reconcile", values, points, remoteSize-localSize)
 	return Reconcile(values, points, remoteSize-localSize)
 }
 
@@ -210,6 +212,7 @@ func (p *Peer) handleReconRqstFull(rf *ReconRqstFull, conn net.Conn) *msgProgres
 	localset := NewZSet(node.Elements()...)
 	localdiff := ZSetDiff(localset, rf.Elements)
 	remotediff := ZSetDiff(rf.Elements, localset)
+	log.Println(GOSSIP, "localdiff=", localdiff, "remotediff=", remotediff)
 	WriteMsg(conn, &Elements{ZSet: localdiff})
 	return &msgProgress{elements: remotediff}
 }

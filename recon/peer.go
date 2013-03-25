@@ -42,6 +42,10 @@ type Recover struct {
 	RemoteElements *ZSet
 }
 
+func (r *Recover) String() string {
+	return fmt.Sprintf("%v: %v", r.RemoteAddr, r.RemoteElements)
+}
+
 type RecoverChan chan *Recover
 
 var PNodeNotFound error = errors.New("Prefix-tree node not found")
@@ -105,6 +109,7 @@ func NewMemPeer() *Peer {
 	tree := new(MemPrefixTree)
 	tree.Init()
 	peer := &Peer{
+		RecoverChan: make(RecoverChan),
 		Settings:   settings,
 		PrefixTree: tree}
 	return peer

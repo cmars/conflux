@@ -24,6 +24,7 @@ package recon
 import (
 	"github.com/bmizerany/assert"
 	. "github.com/cmars/conflux"
+	"log"
 	"net"
 	"testing"
 	"time"
@@ -38,7 +39,7 @@ func TestJustOneSync(t *testing.T) {
 	peer1.Settings.(*DefaultSettings).httpPort = 22742
 	peer1.Settings.(*DefaultSettings).reconPort = 22743
 	peer1.Settings.(*DefaultSettings).gossipIntervalSecs = 1
-	peer1.Settings.(*DefaultSettings).partners = []net.Addr{ /*peer2ReconAddr*/}
+	//peer1.Settings.(*DefaultSettings).partners = []net.Addr{peer2ReconAddr}
 	peer1.PrefixTree.Insert(Zi(P_SKS, 65537))
 	peer2 := NewMemPeer()
 	peer2.Settings.(*DefaultSettings).httpPort = 22744
@@ -52,10 +53,18 @@ func TestJustOneSync(t *testing.T) {
 POLLING:
 	for {
 		select {
-		case r := <-peer1.RecoverChan:
-			t.Logf("Peer1 recover: %v", r)
-		case r := <-peer2.RecoverChan:
-			t.Logf("Peer2 recover: %v", r)
+		case r1, ok := <-peer1.RecoverChan:
+			t.Logf("Peer1 recover: %v", r1)
+			log.Println("Peer1 recover:", r1)
+			if !ok {
+				break POLLING
+			}
+		case r2, ok := <-peer2.RecoverChan:
+			t.Logf("Peer2 recover: %v", r2)
+			log.Println("Peer2 recover:", r2)
+			if !ok {
+				break POLLING
+			}
 		case _ = <-timer.C:
 			break POLLING
 		}

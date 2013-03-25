@@ -28,7 +28,6 @@ import (
 	"fmt"
 	. "github.com/cmars/conflux"
 	"io"
-	"log"
 	"math/big"
 )
 
