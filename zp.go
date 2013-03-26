@@ -309,10 +309,28 @@ func (zs *ZSet) String() string {
 	return string(buf.Bytes())
 }
 
+type ZpSlice []*Zp
+
+func (zp ZpSlice) String() string {
+	buf := bytes.NewBuffer(nil)
+	fmt.Fprintf(buf, "{")
+	first := true
+	for k, _ := range zp {
+		if first {
+			first = false
+		} else {
+			fmt.Fprintf(buf, ", ")
+		}
+		fmt.Fprintf(buf, "%v", k)
+	}
+	fmt.Fprintf(buf, "}")
+	return string(buf.Bytes())
+}
+
 func ZSetDiff(a *ZSet, b *ZSet) *ZSet {
 	result := NewZSet()
-	for k, v := range b.s {
-		_, has := a.s[k]
+	for k, v := range a.s {
+		_, has := b.s[k]
 		if !has {
 			result.s[k] = v
 		}

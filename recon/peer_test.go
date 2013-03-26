@@ -30,23 +30,40 @@ import (
 	"time"
 )
 
+func TestZsetIo(t *testing.T) {
+	zs1 := NewZSet(Zi(P_SKS, 65537), Zi(P_SKS, 65539))
+	zs2 := NewZSet(Zi(P_SKS, 65537), Zi(P_SKS, 65541))
+	assert.T(t, zs1.Has(Zi(P_SKS, 65537)))
+	assert.T(t, zs2.Has(Zi(P_SKS, 65537)))
+	assert.T(t, zs1.Has(Zi(P_SKS, 65539)))
+	assert.T(t, zs2.Has(Zi(P_SKS, 65541)))
+	assert.T(t, !zs2.Has(Zi(P_SKS, 65539)))
+	assert.T(t, !zs1.Has(Zi(P_SKS, 65541)))
+}
+
 func TestJustOneSync(t *testing.T) {
 	peer1ReconAddr, err := net.ResolveTCPAddr("tcp", "localhost:22743")
 	assert.Equal(t, err, nil)
-	//peer2ReconAddr, err := net.ResolveTCPAddr("tcp", "localhost:22745")
-	//assert.Equal(t, err, nil)
+	peer2ReconAddr, err := net.ResolveTCPAddr("tcp", "localhost:22745")
+	assert.Equal(t, err, nil)
 	peer1 := NewMemPeer()
 	peer1.Settings.(*DefaultSettings).httpPort = 22742
 	peer1.Settings.(*DefaultSettings).reconPort = 22743
 	peer1.Settings.(*DefaultSettings).gossipIntervalSecs = 1
-	//peer1.Settings.(*DefaultSettings).partners = []net.Addr{peer2ReconAddr}
+	peer1.Settings.(*DefaultSettings).partners = []net.Addr{peer2ReconAddr}
 	peer1.PrefixTree.Insert(Zi(P_SKS, 65537))
+	peer1.PrefixTree.Insert(Zi(P_SKS, 65539))
+	root, _ := peer1.PrefixTree.Root()
+	log.Println(root.(*MemPrefixNode).elements)
 	peer2 := NewMemPeer()
 	peer2.Settings.(*DefaultSettings).httpPort = 22744
 	peer2.Settings.(*DefaultSettings).reconPort = 22745
 	peer2.Settings.(*DefaultSettings).gossipIntervalSecs = 1
 	peer2.Settings.(*DefaultSettings).partners = []net.Addr{peer1ReconAddr}
-	peer2.PrefixTree.Insert(Zi(P_SKS, 65539))
+	peer2.PrefixTree.Insert(Zi(P_SKS, 65537))
+	peer2.PrefixTree.Insert(Zi(P_SKS, 65541))
+	root, _ = peer2.PrefixTree.Root()
+	log.Println(root.(*MemPrefixNode).elements)
 	peer1.Start()
 	peer2.Start()
 	timer := time.NewTimer(time.Duration(120) * time.Second)

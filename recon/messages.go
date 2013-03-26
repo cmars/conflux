@@ -221,24 +221,25 @@ func WriteZSet(w io.Writer, zset *ZSet) error {
 
 func ReadZp(r io.Reader) (*Zp, error) {
 	buf := make([]byte, sksZpNbytes)
-	for i := sksZpNbytes - 1; i >= 0; i-- {
-		_, err := io.ReadFull(r, buf[i:i+1])
-		if err != nil {
-			return nil, err
-		}
+	_, err := io.ReadFull(r, buf)
+	if err != nil {
+		return nil, err
 	}
-	v := big.NewInt(0).SetBytes(buf)
+	v := big.NewInt(0).SetBytes(ReverseBytes(buf))
 	z := &Zp{Int: v, P: P_SKS}
 	z.Norm()
 	return z, nil
 }
 
-func WriteZp(w io.Writer, z *Zp) error {
+func WriteZp(w io.Writer, z *Zp) (err error) {
 	num := z.Int.Bytes()
-	_, err := w.Write(num)
+	_, err = w.Write(ReverseBytes(num))
+	if err != nil {
+		return
+	}
 	pad := make([]byte, sksZpNbytes-len(num))
-	w.Write(pad)
-	return err
+	_, err = w.Write(pad)
+	return
 }
 
 type ReconRqstPoly struct {
@@ -252,7 +253,8 @@ func (msg *ReconRqstPoly) MsgType() MsgType {
 }
 
 func (msg *ReconRqstPoly) String() string {
-	return fmt.Sprintf("%v: prefix=%v size=%v", msg.MsgType(), msg.Prefix, msg.Size)
+	return fmt.Sprintf("%v: prefix=%v size=%v elements=%v",
+		msg.MsgType(), msg.Prefix, msg.Size, msg.Samples)
 }
 
 func (msg *ReconRqstPoly) marshal(w io.Writer) (err error) {
@@ -287,7 +289,8 @@ type ReconRqstFull struct {
 }
 
 func (msg *ReconRqstFull) String() string {
-	return fmt.Sprintf("%v: prefix=%v", msg.MsgType(), msg.Prefix)
+	return fmt.Sprintf("%v: prefix=%v elements=%v",
+		msg.MsgType(), msg.Prefix, msg.Elements)
 }
 
 func (msg *ReconRqstFull) MsgType() MsgType {

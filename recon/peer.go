@@ -110,8 +110,8 @@ func NewMemPeer() *Peer {
 	tree.Init()
 	peer := &Peer{
 		RecoverChan: make(RecoverChan),
-		Settings:   settings,
-		PrefixTree: tree}
+		Settings:    settings,
+		PrefixTree:  tree}
 	return peer
 }
 
