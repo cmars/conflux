@@ -73,12 +73,24 @@ POLLING:
 		case r1, ok := <-peer1.RecoverChan:
 			t.Logf("Peer1 recover: %v", r1)
 			log.Println("Peer1 recover:", r1)
+			if r1.RemoteElements != nil {
+				for _, zp := range r1.RemoteElements.Items() {
+					assert.T(t, zp != nil)
+					peer1.PrefixTree.Insert(zp)
+				}
+			}
 			if !ok {
 				break POLLING
 			}
 		case r2, ok := <-peer2.RecoverChan:
 			t.Logf("Peer2 recover: %v", r2)
 			log.Println("Peer2 recover:", r2)
+			if r2.RemoteElements != nil {
+				for _, zp := range r2.RemoteElements.Items() {
+					assert.T(t, zp != nil)
+					peer2.PrefixTree.Insert(zp)
+				}
+			}
 			if !ok {
 				break POLLING
 			}

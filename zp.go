@@ -274,11 +274,14 @@ func (zs *ZSet) Equal(other *ZSet) bool {
 
 func (zs *ZSet) AddSlice(other []*Zp) {
 	for _, v := range other {
-		zs.s[v.String()] = true
+		zs.Add(v)
 	}
 }
 
 func (zs *ZSet) AddAll(other *ZSet) {
+	if zs.p == nil {
+		zs.p = other.p
+	}
 	for k, _ := range other.s {
 		zs.s[k] = true
 	}
@@ -329,6 +332,11 @@ func (zp ZpSlice) String() string {
 
 func ZSetDiff(a *ZSet, b *ZSet) *ZSet {
 	result := NewZSet()
+	if a.p != nil {
+		result.p = a.p
+	} else if b.p != nil {
+		result.p = b.p
+	}
 	for k, v := range a.s {
 		_, has := b.s[k]
 		if !has {
