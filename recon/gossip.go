@@ -118,7 +118,7 @@ func (p *Peer) clientRecon(conn net.Conn) error {
 		return err
 	}
 	log.Println(GOSSIP, "Got RemoteConfig:", remoteConfig)
-	var respSet *ZSet = NewZSet()
+	respSet := NewZSet()
 	for step := range p.interactWithServer(conn) {
 		if step.err != nil {
 			if step.err == ReconDone {
@@ -126,13 +126,14 @@ func (p *Peer) clientRecon(conn net.Conn) error {
 				break
 			}
 			return step.err
-		} else {
-			respSet.AddAll(step.elements)
 		}
+		respSet.AddAll(step.elements)
 	}
-	p.RecoverChan <- &Recover{
-		RemoteAddr:     conn.RemoteAddr(),
-		RemoteElements: respSet}
+	if respSet.Len() > 0 {
+		p.RecoverChan <- &Recover{
+			RemoteAddr:     conn.RemoteAddr(),
+			RemoteElements: respSet}
+	}
 	return nil
 }
 
@@ -183,14 +184,20 @@ func (p *Peer) handleReconRqstPoly(rp *ReconRqstPoly, conn net.Conn) *msgProgres
 	remoteSet, localSet, err := solve(
 		remoteSamples, localSamples, remoteSize, localSize, points)
 	if err == LowMBar {
+		log.Println(GOSSIP, "Low MBar")
 		if node.IsLeaf() || node.Size() < (p.ThreshMult()*p.MBar()) {
+			log.Println(GOSSIP, "Sending full elements for node:", node.Key())
 			WriteMsg(conn, &FullElements{ZSet: NewZSet(node.Elements()...)})
 			return &msgProgress{elements: NewZSet()}
 		} else {
+			log.Println(GOSSIP, "sending SyncFail")
 			WriteMsg(conn, &SyncFail{})
 			return &msgProgress{elements: NewZSet()}
 		}
+	} else if err != nil {
+		return &msgProgress{err: err}
 	}
+	log.Println(GOSSIP, "solved: localSet=", localSet, "remoteSet=", remoteSet)
 	WriteMsg(conn, &Elements{ZSet: localSet})
 	return &msgProgress{elements: remoteSet}
 }

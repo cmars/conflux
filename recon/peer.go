@@ -314,7 +314,7 @@ func (rwc *reconWithClient) flushQueue() {
 
 func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err error) {
 	log.Println(SERVE, "interacting with client")
-	recon := reconWithClient{conn: conn}
+	recon := reconWithClient{conn: conn, rcvrSet: NewZSet()}
 	var root PrefixNode
 	root, err = p.Root()
 	if err != nil {
@@ -364,8 +364,10 @@ func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err erro
 	}
 	msg := &Done{}
 	WriteMsg(conn, msg)
-	p.RecoverChan <- &Recover{
-		RemoteAddr:     conn.RemoteAddr(),
-		RemoteElements: recon.rcvrSet}
+	if recon.rcvrSet.Len() > 0 {
+		p.RecoverChan <- &Recover{
+			RemoteAddr:     conn.RemoteAddr(),
+			RemoteElements: recon.rcvrSet}
+	}
 	return
 }

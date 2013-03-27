@@ -30,18 +30,8 @@ import (
 	"time"
 )
 
-func TestZsetIo(t *testing.T) {
-	zs1 := NewZSet(Zi(P_SKS, 65537), Zi(P_SKS, 65539))
-	zs2 := NewZSet(Zi(P_SKS, 65537), Zi(P_SKS, 65541))
-	assert.T(t, zs1.Has(Zi(P_SKS, 65537)))
-	assert.T(t, zs2.Has(Zi(P_SKS, 65537)))
-	assert.T(t, zs1.Has(Zi(P_SKS, 65539)))
-	assert.T(t, zs2.Has(Zi(P_SKS, 65541)))
-	assert.T(t, !zs2.Has(Zi(P_SKS, 65539)))
-	assert.T(t, !zs1.Has(Zi(P_SKS, 65541)))
-}
-
-func TestJustOneSync(t *testing.T) {
+// Test full node sync.
+func TestFullSync(t *testing.T) {
 	peer1ReconAddr, err := net.ResolveTCPAddr("tcp", "localhost:22743")
 	assert.Equal(t, err, nil)
 	peer2ReconAddr, err := net.ResolveTCPAddr("tcp", "localhost:22745")
@@ -62,6 +52,78 @@ func TestJustOneSync(t *testing.T) {
 	peer2.Settings.(*DefaultSettings).partners = []net.Addr{peer1ReconAddr}
 	peer2.PrefixTree.Insert(Zi(P_SKS, 65537))
 	peer2.PrefixTree.Insert(Zi(P_SKS, 65541))
+	root, _ = peer2.PrefixTree.Root()
+	log.Println(root.(*MemPrefixNode).elements)
+	peer1.Start()
+	peer2.Start()
+	timer := time.NewTimer(time.Duration(120) * time.Second)
+POLLING:
+	for {
+		select {
+		case r1, ok := <-peer1.RecoverChan:
+			t.Logf("Peer1 recover: %v", r1)
+			log.Println("Peer1 recover:", r1)
+			if r1.RemoteElements != nil {
+				for _, zp := range r1.RemoteElements.Items() {
+					assert.T(t, zp != nil)
+					peer1.PrefixTree.Insert(zp)
+				}
+			}
+			if !ok {
+				break POLLING
+			}
+		case r2, ok := <-peer2.RecoverChan:
+			t.Logf("Peer2 recover: %v", r2)
+			log.Println("Peer2 recover:", r2)
+			if r2.RemoteElements != nil {
+				for _, zp := range r2.RemoteElements.Items() {
+					assert.T(t, zp != nil)
+					peer2.PrefixTree.Insert(zp)
+				}
+			}
+			if !ok {
+				break POLLING
+			}
+		case _ = <-timer.C:
+			break POLLING
+		}
+	}
+	peer1.Stop()
+	peer2.Stop()
+}
+
+// Test sync with polynomial interpolation.
+func TestPolySync(t *testing.T) {
+	peer1ReconAddr, err := net.ResolveTCPAddr("tcp", "localhost:22743")
+	assert.Equal(t, err, nil)
+	peer2ReconAddr, err := net.ResolveTCPAddr("tcp", "localhost:22745")
+	assert.Equal(t, err, nil)
+	peer1 := NewMemPeer()
+	peer1.Settings.(*DefaultSettings).httpPort = 22742
+	peer1.Settings.(*DefaultSettings).reconPort = 22743
+	peer1.Settings.(*DefaultSettings).gossipIntervalSecs = 1
+	peer1.Settings.(*DefaultSettings).partners = []net.Addr{peer2ReconAddr}
+	for i := 1; i < 100; i++ {
+		peer1.PrefixTree.Insert(Zi(P_SKS, 65537*i))
+	}
+	// Four extra samples
+	for i := 1; i < 5; i++ {
+		peer1.PrefixTree.Insert(Zi(P_SKS, 68111*i))
+	}
+	root, _ := peer1.PrefixTree.Root()
+	log.Println(root.(*MemPrefixNode).elements)
+	peer2 := NewMemPeer()
+	peer2.Settings.(*DefaultSettings).httpPort = 22744
+	peer2.Settings.(*DefaultSettings).reconPort = 22745
+	peer2.Settings.(*DefaultSettings).gossipIntervalSecs = 1
+	peer2.Settings.(*DefaultSettings).partners = []net.Addr{peer1ReconAddr}
+	for i := 1; i < 100; i++ {
+		peer2.PrefixTree.Insert(Zi(P_SKS, 65537*i))
+	}
+	// One extra sample
+	for i := 1; i < 2; i++ {
+		peer2.PrefixTree.Insert(Zi(P_SKS, 70001*i))
+	}
 	root, _ = peer2.PrefixTree.Root()
 	log.Println(root.(*MemPrefixNode).elements)
 	peer1.Start()

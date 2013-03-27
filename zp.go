@@ -241,6 +241,10 @@ func NewZSet(elements ...*Zp) (zs *ZSet) {
 	return zs
 }
 
+func (zs *ZSet) Len() int {
+	return len(zs.s)
+}
+
 func (zs *ZSet) Add(v *Zp) {
 	if zs.p == nil {
 		zs.p = v.P

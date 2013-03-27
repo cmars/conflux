@@ -145,3 +145,14 @@ func TestZSet(t *testing.T) {
 	assert.T(t, a.Has(zp5(2)))
 	assert.T(t, a.Has(zp5(3)))
 }
+
+func TestZsetDisjoint(t *testing.T) {
+	zs1 := NewZSet(Zi(P_SKS, 65537), Zi(P_SKS, 65539))
+	zs2 := NewZSet(Zi(P_SKS, 65537), Zi(P_SKS, 65541))
+	assert.T(t, zs1.Has(Zi(P_SKS, 65537)))
+	assert.T(t, zs2.Has(Zi(P_SKS, 65537)))
+	assert.T(t, zs1.Has(Zi(P_SKS, 65539)))
+	assert.T(t, zs2.Has(Zi(P_SKS, 65541)))
+	assert.T(t, !zs2.Has(Zi(P_SKS, 65539)))
+	assert.T(t, !zs1.Has(Zi(P_SKS, 65541)))
+}
