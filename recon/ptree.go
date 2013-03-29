@@ -23,7 +23,9 @@ package recon
 
 import (
 	"errors"
+	"fmt"
 	. "github.com/cmars/conflux"
+	"os"
 )
 
 type PrefixTree interface {
@@ -174,17 +176,17 @@ func (n *MemPrefixNode) Key() *Bitstring {
 	for cur := n; cur != nil && cur.parent != nil; cur = cur.parent {
 		keys = append(keys, cur.key)
 	}
-	bs := NewBitstring(len(keys) / n.BitQuantum())
-	bitNum := 0
+	bs := NewBitstring(len(keys) * n.BitQuantum())
 	for i := len(keys) - 1; i >= 0; i-- {
 		for j := 0; j < n.BitQuantum(); j++ {
 			if (keys[i]>>uint(j))&0x01 == 1 {
-				bs.Set(bitNum)
+				bs.Set(i * j)
 			} else {
-				bs.Unset(bitNum)
+				bs.Unset(i * j)
 			}
 		}
 	}
+	fmt.Fprintf(os.Stderr, "keys=%v bs=%v\n", keys, bs)
 	return bs
 }
 

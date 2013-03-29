@@ -181,8 +181,8 @@ func (r *bottomEntry) String() string {
 type reconState uint8
 
 const (
-	reconStateFlushEnded = reconState(iota)
 	reconStateBottom     = reconState(iota)
+	reconStateFlushEnded = reconState(iota)
 )
 
 func (rs reconState) String() string {
@@ -280,15 +280,9 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 		if req.node.IsLeaf() {
 			return errors.New("Syncfail received at leaf node")
 		}
-		var node PrefixNode
-		node, err = p.Node(req.key)
-		if err != nil {
-			return
-		}
-		for _, childNode := range node.Children() {
-			if err != nil {
-				return
-			}
+		log.Println(SERVE, "SyncFail: pushing children")
+		for _, childNode := range req.node.Children() {
+			log.Println(SERVE, "push:", childNode.Key())
 			rwc.pushRequest(&requestEntry{key: childNode.Key(), node: childNode})
 		}
 	case *Elements:
@@ -308,6 +302,7 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 }
 
 func (rwc *reconWithClient) flushQueue() {
+	log.Println(SERVE, "flush queue")
 	rwc.pushBottom(&bottomEntry{state: reconStateFlushEnded})
 	rwc.flushing = true
 }
@@ -328,9 +323,10 @@ func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err erro
 		switch {
 		case bottom == nil:
 			req := recon.popRequest()
-			log.Println(SERVE, "interact: popRequest:", req)
+			log.Println(SERVE, "interact: popRequest:", req, "sending...")
 			recon.sendRequest(p, req)
 		case bottom.state == reconStateFlushEnded:
+			log.Println(SERVE, "interact: flush ended, popBottom")
 			recon.popBottom()
 			recon.flushing = false
 		case bottom.state == reconStateBottom:
@@ -340,6 +336,7 @@ func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err erro
 			select {
 			case msg = <-msgChan:
 				hasMsg = true
+			default:
 			}
 			if hasMsg {
 				recon.popBottom()

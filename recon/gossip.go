@@ -189,13 +189,12 @@ func (p *Peer) handleReconRqstPoly(rp *ReconRqstPoly, conn net.Conn) *msgProgres
 			log.Println(GOSSIP, "Sending full elements for node:", node.Key())
 			WriteMsg(conn, &FullElements{ZSet: NewZSet(node.Elements()...)})
 			return &msgProgress{elements: NewZSet()}
-		} else {
-			log.Println(GOSSIP, "sending SyncFail")
-			WriteMsg(conn, &SyncFail{})
-			return &msgProgress{elements: NewZSet()}
 		}
-	} else if err != nil {
-		return &msgProgress{err: err}
+	}
+	if err != nil {
+		log.Println(GOSSIP, "sending SyncFail because", err)
+		WriteMsg(conn, &SyncFail{})
+		return &msgProgress{elements: NewZSet()}
 	}
 	log.Println(GOSSIP, "solved: localSet=", localSet, "remoteSet=", remoteSet)
 	WriteMsg(conn, &Elements{ZSet: localSet})
