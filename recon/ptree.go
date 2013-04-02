@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	. "github.com/cmars/conflux"
+	"log"
 	"os"
 )
 
@@ -213,10 +214,12 @@ func (n *MemPrefixNode) IsLeaf() bool {
 }
 
 func (n *MemPrefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) error {
+	log.Println("insert", z, bs, n.Key(), depth)
 	n.updateSvalues(z, marray)
 	n.numElements++
 	if n.IsLeaf() {
 		if len(n.elements) > n.SplitThreshold() {
+			log.Println("insert: split")
 			n.split(depth)
 		} else {
 			n.elements = append(n.elements, z)
@@ -238,7 +241,8 @@ func (n *MemPrefixNode) split(depth int) {
 	// Move elements into child nodes
 	for _, element := range n.elements {
 		bs := NewBitstring(P_SKS.BitLen())
-		bs.SetBytes(ReverseBytes(element.Bytes()))
+		//bs.SetBytes(ReverseBytes(element.Bytes()))
+		bs.SetBytes(element.Bytes())
 		child := n.nextChild(bs, depth)
 		child.insert(element, n.addElementArray(element), bs, depth+1)
 	}
@@ -248,9 +252,11 @@ func (n *MemPrefixNode) split(depth int) {
 func (n *MemPrefixNode) nextChild(bs *Bitstring, depth int) *MemPrefixNode {
 	childIndex := 0
 	for i := 0; i < n.BitQuantum(); i++ {
-		childIndex |= (bs.Get(i) << uint((depth*n.BitQuantum())+i))
+		childIndex |= (bs.Get(i+(depth*n.BitQuantum())) << uint(i))
 	}
-	return n.children[childIndex]
+	childNode := n.children[childIndex]
+	childNode.key = childIndex
+	return childNode
 }
 
 func (n *MemPrefixNode) updateSvalues(z *Zp, marray []*Zp) {

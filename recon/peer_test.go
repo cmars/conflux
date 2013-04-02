@@ -166,10 +166,8 @@ POLLING:
 
 // Test sync with polynomial interpolation.
 func TestPolySyncLowMBar(t *testing.T) {
-	/*
-		peer1ReconAddr, err := net.ResolveTCPAddr("tcp", "localhost:22743")
-		assert.Equal(t, err, nil)
-	*/
+	//peer1ReconAddr, err := net.ResolveTCPAddr("tcp", "localhost:22743")
+	//assert.Equal(t, err, nil)
 	peer2ReconAddr, err := net.ResolveTCPAddr("tcp", "localhost:22745")
 	assert.Equal(t, err, nil)
 	peer1 := NewMemPeer()
@@ -190,7 +188,7 @@ func TestPolySyncLowMBar(t *testing.T) {
 	peer2.Settings.(*DefaultSettings).httpPort = 22744
 	peer2.Settings.(*DefaultSettings).reconPort = 22745
 	peer2.Settings.(*DefaultSettings).gossipIntervalSecs = 1
-	peer2.Settings.(*DefaultSettings).partners = []net.Addr{ /*peer1ReconAddr*/}
+	peer2.Settings.(*DefaultSettings).partners = nil //[]net.Addr{peer1ReconAddr}
 	for i := 1; i < 100; i++ {
 		peer2.PrefixTree.Insert(Zi(P_SKS, 65537*i))
 	}
@@ -207,11 +205,12 @@ POLLING:
 	for {
 		select {
 		case r1, ok := <-peer1.RecoverChan:
-			t.Logf("Peer1 recover: %v", r1)
-			log.Println("Peer1 recover:", r1)
 			if r1.RemoteElements != nil {
-				for _, zp := range r1.RemoteElements.Items() {
+				items := r1.RemoteElements.Items()
+				log.Println("Peer1 recover:", items)
+				for _, zp := range items {
 					assert.T(t, zp != nil)
+					log.Println("Peer1 insert:", zp)
 					peer1.PrefixTree.Insert(zp)
 				}
 			}
@@ -219,11 +218,12 @@ POLLING:
 				break POLLING
 			}
 		case r2, ok := <-peer2.RecoverChan:
-			t.Logf("Peer2 recover: %v", r2)
-			log.Println("Peer2 recover:", r2)
 			if r2.RemoteElements != nil {
-				for _, zp := range r2.RemoteElements.Items() {
+				items := r2.RemoteElements.Items()
+				log.Println("Peer2 recover:", items)
+				for _, zp := range items {
 					assert.T(t, zp != nil)
+					log.Println("Peer2 insert:", zp)
 					peer2.PrefixTree.Insert(zp)
 				}
 			}
