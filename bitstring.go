@@ -127,7 +127,7 @@ func ReverseBytes(buf []byte) (result []byte) {
 
 func ReverseByte(b byte) (r byte) {
 	for i := uint(0); i < 8; i++ {
-		r |= (b >> (7 - i)) & 1 << i
+		r |= ((b >> (7 - i)) & 1) << i
 	}
 	return
 }
