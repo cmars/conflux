@@ -156,3 +156,25 @@ func TestZsetDisjoint(t *testing.T) {
 	assert.T(t, !zs2.Has(Zi(P_SKS, 65539)))
 	assert.T(t, !zs1.Has(Zi(P_SKS, 65541)))
 }
+
+func TestZSetDiff(t *testing.T) {
+	zs1 := NewZSet(Zi(P_SKS, 65537), Zi(P_SKS, 65539))
+	zs2 := NewZSet(Zi(P_SKS, 65537), Zi(P_SKS, 65541))
+	zs3 := ZSetDiff(zs1, zs2)
+	zs4 := ZSetDiff(zs2, zs1)
+	assert.T(t, zs3.Has(Zi(P_SKS, 65539)))
+	assert.Equal(t, 1, len(zs3.Items()))
+	assert.T(t, zs4.Has(Zi(P_SKS, 65541)))
+	assert.Equal(t, 1, len(zs4.Items()))
+}
+
+func TestZSetDiffEmpty(t *testing.T) {
+	zs1 := NewZSet(Zi(P_SKS, 65537), Zi(P_SKS, 65539))
+	zs2 := NewZSet()
+	zs3 := ZSetDiff(zs1, zs2)
+	zs4 := ZSetDiff(zs2, zs1)
+	assert.T(t, zs3.Has(Zi(P_SKS, 65537)))
+	assert.T(t, zs3.Has(Zi(P_SKS, 65539)))
+	assert.Equal(t, 2, len(zs3.Items()))
+	assert.Equal(t, 0, len(zs4.Items()))
+}

@@ -24,6 +24,7 @@ package recon
 import (
 	"github.com/bmizerany/assert"
 	. "github.com/cmars/conflux"
+	"strings"
 	"testing"
 )
 
@@ -88,4 +89,39 @@ func TestInsertNodeSplit(t *testing.T) {
 	}
 	assert.Equal(t, 0, len(tree.root.children))
 	assert.Equal(t, 0, len(tree.root.elements))
+}
+
+// Test key consistency
+func TestKeyMatch(t *testing.T) {
+	tree1 := new(MemPrefixTree)
+	tree1.Init()
+	for i := 1; i < 100; i++ {
+		tree1.Insert(Zi(P_SKS, 65537*i+i))
+	}
+	// Some extra samples
+	for i := 1; i < 50; i++ {
+		tree1.Insert(Zi(P_SKS, 68111*i))
+	}
+	tree2 := new(MemPrefixTree)
+	tree2.Init()
+	for i := 1; i < 100; i++ {
+		tree2.Insert(Zi(P_SKS, 65537*i))
+	}
+	// One extra sample
+	for i := 1; i < 20; i++ {
+		tree2.Insert(Zi(P_SKS, 70001*i))
+	}
+	for i := 1; i < 100; i++ {
+		zi := Zi(P_SKS, 65537*i)
+		bs := NewBitstring(P_SKS.BitLen())
+		bs.SetBytes(ReverseBytes(zi.Bytes()))
+		node1, err := tree1.Find(zi)
+		assert.Equal(t, err, nil)
+		node2, err := tree2.Find(zi)
+		assert.Equal(t, err, nil)
+		t.Logf("node1=%v, node2=%v (%b) full=%v", node1.Key(), node2.Key(), zi.Int64(), bs)
+		// If keys are different, one must prefix the other.
+		assert.T(t, strings.HasPrefix(node1.Key().String(), node2.Key().String()) ||
+			strings.HasPrefix(node2.Key().String(), node1.Key().String()))
+	}
 }

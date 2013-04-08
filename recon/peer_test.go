@@ -63,11 +63,9 @@ POLLING:
 		case r1, ok := <-peer1.RecoverChan:
 			t.Logf("Peer1 recover: %v", r1)
 			log.Println("Peer1 recover:", r1)
-			if r1.RemoteElements != nil {
-				for _, zp := range r1.RemoteElements.Items() {
-					assert.T(t, zp != nil)
-					peer1.PrefixTree.Insert(zp)
-				}
+			for _, zp := range r1.RemoteElements {
+				assert.T(t, zp != nil)
+				peer1.PrefixTree.Insert(zp)
 			}
 			if !ok {
 				break POLLING
@@ -75,11 +73,9 @@ POLLING:
 		case r2, ok := <-peer2.RecoverChan:
 			t.Logf("Peer2 recover: %v", r2)
 			log.Println("Peer2 recover:", r2)
-			if r2.RemoteElements != nil {
-				for _, zp := range r2.RemoteElements.Items() {
-					assert.T(t, zp != nil)
-					peer2.PrefixTree.Insert(zp)
-				}
+			for _, zp := range r2.RemoteElements {
+				assert.T(t, zp != nil)
+				peer2.PrefixTree.Insert(zp)
 			}
 			if !ok {
 				break POLLING
@@ -135,11 +131,9 @@ POLLING:
 		case r1, ok := <-peer1.RecoverChan:
 			t.Logf("Peer1 recover: %v", r1)
 			log.Println("Peer1 recover:", r1)
-			if r1.RemoteElements != nil {
-				for _, zp := range r1.RemoteElements.Items() {
-					assert.T(t, zp != nil)
-					peer1.PrefixTree.Insert(zp)
-				}
+			for _, zp := range r1.RemoteElements {
+				assert.T(t, zp != nil)
+				peer1.Insert(zp)
 			}
 			if !ok {
 				break POLLING
@@ -147,11 +141,9 @@ POLLING:
 		case r2, ok := <-peer2.RecoverChan:
 			t.Logf("Peer2 recover: %v", r2)
 			log.Println("Peer2 recover:", r2)
-			if r2.RemoteElements != nil {
-				for _, zp := range r2.RemoteElements.Items() {
-					assert.T(t, zp != nil)
-					peer2.PrefixTree.Insert(zp)
-				}
+			for _, zp := range r2.RemoteElements {
+				assert.T(t, zp != nil)
+				peer2.Insert(zp)
 			}
 			if !ok {
 				break POLLING
@@ -173,6 +165,7 @@ func TestPolySyncLowMBar(t *testing.T) {
 	peer1 := NewMemPeer()
 	peer1.Settings.(*DefaultSettings).httpPort = 22742
 	peer1.Settings.(*DefaultSettings).reconPort = 22743
+	peer1.Settings.(*DefaultSettings).logName = "peer1"
 	peer1.Settings.(*DefaultSettings).gossipIntervalSecs = 1
 	peer1.Settings.(*DefaultSettings).partners = []net.Addr{peer2ReconAddr}
 	for i := 1; i < 100; i++ {
@@ -182,13 +175,14 @@ func TestPolySyncLowMBar(t *testing.T) {
 	for i := 1; i < 50; i++ {
 		peer1.PrefixTree.Insert(Zi(P_SKS, 68111*i))
 	}
-	root, _ := peer1.PrefixTree.Root()
-	log.Println(root.(*MemPrefixNode).elements)
+	root1, _ := peer1.PrefixTree.Root()
+	log.Println(root1.(*MemPrefixNode).Elements())
 	peer2 := NewMemPeer()
 	peer2.Settings.(*DefaultSettings).httpPort = 22744
 	peer2.Settings.(*DefaultSettings).reconPort = 22745
+	peer2.Settings.(*DefaultSettings).logName = "peer2"
 	peer2.Settings.(*DefaultSettings).gossipIntervalSecs = 1
-	peer2.Settings.(*DefaultSettings).partners = nil //[]net.Addr{peer1ReconAddr}
+	//peer2.Settings.(*DefaultSettings).partners = []net.Addr{peer1ReconAddr}
 	for i := 1; i < 100; i++ {
 		peer2.PrefixTree.Insert(Zi(P_SKS, 65537*i))
 	}
@@ -196,8 +190,8 @@ func TestPolySyncLowMBar(t *testing.T) {
 	for i := 1; i < 20; i++ {
 		peer2.PrefixTree.Insert(Zi(P_SKS, 70001*i))
 	}
-	root, _ = peer2.PrefixTree.Root()
-	log.Println(root.(*MemPrefixNode).elements)
+	root2, _ := peer2.PrefixTree.Root()
+	log.Println(root2.(*MemPrefixNode).Elements())
 	peer1.Start()
 	peer2.Start()
 	timer := time.NewTimer(time.Duration(120) * time.Second)
@@ -205,30 +199,33 @@ POLLING:
 	for {
 		select {
 		case r1, ok := <-peer1.RecoverChan:
-			if r1.RemoteElements != nil {
-				items := r1.RemoteElements.Items()
-				log.Println("Peer1 recover:", items)
-				for _, zp := range items {
-					assert.T(t, zp != nil)
-					log.Println("Peer1 insert:", zp)
-					peer1.PrefixTree.Insert(zp)
-				}
-			}
 			if !ok {
 				break POLLING
+			}
+			items := r1.RemoteElements
+			log.Println("Peer1 recover:", items)
+			for _, zp := range items {
+				assert.T(t, zp != nil)
+				log.Println("Peer1 insert:", zp)
+				peer1.Insert(zp)
 			}
 		case r2, ok := <-peer2.RecoverChan:
-			if r2.RemoteElements != nil {
-				items := r2.RemoteElements.Items()
-				log.Println("Peer2 recover:", items)
-				for _, zp := range items {
-					assert.T(t, zp != nil)
-					log.Println("Peer2 insert:", zp)
-					peer2.PrefixTree.Insert(zp)
-				}
-			}
 			if !ok {
 				break POLLING
+			}
+			items := r2.RemoteElements
+			/*
+				peer2.execCmd(func() error{
+					root2, err := peer2.Root()
+					log.Println("Peer2 has:", root2.Elements())
+					return err
+				})
+			*/
+			log.Println("Peer2 recover:", items)
+			for _, zp := range items {
+				assert.T(t, zp != nil)
+				log.Println("Peer2 insert:", zp)
+				peer2.Insert(zp)
 			}
 		case _ = <-timer.C:
 			break POLLING

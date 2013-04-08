@@ -103,6 +103,9 @@ func (bs *Bitstring) Rsh(n uint) {
 }
 
 func (bs *Bitstring) String() string {
+	if bs == nil {
+		return "nil"
+	}
 	w := bytes.NewBuffer(nil)
 	for i := 0; i < bs.bits; i++ {
 		fmt.Fprintf(w, "%d", bs.Get(i))

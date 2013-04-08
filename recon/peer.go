@@ -39,7 +39,7 @@ type Response interface {
 
 type Recover struct {
 	RemoteAddr     net.Addr
-	RemoteElements *ZSet
+	RemoteElements []*Zp
 }
 
 func (r *Recover) String() string {
@@ -53,6 +53,7 @@ var PNodeNotFound error = errors.New("Prefix-tree node not found")
 type Settings interface {
 	Init()
 	Version() string
+	LogName() string
 	HttpPort() int
 	ReconPort() int
 	Partners() []net.Addr
@@ -64,6 +65,7 @@ type Settings interface {
 
 type DefaultSettings struct {
 	version                     string
+	logName                     string
 	httpPort                    int
 	reconPort                   int
 	partners                    []net.Addr
@@ -74,6 +76,7 @@ type DefaultSettings struct {
 }
 
 func (s *DefaultSettings) Version() string                  { return s.version }
+func (s *DefaultSettings) LogName() string                  { return s.logName }
 func (s *DefaultSettings) HttpPort() int                    { return s.httpPort }
 func (s *DefaultSettings) ReconPort() int                   { return s.reconPort }
 func (s *DefaultSettings) Partners() []net.Addr             { return s.partners }
@@ -86,6 +89,7 @@ func (s *DefaultSettings) Init() {
 	s.version = "experimental"
 	s.reconPort = 11370
 	s.httpPort = 11371
+	s.logName = ""
 	s.threshMult = DefaultThreshMult
 	s.gossipIntervalSecs = 60
 	s.maxOutstandingReconRequests = 100
@@ -95,10 +99,17 @@ type serverStop chan interface{}
 
 type gossipEnable chan bool
 
+type reconCmd func() error
+
+type reconCmdReq chan reconCmd
+type reconCmdResp chan error
+
 type Peer struct {
 	Settings
 	PrefixTree
 	RecoverChan  RecoverChan
+	reconCmdReq  reconCmdReq
+	reconCmdResp reconCmdResp
 	stop         serverStop
 	gossipEnable gossipEnable
 }
@@ -115,16 +126,58 @@ func NewMemPeer() *Peer {
 	return peer
 }
 
+func (p *Peer) log(v ...interface{}) {
+	v = append([]interface{}{p.LogName()}, v...)
+	log.Println(v...)
+}
+
 func (p *Peer) Start() {
 	p.stop = make(serverStop)
 	p.gossipEnable = make(gossipEnable)
+	p.reconCmdReq = make(reconCmdReq)
+	p.reconCmdResp = make(reconCmdResp)
 	go p.Serve()
 	go p.Gossip()
+	go p.handleCmds()
 }
 
 func (p *Peer) Stop() {
+	close(p.reconCmdReq)
 	close(p.gossipEnable)
 	close(p.stop)
+}
+
+// Handle and execute recon cmds in a single goroutine.
+// This forces sequential reads and writes to the prefix
+// tree.
+func (p *Peer) handleCmds() {
+	for {
+		select {
+		case cmd, ok := <-p.reconCmdReq:
+			if !ok {
+				return
+			}
+			p.reconCmdResp <- cmd()
+		}
+	}
+}
+
+func (p *Peer) execCmd(cmd reconCmd) (err error) {
+	p.reconCmdReq <- cmd
+	err = <-p.reconCmdResp
+	return
+}
+
+func (p *Peer) Insert(z *Zp) (err error) {
+	return p.execCmd(func() error {
+		return p.PrefixTree.Insert(z)
+	})
+}
+
+func (p *Peer) Remove(z *Zp) (err error) {
+	return p.execCmd(func() error {
+		return p.PrefixTree.Remove(z)
+	})
 }
 
 func (p *Peer) Serve() {
@@ -143,16 +196,16 @@ func (p *Peer) Serve() {
 		}
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Print(err)
+			p.log(SERVE, err)
 			continue
 		}
-		log.Println(SERVE, "connection from:", conn.RemoteAddr())
+		p.log(SERVE, "connection from:", conn.RemoteAddr())
 		config := &Config{Contents: map[string]string{"foo": "bar"}}
 		WriteMsg(conn, config)
-		log.Println(SERVE, "sent config")
+		p.log(SERVE, "sent config")
 		err = p.interactWithClient(conn, NewBitstring(0))
 		if err != nil {
-			log.Println(err)
+			p.log(SERVE, err)
 		}
 	}
 }
@@ -163,6 +216,9 @@ type requestEntry struct {
 }
 
 func (r *requestEntry) String() string {
+	if r == nil {
+		return "nil"
+	}
 	return fmt.Sprintf("Request entry key=%v", r.key)
 }
 
@@ -174,6 +230,8 @@ type bottomEntry struct {
 func (r *bottomEntry) String() string {
 	if r == nil {
 		return "nil"
+	} else if r.requestEntry == nil {
+		return fmt.Sprintf("Bottom entry req=nil state=%v", r.state)
 	}
 	return fmt.Sprintf("Bottom entry key=%v state=%v", r.key, r.state)
 }
@@ -196,6 +254,7 @@ func (rs reconState) String() string {
 }
 
 type reconWithClient struct {
+	*Peer
 	requestQ []*requestEntry
 	bottomQ  []*bottomEntry
 	rcvrSet  *ZSet
@@ -268,21 +327,21 @@ func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) {
 			Size:    req.node.Size(),
 			Samples: req.node.SValues()}
 	}
-	log.Println(SERVE, "sendRequest:", msg)
+	p.log(SERVE, "sendRequest:", msg)
 	WriteMsg(rwc.conn, msg)
 	rwc.pushBottom(&bottomEntry{requestEntry: req})
 }
 
 func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry) (err error) {
-	log.Println(SERVE, "handleReply:", "got:", msg)
+	p.log(SERVE, "handleReply:", "got:", msg)
 	switch m := msg.(type) {
 	case *SyncFail:
 		if req.node.IsLeaf() {
 			return errors.New("Syncfail received at leaf node")
 		}
-		log.Println(SERVE, "SyncFail: pushing children")
+		p.log(SERVE, "SyncFail: pushing children")
 		for _, childNode := range req.node.Children() {
-			log.Println(SERVE, "push:", childNode.Key())
+			p.log(SERVE, "push:", childNode.Key())
 			rwc.pushRequest(&requestEntry{key: childNode.Key(), node: childNode})
 		}
 	case *Elements:
@@ -292,7 +351,7 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 		localdiff := ZSetDiff(local, m.ZSet)
 		remotediff := ZSetDiff(m.ZSet, local)
 		elementsMsg := &Elements{ZSet: localdiff}
-		log.Println(SERVE, "handleReply:", "sending:", elementsMsg)
+		p.log(SERVE, "handleReply:", "sending:", elementsMsg)
 		WriteMsg(rwc.conn, elementsMsg)
 		rwc.rcvrSet.AddAll(remotediff)
 	default:
@@ -302,14 +361,14 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 }
 
 func (rwc *reconWithClient) flushQueue() {
-	log.Println(SERVE, "flush queue")
+	rwc.log(SERVE, "flush queue")
 	rwc.pushBottom(&bottomEntry{state: reconStateFlushEnded})
 	rwc.flushing = true
 }
 
 func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err error) {
-	log.Println(SERVE, "interacting with client")
-	recon := reconWithClient{conn: conn, rcvrSet: NewZSet()}
+	p.log(SERVE, "interacting with client")
+	recon := reconWithClient{Peer: p, conn: conn, rcvrSet: NewZSet()}
 	var root PrefixNode
 	root, err = p.Root()
 	if err != nil {
@@ -319,18 +378,21 @@ func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err erro
 	msgChan := readAllMsgs(conn)
 	for !recon.isDone() {
 		bottom := recon.topBottom()
-		log.Println(SERVE, "interact: bottom:", bottom)
+		p.log(SERVE, "interact: bottom:", bottom)
 		switch {
 		case bottom == nil:
 			req := recon.popRequest()
-			log.Println(SERVE, "interact: popRequest:", req, "sending...")
-			recon.sendRequest(p, req)
+			p.log(SERVE, "interact: popRequest:", req, "sending...")
+			p.execCmd(func() error {
+				recon.sendRequest(p, req)
+				return nil
+			})
 		case bottom.state == reconStateFlushEnded:
-			log.Println(SERVE, "interact: flush ended, popBottom")
+			p.log(SERVE, "interact: flush ended, popBottom")
 			recon.popBottom()
 			recon.flushing = false
 		case bottom.state == reconStateBottom:
-			log.Println("Queue length:", len(recon.bottomQ))
+			p.log("Queue length:", len(recon.bottomQ))
 			var msg ReconMsg
 			hasMsg := false
 			select {
@@ -340,7 +402,9 @@ func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err erro
 			}
 			if hasMsg {
 				recon.popBottom()
-				err = recon.handleReply(p, msg, bottom.requestEntry)
+				err = p.execCmd(func() error {
+					return recon.handleReply(p, msg, bottom.requestEntry)
+				})
 			} else if len(recon.bottomQ) > p.MaxOutstandingReconRequests() ||
 				len(recon.requestQ) == 0 {
 				if !recon.flushing {
@@ -348,11 +412,16 @@ func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err erro
 				} else {
 					recon.popBottom()
 					msg = <-msgChan
-					err = recon.handleReply(p, msg, bottom.requestEntry)
+					err = p.execCmd(func() error {
+						return recon.handleReply(p, msg, bottom.requestEntry)
+					})
 				}
 			} else {
 				req := recon.popRequest()
-				recon.sendRequest(p, req)
+				p.execCmd(func() error {
+					recon.sendRequest(p, req)
+					return nil
+				})
 			}
 		}
 		if err != nil {
@@ -361,10 +430,9 @@ func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err erro
 	}
 	msg := &Done{}
 	WriteMsg(conn, msg)
-	if recon.rcvrSet.Len() > 0 {
-		p.RecoverChan <- &Recover{
-			RemoteAddr:     conn.RemoteAddr(),
-			RemoteElements: recon.rcvrSet}
-	}
+	items := recon.rcvrSet.Items()
+	p.RecoverChan <- &Recover{
+		RemoteAddr:     conn.RemoteAddr(),
+		RemoteElements: items}
 	return
 }

@@ -23,10 +23,7 @@ package recon
 
 import (
 	"errors"
-	//"fmt"
 	. "github.com/cmars/conflux"
-	//"log"
-	//"os"
 )
 
 type PrefixTree interface {
@@ -38,6 +35,7 @@ type PrefixTree interface {
 	NumSamples() int
 	Points() []*Zp
 	Root() (PrefixNode, error)
+	Find(z *Zp) (PrefixNode, error)
 	Node(key *Bitstring) (PrefixNode, error)
 	Insert(z *Zp) error
 	Remove(z *Zp) error
@@ -104,12 +102,22 @@ func (t *MemPrefixTree) Init() {
 	t.root.init(t)
 }
 
+func (t *MemPrefixTree) Find(z *Zp) (PrefixNode, error) {
+	bs := NewBitstring(P_SKS.BitLen())
+	bs.SetBytes(ReverseBytes(z.Bytes()))
+	return t.Node(bs)
+}
+
 func (t *MemPrefixTree) Node(bs *Bitstring) (PrefixNode, error) {
 	node := t.root
-	for i := 0; i < bs.BitLen() && !node.IsLeaf(); i += t.BitQuantum() {
+	nbq := t.BitQuantum()
+	for i := 0; i < bs.BitLen() && !node.IsLeaf(); i += nbq {
 		childIndex := 0
-		for j := 0; j < t.BitQuantum(); j++ {
-			childIndex |= bs.Get(i) << uint(j)
+		for j := 0; j < nbq; j++ {
+			mask := 1 << uint(j)
+			if bs.Get(i+j) == 1 {
+				childIndex |= mask
+			}
 		}
 		if node.IsLeaf() {
 			return nil, errors.New("Unexpected leaf node")
@@ -175,19 +183,18 @@ func (n *MemPrefixNode) Parent() (PrefixNode, bool) { return n.parent, n.parent 
 func (n *MemPrefixNode) Key() *Bitstring {
 	var keys []int
 	for cur := n; cur != nil && cur.parent != nil; cur = cur.parent {
-		keys = append(keys, cur.key)
+		keys = append([]int{cur.key}, keys...)
 	}
 	bs := NewBitstring(len(keys) * n.BitQuantum())
 	for i := len(keys) - 1; i >= 0; i-- {
 		for j := 0; j < n.BitQuantum(); j++ {
-			if (keys[i]>>uint(j))&0x01 == 1 {
+			if ((keys[i] >> uint(j)) & 0x01) == 1 {
 				bs.Set(i*n.BitQuantum() + j)
 			} else {
 				bs.Unset(i*n.BitQuantum() + j)
 			}
 		}
 	}
-	//fmt.Fprintf(os.Stderr, "keys=%v bs=%v\n", keys, bs)
 	return bs
 }
 
@@ -197,9 +204,19 @@ func (n *MemPrefixNode) Children() (result []PrefixNode) {
 	}
 	return
 }
-func (n *MemPrefixNode) Elements() []*Zp { return n.elements }
-func (n *MemPrefixNode) Size() int       { return n.numElements }
-func (n *MemPrefixNode) SValues() []*Zp  { return n.svalues }
+func (n *MemPrefixNode) Elements() []*Zp {
+	if n.IsLeaf() {
+		return n.elements
+	}
+	var result []*Zp
+	for _, child := range n.children {
+		result = append(result, child.Elements()...)
+	}
+	return result
+}
+
+func (n *MemPrefixNode) Size() int      { return n.numElements }
+func (n *MemPrefixNode) SValues() []*Zp { return n.svalues }
 
 func (n *MemPrefixNode) init(t *MemPrefixTree) {
 	n.MemPrefixTree = t
@@ -214,14 +231,17 @@ func (n *MemPrefixNode) IsLeaf() bool {
 }
 
 func (n *MemPrefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) error {
-	//log.Println("insert", z, bs, n.Key(), n.key, depth)
 	n.updateSvalues(z, marray)
 	n.numElements++
 	if n.IsLeaf() {
 		if len(n.elements) > n.SplitThreshold() {
-			//log.Println("insert: split")
 			n.split(depth)
 		} else {
+			for _, nz := range n.elements {
+				if nz.Cmp(z) == 0 {
+					panic("Duplicate: " + z.String())
+				}
+			}
 			n.elements = append(n.elements, z)
 			return nil
 		}
@@ -235,6 +255,7 @@ func (n *MemPrefixNode) split(depth int) {
 	numChildren := 1 << uint(n.BitQuantum())
 	for i := 0; i < numChildren; i++ {
 		child := &MemPrefixNode{parent: n}
+		child.key = i
 		child.init(n.MemPrefixTree)
 		n.children = append(n.children, child)
 	}
@@ -252,10 +273,12 @@ func (n *MemPrefixNode) nextChild(bs *Bitstring, depth int) *MemPrefixNode {
 	childIndex := 0
 	nbq := n.BitQuantum()
 	for i := 0; i < nbq; i++ {
-		childIndex |= ((bs.Get(depth*nbq + i)) << uint(i))
+		mask := 1 << uint(i)
+		if bs.Get(depth*nbq+i) == 1 {
+			childIndex |= mask
+		}
 	}
 	childNode := n.children[childIndex]
-	childNode.key = childIndex
 	return childNode
 }
 

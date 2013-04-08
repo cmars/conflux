@@ -51,11 +51,11 @@ func (p *Peer) Gossip() {
 		peer, err := p.choosePartner()
 		if err != nil {
 			if err != NoPartnersError {
-				log.Println(err)
+				p.log(GOSSIP, "choosePartner:", err)
 			}
 			goto DELAY
 		}
-		log.Println(GOSSIP, "Initiating recon with peer", peer)
+		p.log(GOSSIP, "Initiating recon with peer", peer)
 		err = p.initiateRecon(peer)
 		if err != nil {
 			log.Print(err)
@@ -83,7 +83,7 @@ func (p *Peer) initiateRecon(peer net.Addr) error {
 	if err != nil {
 		return err
 	}
-	log.Println(GOSSIP, "Connected with", peer)
+	p.log(GOSSIP, "Connected with", peer)
 	// Interact with peer
 	return p.clientRecon(conn)
 }
@@ -114,26 +114,29 @@ func (p *Peer) clientRecon(conn net.Conn) error {
 	// Get remote config
 	remoteConfig, err := getRemoteConfig(conn)
 	if err != nil {
-		log.Println(GOSSIP, "Failed to get remote config", err)
+		p.log(GOSSIP, "Failed to get remote config", err)
 		return err
 	}
-	log.Println(GOSSIP, "Got RemoteConfig:", remoteConfig)
+	p.log(GOSSIP, "Got RemoteConfig:", remoteConfig)
 	respSet := NewZSet()
 	for step := range p.interactWithServer(conn) {
 		if step.err != nil {
 			if step.err == ReconDone {
-				log.Println(GOSSIP, "Reconcilation done.")
+				p.log(GOSSIP, "Reconcilation done.")
 				break
 			}
+			p.log(GOSSIP, "Reconciliation failed:", step.err)
 			return step.err
 		}
+		p.log(GOSSIP, "Add step:", step.elements)
 		respSet.AddAll(step.elements)
+		p.log(GOSSIP, "Recover set now:", respSet)
 	}
-	if respSet.Len() > 0 {
-		p.RecoverChan <- &Recover{
-			RemoteAddr:     conn.RemoteAddr(),
-			RemoteElements: respSet}
-	}
+	items := respSet.Items()
+	p.log(GOSSIP, "Sending recover:", items)
+	p.RecoverChan <- &Recover{
+		RemoteAddr:     conn.RemoteAddr(),
+		RemoteElements: items}
 	return nil
 }
 
@@ -144,17 +147,28 @@ func (p *Peer) interactWithServer(conn net.Conn) msgProgressChan {
 		for resp == nil || resp.err == nil {
 			msg, err := ReadMsg(conn)
 			if err != nil {
-				log.Println(GOSSIP, "interact: msg err:", err)
+				p.log(GOSSIP, "interact: msg err:", err)
 				out <- &msgProgress{err: err}
 				return
 			}
-			log.Println(GOSSIP, "interact: got msg:", msg)
+			p.log(GOSSIP, "interact: got msg:", msg)
 			switch m := msg.(type) {
 			case *ReconRqstPoly:
-				resp = p.handleReconRqstPoly(m, conn)
+				p.execCmd(func() error {
+					resp = p.handleReconRqstPoly(m, conn)
+					out <- resp
+					return nil
+				})
+				continue
 			case *ReconRqstFull:
-				resp = p.handleReconRqstFull(m, conn)
+				p.execCmd(func() error {
+					resp = p.handleReconRqstFull(m, conn)
+					out <- resp
+					return nil
+				})
+				continue
 			case *Elements:
+				p.log(GOSSIP, "Elements:", m.ZSet)
 				resp = &msgProgress{elements: m.ZSet}
 			case *Done:
 				resp = &msgProgress{err: ReconDone}
@@ -181,32 +195,32 @@ func (p *Peer) handleReconRqstPoly(rp *ReconRqstPoly, conn net.Conn) *msgProgres
 	}
 	localSamples := node.SValues()
 	localSize := node.Size()
-	remoteSet, localSet, err := solve(
+	remoteSet, localSet, err := p.solve(
 		remoteSamples, localSamples, remoteSize, localSize, points)
 	if err == LowMBar {
-		log.Println(GOSSIP, "Low MBar")
+		p.log(GOSSIP, "Low MBar")
 		if node.IsLeaf() || node.Size() < (p.ThreshMult()*p.MBar()) {
-			log.Println(GOSSIP, "Sending full elements for node:", node.Key())
+			p.log(GOSSIP, "Sending full elements for node:", node.Key())
 			WriteMsg(conn, &FullElements{ZSet: NewZSet(node.Elements()...)})
 			return &msgProgress{elements: NewZSet()}
 		}
 	}
 	if err != nil {
-		log.Println(GOSSIP, "sending SyncFail because", err)
+		p.log(GOSSIP, "sending SyncFail because", err)
 		WriteMsg(conn, &SyncFail{})
 		return &msgProgress{elements: NewZSet()}
 	}
-	log.Println(GOSSIP, "solved: localSet=", localSet, "remoteSet=", remoteSet)
+	p.log(GOSSIP, "solved: localSet=", localSet, "remoteSet=", remoteSet)
 	WriteMsg(conn, &Elements{ZSet: localSet})
 	return &msgProgress{elements: remoteSet}
 }
 
-func solve(remoteSamples, localSamples []*Zp, remoteSize, localSize int, points []*Zp) (*ZSet, *ZSet, error) {
+func (p *Peer) solve(remoteSamples, localSamples []*Zp, remoteSize, localSize int, points []*Zp) (*ZSet, *ZSet, error) {
 	var values []*Zp
 	for i, x := range remoteSamples {
 		values = append(values, Z(x.P).Div(x, localSamples[i]))
 	}
-	log.Println(GOSSIP, "Reconcile", values, points, remoteSize-localSize)
+	p.log(GOSSIP, "Reconcile", values, points, remoteSize-localSize)
 	return Reconcile(values, points, remoteSize-localSize)
 }
 
@@ -218,7 +232,7 @@ func (p *Peer) handleReconRqstFull(rf *ReconRqstFull, conn net.Conn) *msgProgres
 	localset := NewZSet(node.Elements()...)
 	localdiff := ZSetDiff(localset, rf.Elements)
 	remotediff := ZSetDiff(rf.Elements, localset)
-	log.Println(GOSSIP, "localdiff=", localdiff, "remotediff=", remotediff)
+	p.log(GOSSIP, "localdiff=", localdiff, "remotediff=", remotediff)
 	WriteMsg(conn, &Elements{ZSet: localdiff})
 	return &msgProgress{elements: remotediff}
 }

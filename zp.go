@@ -242,6 +242,9 @@ func NewZSet(elements ...*Zp) (zs *ZSet) {
 }
 
 func (zs *ZSet) Len() int {
+	if zs == nil || zs.s == nil {
+		return 0
+	}
 	return len(zs.s)
 }
 
@@ -292,6 +295,9 @@ func (zs *ZSet) AddAll(other *ZSet) {
 }
 
 func (zs *ZSet) Items() (result []*Zp) {
+	if zs == nil {
+		return nil
+	}
 	for k, _ := range zs.s {
 		n := big.NewInt(int64(0))
 		n.SetString(k, 10)
