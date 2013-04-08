@@ -202,6 +202,12 @@ POLLING:
 			if !ok {
 				break POLLING
 			}
+			peer1.execCmd(func() error {
+				root1, err := peer1.Root()
+				assert.Equal(t, err, nil)
+				log.Println("Peer1 has", len(root1.Elements()))
+				return nil
+			})
 			items := r1.RemoteElements
 			log.Println("Peer1 recover:", items)
 			for _, zp := range items {
@@ -213,14 +219,13 @@ POLLING:
 			if !ok {
 				break POLLING
 			}
+			peer2.execCmd(func() error {
+				root2, err := peer2.Root()
+				assert.Equal(t, err, nil)
+				log.Println("Peer2 has", len(root2.Elements()))
+				return nil
+			})
 			items := r2.RemoteElements
-			/*
-				peer2.execCmd(func() error{
-					root2, err := peer2.Root()
-					log.Println("Peer2 has:", root2.Elements())
-					return err
-				})
-			*/
 			log.Println("Peer2 recover:", items)
 			for _, zp := range items {
 				assert.T(t, zp != nil)
