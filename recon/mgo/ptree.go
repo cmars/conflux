@@ -25,6 +25,7 @@ import (
 	. "github.com/cmars/conflux/recon"
 	"labix.org/v2/mgo"
 	"log"
+	"net"
 )
 
 type client struct {
@@ -70,6 +71,24 @@ func newClient(connect string) (c *client, err error) {
 type settings struct {
 	*client
 	store *mgo.Collection
+	*config
+}
+
+type config struct {
+	version                     string
+	logName                     string
+	httpPort                    int
+	reconPort                   int
+	partners                    []string
+	filters                     []string
+	threshMult                  int
+	bitQuantum                  int
+	mBar                        int
+	splitThreshold              int
+	joinThreshold               int
+	numSamples                  int
+	gossipIntervalSecs          int
+	maxOutstandingReconRequests int
 }
 
 func newSettings(c *client, db string) (s *settings, err error) {
@@ -77,6 +96,103 @@ func newSettings(c *client, db string) (s *settings, err error) {
 	s.store = c.session.DB(db).C("settings")
 	// TODO: ensure indexes
 	return s, nil
+}
+
+func (s *settings) Init() {
+	q := s.store.Find(nil)
+	if n, err := q.Count(); n == 0 {
+		// Set defaults
+		s.config = &config{
+			version:                     "experimental",
+			httpPort:                    11371,
+			reconPort:                   11370,
+			threshMult:                  DefaultThreshMult,
+			bitQuantum:                  DefaultBitQuantum,
+			mBar:                        DefaultMBar,
+			gossipIntervalSecs:          60,
+			maxOutstandingReconRequests: 100}
+		// Insert object
+		s.update()
+	} else {
+		s.config = &config{}
+		err := q.One(s.config)
+		if err != nil {
+			panic(err)
+		}
+	}
+	s.config.splitThreshold = s.config.threshMult * s.config.mBar
+	s.config.joinThreshold = s.config.splitThreshold / 2
+	s.config.numSamples = s.config.mBar + 1
+}
+
+func (s *settings) update() {
+	err := s.store.Insert(s.config)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (s *settings) Version() string {
+	return s.config.version
+}
+
+func (s *settings) LogName() string {
+	return s.config.logName
+}
+
+func (s *settings) HttpPort() int {
+	return s.config.httpPort
+}
+
+func (s *settings) ReconPort() int {
+	return s.config.reconPort
+}
+
+func (s *settings) Partners() (addrs []net.Addr) {
+	for _, partner := range s.config.partners {
+		addr, err := net.ResolveTCPAddr("tcp", partner)
+		if err != nil {
+			panic(err)
+		}
+		addrs = append(addrs, addr)
+	}
+	return
+}
+
+func (s *settings) Filters() []string {
+	return s.config.filters
+}
+
+func (s *settings) ThreshMult() int {
+	return s.config.threshMult
+}
+
+func (s *settings) BitQuantum() int {
+	return s.config.bitQuantum
+}
+
+func (s *settings) MBar() int {
+	return s.config.mBar
+}
+
+func (s *settings) SplitThreshold() int {
+	return s.config.splitThreshold
+}
+
+func (s *settings) JoinThreshold() int {
+	return s.config.joinThreshold
+}
+
+func (s *settings) NumSamples() int {
+	return s.config.numSamples
+}
+
+func (s *settings) GossipIntervalSecs() int {
+	return s.config.gossipIntervalSecs
+}
+
+func (s *settings) MaxOutstandingReconRequests() int {
+	return s.config.maxOutstandingReconRequests
 }
 
 type prefixTree struct {
