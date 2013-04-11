@@ -32,11 +32,6 @@ import (
 
 const SERVE = "serve:"
 
-type Response interface {
-	Error() error
-	WriteTo(w io.Writer)
-}
-
 type Recover struct {
 	RemoteAddr     net.Addr
 	RemoteElements []*Zp
