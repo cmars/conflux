@@ -115,9 +115,9 @@ func TestKeyMatch(t *testing.T) {
 		zi := Zi(P_SKS, 65537*i)
 		bs := NewBitstring(P_SKS.BitLen())
 		bs.SetBytes(ReverseBytes(zi.Bytes()))
-		node1, err := tree1.Find(zi)
+		node1, err := Find(tree1, zi)
 		assert.Equal(t, err, nil)
-		node2, err := tree2.Find(zi)
+		node2, err := Find(tree2, zi)
 		assert.Equal(t, err, nil)
 		t.Logf("node1=%v, node2=%v (%b) full=%v", node1.Key(), node2.Key(), zi.Int64(), bs)
 		// If keys are different, one must prefix the other.

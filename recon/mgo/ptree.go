@@ -22,8 +22,10 @@
 package mgo
 
 import (
+	. "github.com/cmars/conflux"
 	. "github.com/cmars/conflux/recon"
 	"labix.org/v2/mgo"
+	"labix.org/v2/mgo/bson"
 	"log"
 	"net"
 )
@@ -100,7 +102,11 @@ func newSettings(c *client, db string) (s *settings, err error) {
 
 func (s *settings) Init() {
 	q := s.store.Find(nil)
-	if n, err := q.Count(); n == 0 {
+	n, err := q.Count()
+	if err != nil {
+		panic(err)
+	}
+	if n == 0 {
 		// Set defaults
 		s.config = &config{
 			version:                     "experimental",
@@ -197,12 +203,126 @@ func (s *settings) MaxOutstandingReconRequests() int {
 
 type prefixTree struct {
 	*settings
-	store *mgo.Collection
+	store  *mgo.Collection
+	points []*Zp
 }
 
 func newPrefixTree(s *settings, db string) (tree *prefixTree, err error) {
 	tree = &prefixTree{settings: s}
 	tree.store = s.client.session.DB(db).C("ptree")
 	// TODO: ensure indexes
+	tree.points = Zpoints(P_SKS, tree.NumSamples())
 	return tree, nil
+}
+
+func (t *prefixTree) Points() []*Zp { return t.points }
+
+func (t *prefixTree) Root() (PrefixNode, error) {
+	panic("not impl")
+}
+
+func (t *prefixTree) Node(bs *Bitstring) (node PrefixNode, err error) {
+	q := t.store.Find(bson.M{"key": bs.Bytes()})
+	nd := new(nodeData)
+	err = q.One(nd)
+	if err != nil {
+		return
+	}
+	return &prefixNode{prefixTree: t, nodeData: nd}, nil
+}
+
+func (t *prefixTree) Insert(z *Zp) error {
+	panic("not impl")
+}
+
+func (t *prefixTree) Remove(z *Zp) error {
+	panic("not impl")
+}
+
+type nodeData struct {
+	key         []byte
+	numElements int
+	svalues     [][]byte
+	elements    [][]byte
+	childKeys   [][]byte
+}
+
+type prefixNode struct {
+	*prefixTree
+	*nodeData
+}
+
+func (n *prefixNode) IsLeaf() bool {
+	return len(n.nodeData.childKeys) == 0
+}
+
+func (n *prefixNode) Children() (result []PrefixNode) {
+	panic("not impl")
+}
+
+func (n *prefixNode) Elements() []*Zp {
+	panic("not impl")
+}
+
+func (n *prefixNode) Size() int { return n.numElements }
+
+func (n *prefixNode) SValues() []*Zp {
+	// return n.svalues
+	panic("not impl")
+}
+
+func (n *prefixNode) Key() *Bitstring {
+	panic("not impl")
+}
+
+func (n *prefixNode) Parent() (PrefixNode, bool) {
+	// TODO: drop bitquantum suffix to get parent key, Find()
+	panic("not impl")
+}
+
+func (n *prefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) error {
+	n.updateSvalues(z, marray)
+	n.numElements++
+	if n.IsLeaf() {
+		if len(n.elements) > n.SplitThreshold() {
+			n.split(depth)
+		} else {
+			n.elements = append(n.elements, z.Bytes())
+			return nil
+		}
+	}
+	child := NextChild(n, bs, depth).(*prefixNode)
+	return child.insert(z, marray, bs, depth+1)
+}
+
+func (n *prefixNode) split(depth int) {
+	// Create child nodes
+	numChildren := 1 << uint(n.BitQuantum())
+	for i := 0; i < numChildren; i++ {
+		child := newChildNode(n, i)
+		// FIXME: set child key
+		n.childKeys = append(n.childKeys, child.key)
+	}
+	// Move elements into child nodes
+	for _, element := range n.elements {
+		bs := NewBitstring(P_SKS.BitLen())
+		bs.SetBytes(ReverseBytes(element))
+		child := NextChild(n, bs, depth).(*prefixNode)
+		zelement := Zb(P_SKS, element)
+		child.insert(zelement, AddElementArray(n.prefixTree, zelement), bs, depth+1)
+	}
+	n.elements = nil
+}
+
+func newChildNode(parent *prefixNode, childIndex int) *prefixNode {
+	panic("not impl")
+}
+
+func (n *prefixNode) updateSvalues(z *Zp, marray []*Zp) {
+	if len(marray) != len(n.points) {
+		panic("Inconsistent NumSamples size")
+	}
+	for i := 0; i < len(marray); i++ {
+		n.svalues[i] = Z(z.P).Mul(Zb(P_SKS, n.svalues[i]), marray[i]).Bytes()
+	}
 }

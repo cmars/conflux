@@ -95,6 +95,13 @@ func Zi(p *big.Int, n int) *Zp {
 	return zp
 }
 
+func Zb(p *big.Int, b []byte) *Zp {
+	i := big.NewInt(0).SetBytes(b)
+	zp := &Zp{Int: i, P: p}
+	zp.Norm()
+	return zp
+}
+
 // Zs creates an integer from base10 string s in the finite field p.
 func Zs(p *big.Int, s string) *Zp {
 	i, ok := big.NewInt(0).SetString(s, 10)
