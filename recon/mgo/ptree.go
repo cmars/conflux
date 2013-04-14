@@ -22,6 +22,8 @@
 package mgo
 
 import (
+	"bytes"
+	"fmt"
 	. "github.com/cmars/conflux"
 	. "github.com/cmars/conflux/recon"
 	"labix.org/v2/mgo"
@@ -210,7 +212,7 @@ type prefixTree struct {
 func newPrefixTree(s *settings, db string) (tree *prefixTree, err error) {
 	tree = &prefixTree{settings: s}
 	tree.store = s.client.session.DB(db).C("ptree")
-	// TODO: ensure indexes
+	tree.store.EnsureIndex(mgo.Index{Key: []string{"key"}})
 	tree.points = Zpoints(P_SKS, tree.NumSamples())
 	return tree, nil
 }
@@ -218,7 +220,13 @@ func newPrefixTree(s *settings, db string) (tree *prefixTree, err error) {
 func (t *prefixTree) Points() []*Zp { return t.points }
 
 func (t *prefixTree) Root() (PrefixNode, error) {
-	panic("not impl")
+	q := t.store.Find(bson.M{"key": []byte{}})
+	nd := new(nodeData)
+	err := q.One(nd)
+	if err != nil {
+		return nil, err
+	}
+	return &prefixNode{prefixTree: t, nodeData: nd}, nil
 }
 
 func (t *prefixTree) Node(bs *Bitstring) (node PrefixNode, err error) {
@@ -242,9 +250,9 @@ func (t *prefixTree) Remove(z *Zp) error {
 type nodeData struct {
 	key         []byte
 	numElements int
-	svalues     [][]byte
-	elements    [][]byte
-	childKeys   [][]byte
+	svalues     []byte
+	elements    []byte
+	childKeys   []int
 }
 
 type prefixNode struct {
@@ -261,18 +269,29 @@ func (n *prefixNode) Children() (result []PrefixNode) {
 }
 
 func (n *prefixNode) Elements() []*Zp {
-	panic("not impl")
+	elements, err := ReadZZarray(bytes.NewBuffer(n.elements))
+	if err != nil {
+		panic(fmt.Sprintf("Invalid elements: %v", n.elements))
+	}
+	return elements
 }
 
 func (n *prefixNode) Size() int { return n.numElements }
 
 func (n *prefixNode) SValues() []*Zp {
-	// return n.svalues
-	panic("not impl")
+	svalues, err := ReadZZarray(bytes.NewBuffer(n.svalues))
+	if err != nil {
+		panic(fmt.Sprintf("Invalid elements: %v", n.svalues))
+	}
+	return svalues
 }
 
 func (n *prefixNode) Key() *Bitstring {
-	panic("not impl")
+	key, err := ReadBitstring(bytes.NewBuffer(n.key))
+	if err != nil {
+		panic(fmt.Sprintf("Invalid bitstring: %v", n.key))
+	}
+	return key
 }
 
 func (n *prefixNode) Parent() (PrefixNode, bool) {
@@ -280,15 +299,25 @@ func (n *prefixNode) Parent() (PrefixNode, bool) {
 	panic("not impl")
 }
 
-func (n *prefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) error {
+func (n *prefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) (err error) {
 	n.updateSvalues(z, marray)
 	n.numElements++
 	if n.IsLeaf() {
 		if len(n.elements) > n.SplitThreshold() {
 			n.split(depth)
 		} else {
-			n.elements = append(n.elements, z.Bytes())
-			return nil
+			var elements []*Zp
+			// TODO: zzarray wrapper to perform in-place on n.elements
+			elements, err = ReadZZarray(bytes.NewBuffer(n.elements))
+			if err != nil {
+				return
+			}
+			out := bytes.NewBuffer(n.elements)
+			err = WriteZZarray(out, append(elements, z))
+			if err == nil {
+				n.elements = out.Bytes()
+			}
+			return
 		}
 	}
 	child := NextChild(n, bs, depth).(*prefixNode)
@@ -299,17 +328,19 @@ func (n *prefixNode) split(depth int) {
 	// Create child nodes
 	numChildren := 1 << uint(n.BitQuantum())
 	for i := 0; i < numChildren; i++ {
-		child := newChildNode(n, i)
-		// FIXME: set child key
-		n.childKeys = append(n.childKeys, child.key)
+		// Create new empty child node
+		newChildNode(n, i)
 	}
 	// Move elements into child nodes
-	for _, element := range n.elements {
+	elements, err := ReadZZarray(bytes.NewBuffer(n.elements))
+	if err != nil {
+		panic(fmt.Sprintf("Error reading elements: %v", err))
+	}
+	for _, element := range elements {
 		bs := NewBitstring(P_SKS.BitLen())
-		bs.SetBytes(ReverseBytes(element))
+		bs.SetBytes(ReverseBytes(element.Bytes()))
 		child := NextChild(n, bs, depth).(*prefixNode)
-		zelement := Zb(P_SKS, element)
-		child.insert(zelement, AddElementArray(n.prefixTree, zelement), bs, depth+1)
+		child.insert(element, AddElementArray(n.prefixTree, element), bs, depth+1)
 	}
 	n.elements = nil
 }
@@ -322,7 +353,17 @@ func (n *prefixNode) updateSvalues(z *Zp, marray []*Zp) {
 	if len(marray) != len(n.points) {
 		panic("Inconsistent NumSamples size")
 	}
-	for i := 0; i < len(marray); i++ {
-		n.svalues[i] = Z(z.P).Mul(Zb(P_SKS, n.svalues[i]), marray[i]).Bytes()
+	svalues, err := ReadZZarray(bytes.NewBuffer(n.svalues))
+	if err != nil {
+		panic(fmt.Sprintf("Failed to read svalues: %v", err))
 	}
+	for i := 0; i < len(marray); i++ {
+		svalues[i] = Z(z.P).Mul(svalues[i], marray[i])
+	}
+	out := bytes.NewBuffer(nil)
+	err = WriteZZarray(out, svalues)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to read svalues: %v", err))
+	}
+	n.svalues = out.Bytes()
 }
