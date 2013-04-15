@@ -206,6 +206,7 @@ func (n *MemPrefixNode) Children() (result []PrefixNode) {
 	}
 	return
 }
+
 func (n *MemPrefixNode) Elements() []*Zp {
 	if n.IsLeaf() {
 		return n.elements

@@ -295,8 +295,17 @@ func (n *prefixNode) Key() *Bitstring {
 }
 
 func (n *prefixNode) Parent() (PrefixNode, bool) {
-	// TODO: drop bitquantum suffix to get parent key, Find()
-	panic("not impl")
+	if len(n.key) == 0 {
+		return nil, false
+	}
+	key, err := ReadBitstring(bytes.NewBuffer(n.key))
+	parentKey := NewBitstring(key.BitLen() - n.BitQuantum())
+	parentKey.SetBytes(key.Bytes())
+	parent, err := n.Node(parentKey)
+	if err != nil {
+		panic(fmt.Sprintf("Failed to get parent: %v", err))
+	}
+	return parent, true
 }
 
 func (n *prefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) (err error) {
