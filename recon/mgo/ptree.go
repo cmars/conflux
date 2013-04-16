@@ -98,7 +98,6 @@ type config struct {
 func newSettings(c *client, db string) (s *settings, err error) {
 	s = &settings{client: c}
 	s.store = c.session.DB(db).C("settings")
-	// TODO: ensure indexes
 	return s, nil
 }
 
@@ -212,9 +211,9 @@ type prefixTree struct {
 func newPrefixTree(s *settings, db string) (tree *prefixTree, err error) {
 	tree = &prefixTree{settings: s}
 	tree.store = s.client.session.DB(db).C("ptree")
-	tree.store.EnsureIndex(mgo.Index{Key: []string{"key"}})
+	err = tree.store.EnsureIndex(mgo.Index{Key: []string{"key"}})
 	tree.points = Zpoints(P_SKS, tree.NumSamples())
-	return tree, nil
+	return tree, err
 }
 
 func (t *prefixTree) Points() []*Zp { return t.points }
@@ -240,11 +239,17 @@ func (t *prefixTree) Node(bs *Bitstring) (node PrefixNode, err error) {
 }
 
 func (t *prefixTree) Insert(z *Zp) error {
-	panic("not impl")
+	bs := NewBitstring(P_SKS.BitLen())
+	bs.SetBytes(ReverseBytes(z.Bytes()))
+	root, err := t.Root()
+	if err != nil {
+		return err
+	}
+	return root.(*prefixNode).insert(z, AddElementArray(t, z), bs, 0)
 }
 
 func (t *prefixTree) Remove(z *Zp) error {
-	panic("not impl")
+	panic("remove not impl")
 }
 
 type nodeData struct {
@@ -265,7 +270,24 @@ func (n *prefixNode) IsLeaf() bool {
 }
 
 func (n *prefixNode) Children() (result []PrefixNode) {
-	panic("not impl")
+	key := n.Key()
+	for i := 0; i < n.BitQuantum(); i++ {
+		childKey := NewBitstring(key.BitLen())
+		childKey.SetBytes(key.Bytes())
+		for j := 0; j < n.BitQuantum(); j++ {
+			if (i>>uint(j))&0x1 == 1 {
+				childKey.Set(key.BitLen() + j)
+			} else {
+				childKey.Unset(key.BitLen() + j)
+			}
+		}
+		child, err := n.Node(childKey)
+		if err != nil {
+			panic(fmt.Sprintf("Children failed on child#%v: %v", i, err))
+		}
+		result = append(result, child)
+	}
+	return
 }
 
 func (n *prefixNode) Elements() []*Zp {
@@ -355,7 +377,24 @@ func (n *prefixNode) split(depth int) {
 }
 
 func newChildNode(parent *prefixNode, childIndex int) *prefixNode {
-	panic("not impl")
+	child := &prefixNode{nodeData: &nodeData{}, prefixTree: parent.prefixTree}
+	key := parent.Key()
+	childKey := NewBitstring(key.BitLen() + parent.BitQuantum())
+	childKey.SetBytes(key.Bytes())
+	for j := 0; j < parent.BitQuantum(); j++ {
+		if (childIndex>>uint(j))&0x1 == 1 {
+			childKey.Set(key.BitLen() + j)
+		} else {
+			childKey.Unset(key.BitLen() + j)
+		}
+	}
+	out := bytes.NewBuffer(nil)
+	err := WriteBitstring(out, childKey)
+	if err != nil {
+		panic(fmt.Sprintf("failed to write child key: %v", err))
+	}
+	child.key = out.Bytes()
+	return child
 }
 
 func (n *prefixNode) updateSvalues(z *Zp, marray []*Zp) {
