@@ -210,22 +210,32 @@ type prefixTree struct {
 
 func newPrefixTree(s *settings, db string) (tree *prefixTree, err error) {
 	tree = &prefixTree{settings: s}
+	tree.points = Zpoints(P_SKS, tree.NumSamples())
 	tree.store = s.client.session.DB(db).C("ptree")
 	err = tree.store.EnsureIndex(mgo.Index{Key: []string{"key"}})
-	tree.points = Zpoints(P_SKS, tree.NumSamples())
+	if err != nil {
+		return
+	}
+	err = tree.ensureRoot()
+	if err != nil {
+		return
+	}
 	return tree, err
+}
+
+func (t *prefixTree) ensureRoot() error {
+	_, err := t.Root()
+	if err != mgo.ErrNotFound {
+		return err
+	}
+	_, err = t.newChildNode(nil, 0)
+	return err
 }
 
 func (t *prefixTree) Points() []*Zp { return t.points }
 
 func (t *prefixTree) Root() (PrefixNode, error) {
-	q := t.store.Find(bson.M{"key": []byte{}})
-	nd := new(nodeData)
-	err := q.One(nd)
-	if err != nil {
-		return nil, err
-	}
-	return &prefixNode{prefixTree: t, nodeData: nd}, nil
+	return t.Node(NewBitstring(0))
 }
 
 func (t *prefixTree) Node(bs *Bitstring) (node PrefixNode, err error) {
@@ -235,7 +245,7 @@ func (t *prefixTree) Node(bs *Bitstring) (node PrefixNode, err error) {
 	if err != nil {
 		return
 	}
-	return &prefixNode{prefixTree: t, nodeData: nd}, nil
+	return t.loadNode(nd)
 }
 
 func (t *prefixTree) Insert(z *Zp) error {
@@ -249,7 +259,79 @@ func (t *prefixTree) Insert(z *Zp) error {
 }
 
 func (t *prefixTree) Remove(z *Zp) error {
-	panic("remove not impl")
+	bs := NewBitstring(P_SKS.BitLen())
+	bs.SetBytes(ReverseBytes(z.Bytes()))
+	root, err := t.Root()
+	if err != nil {
+		return err
+	}
+	return root.(*prefixNode).remove(z, DelElementArray(t, z), bs, 0)
+}
+
+func (t *prefixTree) newChildNode(parent *prefixNode, childIndex int) (*prefixNode, error) {
+	n := &prefixNode{prefixTree: t}
+	if parent != nil {
+		parentKey := parent.Key()
+		n.key = NewBitstring(n.key.BitLen() + parent.BitQuantum())
+		n.key.SetBytes(parentKey.Bytes())
+		for j := 0; j < parent.BitQuantum(); j++ {
+			if (childIndex>>uint(j))&0x1 == 1 {
+				n.key.Set(parentKey.BitLen() + j)
+			} else {
+				n.key.Unset(parentKey.BitLen() + j)
+			}
+		}
+	} else {
+		n.key = NewBitstring(0)
+	}
+	err := t.saveNode(n)
+	return n, err
+}
+
+func (t *prefixTree) loadNode(nd *nodeData) (n *prefixNode, err error) {
+	n = &prefixNode{prefixTree: t}
+	n.key, err = ReadBitstring(bytes.NewBuffer(nd.key))
+	if err != nil {
+		return
+	}
+	n.numElements = nd.numElements
+	n.svalues, err = ReadZZarray(bytes.NewBuffer(nd.svalues))
+	if err != nil {
+		return
+	}
+	n.elements, err = ReadZZarray(bytes.NewBuffer(nd.elements))
+	if err != nil {
+		return
+	}
+	n.childKeys = nd.childKeys
+	return
+}
+
+func (t *prefixTree) saveNode(n *prefixNode) (err error) {
+	nd := &nodeData{}
+	var out *bytes.Buffer
+	// Write key
+	out = bytes.NewBuffer(nil)
+	err = WriteBitstring(out, n.key)
+	if err != nil {
+		return
+	}
+	nd.key = out.Bytes()
+	// Write sample values
+	out = bytes.NewBuffer(nil)
+	err = WriteZZarray(out, n.svalues)
+	if err != nil {
+		return
+	}
+	nd.svalues = out.Bytes()
+	// Write elements
+	out = bytes.NewBuffer(nil)
+	err = WriteZZarray(out, n.elements)
+	nd.elements = out.Bytes()
+	nd.numElements = n.numElements
+	nd.childKeys = n.childKeys
+	_, err = t.store.Upsert(bson.M{"key": nd.key}, nd)
+	return
 }
 
 type nodeData struct {
@@ -262,11 +344,15 @@ type nodeData struct {
 
 type prefixNode struct {
 	*prefixTree
-	*nodeData
+	key         *Bitstring
+	numElements int
+	svalues     []*Zp
+	elements    []*Zp
+	childKeys   []int
 }
 
 func (n *prefixNode) IsLeaf() bool {
-	return len(n.nodeData.childKeys) == 0
+	return len(n.childKeys) == 0
 }
 
 func (n *prefixNode) Children() (result []PrefixNode) {
@@ -291,38 +377,25 @@ func (n *prefixNode) Children() (result []PrefixNode) {
 }
 
 func (n *prefixNode) Elements() []*Zp {
-	elements, err := ReadZZarray(bytes.NewBuffer(n.elements))
-	if err != nil {
-		panic(fmt.Sprintf("Invalid elements: %v", n.elements))
-	}
-	return elements
+	return n.elements
 }
 
 func (n *prefixNode) Size() int { return n.numElements }
 
 func (n *prefixNode) SValues() []*Zp {
-	svalues, err := ReadZZarray(bytes.NewBuffer(n.svalues))
-	if err != nil {
-		panic(fmt.Sprintf("Invalid elements: %v", n.svalues))
-	}
-	return svalues
+	return n.svalues
 }
 
 func (n *prefixNode) Key() *Bitstring {
-	key, err := ReadBitstring(bytes.NewBuffer(n.key))
-	if err != nil {
-		panic(fmt.Sprintf("Invalid bitstring: %v", n.key))
-	}
-	return key
+	return n.key
 }
 
 func (n *prefixNode) Parent() (PrefixNode, bool) {
-	if len(n.key) == 0 {
+	if n.key.BitLen() == 0 {
 		return nil, false
 	}
-	key, err := ReadBitstring(bytes.NewBuffer(n.key))
-	parentKey := NewBitstring(key.BitLen() - n.BitQuantum())
-	parentKey.SetBytes(key.Bytes())
+	parentKey := NewBitstring(n.key.BitLen() - n.BitQuantum())
+	parentKey.SetBytes(n.key.Bytes())
 	parent, err := n.Node(parentKey)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to get parent: %v", err))
@@ -335,83 +408,86 @@ func (n *prefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) (err 
 	n.numElements++
 	if n.IsLeaf() {
 		if len(n.elements) > n.SplitThreshold() {
-			n.split(depth)
-		} else {
-			var elements []*Zp
-			// TODO: zzarray wrapper to perform in-place on n.elements
-			elements, err = ReadZZarray(bytes.NewBuffer(n.elements))
+			err = n.split(depth)
 			if err != nil {
 				return
 			}
-			out := bytes.NewBuffer(n.elements)
-			err = WriteZZarray(out, append(elements, z))
-			if err == nil {
-				n.elements = out.Bytes()
-			}
+		} else {
+			n.elements = append(n.elements, z)
+			n.saveNode(n)
 			return
 		}
 	}
+	n.saveNode(n)
 	child := NextChild(n, bs, depth).(*prefixNode)
 	return child.insert(z, marray, bs, depth+1)
 }
 
-func (n *prefixNode) split(depth int) {
+func (n *prefixNode) split(depth int) (err error) {
 	// Create child nodes
 	numChildren := 1 << uint(n.BitQuantum())
 	for i := 0; i < numChildren; i++ {
 		// Create new empty child node
-		newChildNode(n, i)
+		_, err = n.newChildNode(n, i)
+		if err != nil {
+			return
+		}
 	}
 	// Move elements into child nodes
-	elements, err := ReadZZarray(bytes.NewBuffer(n.elements))
-	if err != nil {
-		panic(fmt.Sprintf("Error reading elements: %v", err))
-	}
-	for _, element := range elements {
+	for _, element := range n.elements {
 		bs := NewBitstring(P_SKS.BitLen())
 		bs.SetBytes(ReverseBytes(element.Bytes()))
 		child := NextChild(n, bs, depth).(*prefixNode)
 		child.insert(element, AddElementArray(n.prefixTree, element), bs, depth+1)
 	}
 	n.elements = nil
-}
-
-func newChildNode(parent *prefixNode, childIndex int) *prefixNode {
-	child := &prefixNode{nodeData: &nodeData{}, prefixTree: parent.prefixTree}
-	key := parent.Key()
-	childKey := NewBitstring(key.BitLen() + parent.BitQuantum())
-	childKey.SetBytes(key.Bytes())
-	for j := 0; j < parent.BitQuantum(); j++ {
-		if (childIndex>>uint(j))&0x1 == 1 {
-			childKey.Set(key.BitLen() + j)
-		} else {
-			childKey.Unset(key.BitLen() + j)
-		}
-	}
-	out := bytes.NewBuffer(nil)
-	err := WriteBitstring(out, childKey)
-	if err != nil {
-		panic(fmt.Sprintf("failed to write child key: %v", err))
-	}
-	child.key = out.Bytes()
-	return child
+	return
 }
 
 func (n *prefixNode) updateSvalues(z *Zp, marray []*Zp) {
 	if len(marray) != len(n.points) {
 		panic("Inconsistent NumSamples size")
 	}
-	svalues, err := ReadZZarray(bytes.NewBuffer(n.svalues))
-	if err != nil {
-		panic(fmt.Sprintf("Failed to read svalues: %v", err))
-	}
 	for i := 0; i < len(marray); i++ {
-		svalues[i] = Z(z.P).Mul(svalues[i], marray[i])
+		n.svalues[i] = Z(z.P).Mul(n.svalues[i], marray[i])
 	}
-	out := bytes.NewBuffer(nil)
-	err = WriteZZarray(out, svalues)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to read svalues: %v", err))
+}
+
+func (n *prefixNode) remove(z *Zp, marray []*Zp, bs *Bitstring, depth int) error {
+	n.updateSvalues(z, marray)
+	n.numElements--
+	if !n.IsLeaf() {
+		if n.numElements <= n.JoinThreshold() {
+			n.join()
+		} else {
+			n.saveNode(n)
+			child := NextChild(n, bs, depth).(*prefixNode)
+			return child.remove(z, marray, bs, depth+1)
+		}
 	}
-	n.svalues = out.Bytes()
+	n.elements = withRemoved(n.elements, z)
+	n.saveNode(n)
+	return nil
+}
+
+func (n *prefixNode) join() {
+	for _, child := range n.Children() {
+		n.elements = append(n.elements, child.Elements()...)
+	}
+	n.childKeys = nil
+}
+
+func withRemoved(elements []*Zp, z *Zp) (result []*Zp) {
+	var has bool
+	for _, element := range elements {
+		if element.Cmp(z) != 0 {
+			result = append(result, element)
+		} else {
+			has = true
+		}
+	}
+	if !has {
+		panic("Remove non-existent element from node")
+	}
+	return
 }
