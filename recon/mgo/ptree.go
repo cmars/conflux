@@ -46,6 +46,7 @@ func NewPeer(connect string, db string) (p *Peer, err error) {
 	if err != nil {
 		return nil, err
 	}
+	settings.Init()
 	tree, err := newPrefixTree(settings, db)
 	if err != nil {
 		return nil, err
@@ -79,20 +80,20 @@ type settings struct {
 }
 
 type config struct {
-	version                     string
-	logName                     string
-	httpPort                    int
-	reconPort                   int
-	partners                    []string
-	filters                     []string
-	threshMult                  int
-	bitQuantum                  int
-	mBar                        int
-	splitThreshold              int
-	joinThreshold               int
-	numSamples                  int
-	gossipIntervalSecs          int
-	maxOutstandingReconRequests int
+	Version                     string
+	LogName                     string
+	HttpPort                    int
+	ReconPort                   int
+	Partners                    []string
+	Filters                     []string
+	ThreshMult                  int
+	BitQuantum                  int
+	MBar                        int
+	SplitThreshold              int
+	JoinThreshold               int
+	NumSamples                  int
+	GossipIntervalSecs          int
+	MaxOutstandingReconRequests int
 }
 
 func newSettings(c *client, db string) (s *settings, err error) {
@@ -110,14 +111,14 @@ func (s *settings) Init() {
 	if n == 0 {
 		// Set defaults
 		s.config = &config{
-			version:                     "experimental",
-			httpPort:                    11371,
-			reconPort:                   11370,
-			threshMult:                  DefaultThreshMult,
-			bitQuantum:                  DefaultBitQuantum,
-			mBar:                        DefaultMBar,
-			gossipIntervalSecs:          60,
-			maxOutstandingReconRequests: 100}
+			Version:                     "experimental",
+			HttpPort:                    11371,
+			ReconPort:                   11370,
+			ThreshMult:                  DefaultThreshMult,
+			BitQuantum:                  DefaultBitQuantum,
+			MBar:                        DefaultMBar,
+			GossipIntervalSecs:          60,
+			MaxOutstandingReconRequests: 100}
 		// Insert object
 		s.update()
 	} else {
@@ -127,9 +128,9 @@ func (s *settings) Init() {
 			panic(err)
 		}
 	}
-	s.config.splitThreshold = s.config.threshMult * s.config.mBar
-	s.config.joinThreshold = s.config.splitThreshold / 2
-	s.config.numSamples = s.config.mBar + 1
+	s.config.SplitThreshold = s.config.ThreshMult * s.config.MBar
+	s.config.JoinThreshold = s.config.SplitThreshold / 2
+	s.config.NumSamples = s.config.MBar + 1
 }
 
 func (s *settings) update() {
@@ -140,23 +141,23 @@ func (s *settings) update() {
 }
 
 func (s *settings) Version() string {
-	return s.config.version
+	return s.config.Version
 }
 
 func (s *settings) LogName() string {
-	return s.config.logName
+	return s.config.LogName
 }
 
 func (s *settings) HttpPort() int {
-	return s.config.httpPort
+	return s.config.HttpPort
 }
 
 func (s *settings) ReconPort() int {
-	return s.config.reconPort
+	return s.config.ReconPort
 }
 
 func (s *settings) Partners() (addrs []net.Addr) {
-	for _, partner := range s.config.partners {
+	for _, partner := range s.config.Partners {
 		addr, err := net.ResolveTCPAddr("tcp", partner)
 		if err != nil {
 			panic(err)
@@ -167,39 +168,39 @@ func (s *settings) Partners() (addrs []net.Addr) {
 }
 
 func (s *settings) Filters() []string {
-	return s.config.filters
+	return s.config.Filters
 }
 
 func (s *settings) ThreshMult() int {
-	return s.config.threshMult
+	return s.config.ThreshMult
 }
 
 func (s *settings) BitQuantum() int {
-	return s.config.bitQuantum
+	return s.config.BitQuantum
 }
 
 func (s *settings) MBar() int {
-	return s.config.mBar
+	return s.config.MBar
 }
 
 func (s *settings) SplitThreshold() int {
-	return s.config.splitThreshold
+	return s.config.SplitThreshold
 }
 
 func (s *settings) JoinThreshold() int {
-	return s.config.joinThreshold
+	return s.config.JoinThreshold
 }
 
 func (s *settings) NumSamples() int {
-	return s.config.numSamples
+	return s.config.NumSamples
 }
 
 func (s *settings) GossipIntervalSecs() int {
-	return s.config.gossipIntervalSecs
+	return s.config.GossipIntervalSecs
 }
 
 func (s *settings) MaxOutstandingReconRequests() int {
-	return s.config.maxOutstandingReconRequests
+	return s.config.MaxOutstandingReconRequests
 }
 
 type prefixTree struct {
@@ -212,7 +213,7 @@ func newPrefixTree(s *settings, db string) (tree *prefixTree, err error) {
 	tree = &prefixTree{settings: s}
 	tree.points = Zpoints(P_SKS, tree.NumSamples())
 	tree.store = s.client.session.DB(db).C("ptree")
-	err = tree.store.EnsureIndex(mgo.Index{Key: []string{"key"}})
+	err = tree.store.EnsureIndex(mgo.Index{Key: []string{"keybuf"}})
 	if err != nil {
 		return
 	}
@@ -239,7 +240,9 @@ func (t *prefixTree) Root() (PrefixNode, error) {
 }
 
 func (t *prefixTree) Node(bs *Bitstring) (node PrefixNode, err error) {
-	q := t.store.Find(bson.M{"key": bs.Bytes()})
+	key := bytes.NewBuffer(nil)
+	err = WriteBitstring(key, bs)
+	q := t.store.Find(bson.M{"keybuf": key.Bytes()})
 	nd := new(nodeData)
 	err = q.One(nd)
 	if err != nil {
@@ -272,7 +275,7 @@ func (t *prefixTree) newChildNode(parent *prefixNode, childIndex int) (*prefixNo
 	n := &prefixNode{prefixTree: t}
 	if parent != nil {
 		parentKey := parent.Key()
-		n.key = NewBitstring(n.key.BitLen() + parent.BitQuantum())
+		n.key = NewBitstring(parentKey.BitLen() + t.BitQuantum())
 		n.key.SetBytes(parentKey.Bytes())
 		for j := 0; j < parent.BitQuantum(); j++ {
 			if (childIndex>>uint(j))&0x1 == 1 {
@@ -284,26 +287,30 @@ func (t *prefixTree) newChildNode(parent *prefixNode, childIndex int) (*prefixNo
 	} else {
 		n.key = NewBitstring(0)
 	}
+	n.svalues = make([]*Zp, t.NumSamples())
+	for i := 0; i < len(n.svalues); i++ {
+		n.svalues[i] = Zi(P_SKS, 1)
+	}
 	err := t.saveNode(n)
 	return n, err
 }
 
 func (t *prefixTree) loadNode(nd *nodeData) (n *prefixNode, err error) {
 	n = &prefixNode{prefixTree: t}
-	n.key, err = ReadBitstring(bytes.NewBuffer(nd.key))
+	n.key, err = ReadBitstring(bytes.NewBuffer(nd.KeyBuf))
 	if err != nil {
 		return
 	}
-	n.numElements = nd.numElements
-	n.svalues, err = ReadZZarray(bytes.NewBuffer(nd.svalues))
+	n.numElements = nd.NumElements
+	n.svalues, err = ReadZZarray(bytes.NewBuffer(nd.SvaluesBuf))
 	if err != nil {
 		return
 	}
-	n.elements, err = ReadZZarray(bytes.NewBuffer(nd.elements))
+	n.elements, err = ReadZZarray(bytes.NewBuffer(nd.ElementsBuf))
 	if err != nil {
 		return
 	}
-	n.childKeys = nd.childKeys
+	n.childKeys = nd.ChildKeys
 	return
 }
 
@@ -316,30 +323,30 @@ func (t *prefixTree) saveNode(n *prefixNode) (err error) {
 	if err != nil {
 		return
 	}
-	nd.key = out.Bytes()
+	nd.KeyBuf = out.Bytes()
 	// Write sample values
 	out = bytes.NewBuffer(nil)
 	err = WriteZZarray(out, n.svalues)
 	if err != nil {
 		return
 	}
-	nd.svalues = out.Bytes()
+	nd.SvaluesBuf = out.Bytes()
 	// Write elements
 	out = bytes.NewBuffer(nil)
 	err = WriteZZarray(out, n.elements)
-	nd.elements = out.Bytes()
-	nd.numElements = n.numElements
-	nd.childKeys = n.childKeys
-	_, err = t.store.Upsert(bson.M{"key": nd.key}, nd)
+	nd.ElementsBuf = out.Bytes()
+	nd.NumElements = n.numElements
+	nd.ChildKeys = n.childKeys
+	_, err = t.store.Upsert(bson.M{"keybuf": nd.KeyBuf}, nd)
 	return
 }
 
 type nodeData struct {
-	key         []byte
-	numElements int
-	svalues     []byte
-	elements    []byte
-	childKeys   []int
+	KeyBuf []byte
+	NumElements int
+	SvaluesBuf     []byte
+	ElementsBuf    []byte
+	ChildKeys   []int
 }
 
 type prefixNode struct {
@@ -357,8 +364,8 @@ func (n *prefixNode) IsLeaf() bool {
 
 func (n *prefixNode) Children() (result []PrefixNode) {
 	key := n.Key()
-	for i := 0; i < n.BitQuantum(); i++ {
-		childKey := NewBitstring(key.BitLen())
+	for _, i := range n.childKeys {
+		childKey := NewBitstring(key.BitLen()+n.BitQuantum())
 		childKey.SetBytes(key.Bytes())
 		for j := 0; j < n.BitQuantum(); j++ {
 			if (i>>uint(j))&0x1 == 1 {
@@ -432,6 +439,7 @@ func (n *prefixNode) split(depth int) (err error) {
 		if err != nil {
 			return
 		}
+		n.childKeys = append(n.childKeys, i)
 	}
 	// Move elements into child nodes
 	for _, element := range n.elements {
