@@ -31,7 +31,6 @@ type PrefixTree interface {
 	SplitThreshold() int
 	JoinThreshold() int
 	BitQuantum() int
-	MBar() int
 	NumSamples() int
 	Points() []*Zp
 	Root() (PrefixNode, error)
@@ -74,7 +73,6 @@ type MemPrefixTree struct {
 func (t *MemPrefixTree) SplitThreshold() int       { return t.splitThreshold }
 func (t *MemPrefixTree) JoinThreshold() int        { return t.joinThreshold }
 func (t *MemPrefixTree) BitQuantum() int           { return t.bitQuantum }
-func (t *MemPrefixTree) MBar() int                 { return t.mBar }
 func (t *MemPrefixTree) NumSamples() int           { return t.numSamples }
 func (t *MemPrefixTree) Points() []*Zp             { return t.points }
 func (t *MemPrefixTree) Root() (PrefixNode, error) { return t.root, nil }

@@ -23,20 +23,19 @@ package cask
 
 import (
 	"bytes"
+	"code.google.com/p/gocask"
+	"encoding/gob"
+	"errors"
 	"fmt"
 	. "github.com/cmars/conflux"
 	. "github.com/cmars/conflux/recon"
-	"encoding/gob"
-	"code.google.com/p/gocask"
-	"net"
-	"path/filepath"
 	"os"
-	"errors"
+	"path/filepath"
 )
 
 type client struct {
 	settingsPath string
-	ptreePath string
+	ptreePath    string
 }
 
 func NewPeer(basepath string) (p *Peer, err error) {
@@ -48,170 +47,47 @@ func NewPeer(basepath string) (p *Peer, err error) {
 	if err != nil {
 		return nil, err
 	}
-	settings.Init()
 	tree, err := newPrefixTree(settings)
 	if err != nil {
 		return nil, err
 	}
 	return &Peer{
 		RecoverChan: make(RecoverChan),
-		Settings:    settings,
+		Settings:    settings.Settings,
 		PrefixTree:  tree}, nil
 }
 
 func newClient(basepath string) (c *client, err error) {
 	c = &client{}
-	c.settingsPath = filepath.Join(basepath, "settings")
+	c.settingsPath = filepath.Join(basepath, "conflux.recon.conf")
 	c.ptreePath = filepath.Join(basepath, "ptree")
 	var fi os.FileInfo
-	for _, path := range []string{ c.settingsPath, c.ptreePath } {
-		fi, err = os.Stat(path)
-		if os.IsNotExist(err) {
-			err = os.MkdirAll(path, os.FileMode(0755))
-			if err != nil {
-				return
-			}
-		} else if !fi.IsDir() {
-			err = errors.New(fmt.Sprintf("Not a directory: %s", path))
+	fi, err = os.Stat(c.ptreePath)
+	if os.IsNotExist(err) {
+		err = os.MkdirAll(c.ptreePath, os.FileMode(0755))
+		if err != nil {
 			return
 		}
+	} else if !fi.IsDir() {
+		err = errors.New(fmt.Sprintf("Not a directory: %s", c.ptreePath))
+		return
 	}
 	return
 }
 
 type settings struct {
 	*client
-	settingsStore *gocask.Gocask
-	*config
-}
-
-type config struct {
-	Version                     string
-	LogName                     string
-	HttpPort                    int
-	ReconPort                   int
-	Partners                    []string
-	Filters                     []string
-	ThreshMult                  int
-	BitQuantum                  int
-	MBar                        int
-	SplitThreshold              int
-	JoinThreshold               int
-	NumSamples                  int
-	GossipIntervalSecs          int
-	MaxOutstandingReconRequests int
+	*Settings
 }
 
 func newSettings(c *client) (s *settings, err error) {
 	s = &settings{client: c}
-	s.settingsStore, err = gocask.NewGocask(c.settingsPath)
-	return s, err
-}
-
-func (s *settings) Init() {
-	raw, err := s.settingsStore.Get("")
-	if err == gocask.ErrKeyNotFound {
-		// Set defaults
-		s.config = &config{
-			Version:                     "experimental",
-			HttpPort:                    11371,
-			ReconPort:                   11370,
-			ThreshMult:                  DefaultThreshMult,
-			BitQuantum:                  DefaultBitQuantum,
-			MBar:                        DefaultMBar,
-			GossipIntervalSecs:          60,
-			MaxOutstandingReconRequests: 100}
-		buf := bytes.NewBuffer(nil)
-		enc := gob.NewEncoder(buf)
-		err = enc.Encode(s.config)
-		if err != nil {
-			panic(err)
-		}
-		s.settingsStore.Put("", buf.Bytes())
+	if fi, err := os.Stat(c.settingsPath); err == nil && !fi.IsDir() {
+		s.Settings = LoadSettings(c.settingsPath)
 	} else {
-		s.config = &config{}
-		dec := gob.NewDecoder(bytes.NewBuffer(raw))
-		err = dec.Decode(s.config)
-		if err != nil {
-			panic(err)
-		}
+		s.Settings = NewSettings()
 	}
-	s.config.SplitThreshold = s.config.ThreshMult * s.config.MBar
-	s.config.JoinThreshold = s.config.SplitThreshold / 2
-	s.config.NumSamples = s.config.MBar + 1
-}
-
-func (s *settings) update() {
-	buf := bytes.NewBuffer(nil)
-	enc := gob.NewEncoder(buf)
-	err := enc.Encode(s.config)
-	if err != nil {
-		panic(err)
-	}
-	s.settingsStore.Put("", buf.Bytes())
-}
-
-func (s *settings) Version() string {
-	return s.config.Version
-}
-
-func (s *settings) LogName() string {
-	return s.config.LogName
-}
-
-func (s *settings) HttpPort() int {
-	return s.config.HttpPort
-}
-
-func (s *settings) ReconPort() int {
-	return s.config.ReconPort
-}
-
-func (s *settings) Partners() (addrs []net.Addr) {
-	for _, partner := range s.config.Partners {
-		addr, err := net.ResolveTCPAddr("tcp", partner)
-		if err != nil {
-			panic(err)
-		}
-		addrs = append(addrs, addr)
-	}
-	return
-}
-
-func (s *settings) Filters() []string {
-	return s.config.Filters
-}
-
-func (s *settings) ThreshMult() int {
-	return s.config.ThreshMult
-}
-
-func (s *settings) BitQuantum() int {
-	return s.config.BitQuantum
-}
-
-func (s *settings) MBar() int {
-	return s.config.MBar
-}
-
-func (s *settings) SplitThreshold() int {
-	return s.config.SplitThreshold
-}
-
-func (s *settings) JoinThreshold() int {
-	return s.config.JoinThreshold
-}
-
-func (s *settings) NumSamples() int {
-	return s.config.NumSamples
-}
-
-func (s *settings) GossipIntervalSecs() int {
-	return s.config.GossipIntervalSecs
-}
-
-func (s *settings) MaxOutstandingReconRequests() int {
-	return s.config.MaxOutstandingReconRequests
+	return s, err
 }
 
 type prefixTree struct {
@@ -234,6 +110,8 @@ func newPrefixTree(s *settings) (tree *prefixTree, err error) {
 	return tree, err
 }
 
+func (t *prefixTree) Init() {}
+
 func (t *prefixTree) ensureRoot() error {
 	_, err := t.Root()
 	if err != gocask.ErrKeyNotFound {
@@ -242,6 +120,11 @@ func (t *prefixTree) ensureRoot() error {
 	_, err = t.newChildNode(nil, 0)
 	return err
 }
+
+func (t *prefixTree) SplitThreshold() int { return t.Settings.SplitThreshold }
+func (t *prefixTree) JoinThreshold() int  { return t.Settings.JoinThreshold }
+func (t *prefixTree) BitQuantum() int     { return t.Settings.BitQuantum }
+func (t *prefixTree) NumSamples() int     { return t.Settings.NumSamples }
 
 func (t *prefixTree) Points() []*Zp { return t.points }
 
@@ -365,10 +248,10 @@ func (t *prefixTree) saveNode(n *prefixNode) (err error) {
 }
 
 type nodeData struct {
-	KeyBuf []byte
+	KeyBuf      []byte
 	NumElements int
-	SvaluesBuf     []byte
-	ElementsBuf    []byte
+	SvaluesBuf  []byte
+	ElementsBuf []byte
 	ChildKeys   []int
 }
 
@@ -388,7 +271,7 @@ func (n *prefixNode) IsLeaf() bool {
 func (n *prefixNode) Children() (result []PrefixNode) {
 	key := n.Key()
 	for _, i := range n.childKeys {
-		childKey := NewBitstring(key.BitLen()+n.BitQuantum())
+		childKey := NewBitstring(key.BitLen() + n.BitQuantum())
 		childKey.SetBytes(key.Bytes())
 		for j := 0; j < n.BitQuantum(); j++ {
 			if (i>>uint(j))&0x1 == 1 {

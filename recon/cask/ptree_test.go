@@ -1,18 +1,19 @@
 package cask
 
 import (
-	"github.com/bmizerany/assert"
-	"testing"
-	"os"
-	"path/filepath"
 	"fmt"
+	"github.com/bmizerany/assert"
 	. "github.com/cmars/conflux"
 	. "github.com/cmars/conflux/recon"
+	"os"
+	"path/filepath"
+	"testing"
 )
 
 const TEST_DB = "recon_test"
 
 var testDbDir string
+
 func createTestPeer(t *testing.T) *Peer {
 	testDbDir = filepath.Join(os.TempDir(), fmt.Sprintf("conflux-cask-test.%v", os.Getpid()))
 	err := os.MkdirAll(testDbDir, 0755)

@@ -28,6 +28,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"time"
 )
 
 const SERVE = "serve:"
@@ -45,51 +46,6 @@ type RecoverChan chan *Recover
 
 var PNodeNotFound error = errors.New("Prefix-tree node not found")
 
-type Settings interface {
-	Init()
-	Version() string
-	LogName() string
-	HttpPort() int
-	ReconPort() int
-	Partners() []net.Addr
-	Filters() []string
-	ThreshMult() int
-	GossipIntervalSecs() int
-	MaxOutstandingReconRequests() int
-}
-
-type DefaultSettings struct {
-	version                     string
-	logName                     string
-	httpPort                    int
-	reconPort                   int
-	partners                    []net.Addr
-	filters                     []string
-	threshMult                  int
-	gossipIntervalSecs          int
-	maxOutstandingReconRequests int
-}
-
-func (s *DefaultSettings) Version() string                  { return s.version }
-func (s *DefaultSettings) LogName() string                  { return s.logName }
-func (s *DefaultSettings) HttpPort() int                    { return s.httpPort }
-func (s *DefaultSettings) ReconPort() int                   { return s.reconPort }
-func (s *DefaultSettings) Partners() []net.Addr             { return s.partners }
-func (s *DefaultSettings) Filters() []string                { return s.filters }
-func (s *DefaultSettings) ThreshMult() int                  { return s.threshMult }
-func (s *DefaultSettings) GossipIntervalSecs() int          { return s.gossipIntervalSecs }
-func (s *DefaultSettings) MaxOutstandingReconRequests() int { return s.maxOutstandingReconRequests }
-
-func (s *DefaultSettings) Init() {
-	s.version = "experimental"
-	s.reconPort = 11370
-	s.httpPort = 11371
-	s.logName = ""
-	s.threshMult = DefaultThreshMult
-	s.gossipIntervalSecs = 60
-	s.maxOutstandingReconRequests = 100
-}
-
 type serverStop chan interface{}
 
 type gossipEnable chan bool
@@ -100,7 +56,7 @@ type reconCmdReq chan reconCmd
 type reconCmdResp chan error
 
 type Peer struct {
-	Settings
+	*Settings
 	PrefixTree
 	RecoverChan  RecoverChan
 	reconCmdReq  reconCmdReq
@@ -110,8 +66,7 @@ type Peer struct {
 }
 
 func NewMemPeer() *Peer {
-	settings := new(DefaultSettings)
-	settings.Init()
+	settings := NewSettings()
 	tree := new(MemPrefixTree)
 	tree.Init()
 	peer := &Peer{
@@ -122,7 +77,7 @@ func NewMemPeer() *Peer {
 }
 
 func (p *Peer) log(v ...interface{}) {
-	v = append([]interface{}{p.LogName()}, v...)
+	v = append([]interface{}{p.LogName}, v...)
 	log.Println(v...)
 }
 
@@ -176,7 +131,7 @@ func (p *Peer) Remove(z *Zp) (err error) {
 }
 
 func (p *Peer) Serve() {
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", p.ReconPort()))
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", p.ReconPort))
 	if err != nil {
 		log.Print(err)
 		return
@@ -198,10 +153,10 @@ func (p *Peer) Serve() {
 		config := &Config{Contents: map[string]string{"foo": "bar"}}
 		WriteMsg(conn, config)
 		p.log(SERVE, "sent config")
-		err = p.interactWithClient(conn, NewBitstring(0))
-		if err != nil {
-			p.log(SERVE, err)
-		}
+		conn.SetDeadline(time.Now().Add(time.Second))
+		p.execCmd(func() error {
+			return p.interactWithClient(conn, NewBitstring(0))
+		})
 	}
 }
 
@@ -312,7 +267,7 @@ func readAllMsgs(r io.Reader) chan ReconMsg {
 
 func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) {
 	var msg ReconMsg
-	if req.node.IsLeaf() || (req.node.Size() < p.MBar()) {
+	if req.node.IsLeaf() || (req.node.Size() < p.MBar) {
 		msg = &ReconRqstFull{
 			Prefix:   req.key,
 			Elements: NewZSet(req.node.Elements()...)}
@@ -378,10 +333,7 @@ func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err erro
 		case bottom == nil:
 			req := recon.popRequest()
 			p.log(SERVE, "interact: popRequest:", req, "sending...")
-			p.execCmd(func() error {
-				recon.sendRequest(p, req)
-				return nil
-			})
+			recon.sendRequest(p, req)
 		case bottom.state == reconStateFlushEnded:
 			p.log(SERVE, "interact: flush ended, popBottom")
 			recon.popBottom()
@@ -397,26 +349,19 @@ func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err erro
 			}
 			if hasMsg {
 				recon.popBottom()
-				err = p.execCmd(func() error {
-					return recon.handleReply(p, msg, bottom.requestEntry)
-				})
-			} else if len(recon.bottomQ) > p.MaxOutstandingReconRequests() ||
+				err = recon.handleReply(p, msg, bottom.requestEntry)
+			} else if len(recon.bottomQ) > p.MaxOutstandingReconRequests ||
 				len(recon.requestQ) == 0 {
 				if !recon.flushing {
 					recon.flushQueue()
 				} else {
 					recon.popBottom()
 					msg = <-msgChan
-					err = p.execCmd(func() error {
-						return recon.handleReply(p, msg, bottom.requestEntry)
-					})
+					err = recon.handleReply(p, msg, bottom.requestEntry)
 				}
 			} else {
 				req := recon.popRequest()
-				p.execCmd(func() error {
-					recon.sendRequest(p, req)
-					return nil
-				})
+				recon.sendRequest(p, req)
 			}
 		}
 		if err != nil {

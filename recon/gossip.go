@@ -25,7 +25,7 @@ import (
 	"errors"
 	"fmt"
 	. "github.com/cmars/conflux"
-	"log"
+	//"log"
 	"math/rand"
 	"net"
 	"time"
@@ -56,12 +56,14 @@ func (p *Peer) Gossip() {
 			goto DELAY
 		}
 		p.log(GOSSIP, "Initiating recon with peer", peer)
-		err = p.initiateRecon(peer)
-		if err != nil {
-			log.Print(err)
-		}
+		p.execCmd(func() error {
+			return p.initiateRecon(peer)
+		})
+		//if err != nil {
+		//log.Print(err)
+		//}
 	DELAY:
-		delay := time.Duration(p.GossipIntervalSecs()) * time.Second
+		delay := time.Duration(p.GossipIntervalSecs) * time.Second
 		// jitter the delay
 		time.Sleep(delay)
 	}
@@ -70,7 +72,10 @@ func (p *Peer) Gossip() {
 var NoPartnersError error = errors.New("That feel when no recon partner")
 
 func (p *Peer) choosePartner() (net.Addr, error) {
-	partners := p.Partners()
+	partners, err := p.PartnerAddrs()
+	if err != nil {
+		return nil, err
+	}
 	if len(partners) == 0 {
 		return nil, NoPartnersError
 	}
@@ -79,10 +84,11 @@ func (p *Peer) choosePartner() (net.Addr, error) {
 
 func (p *Peer) initiateRecon(peer net.Addr) error {
 	// Connect to peer
-	conn, err := net.Dial(peer.Network(), peer.String())
+	conn, err := net.DialTimeout(peer.Network(), peer.String(), time.Second)
 	if err != nil {
 		return err
 	}
+	conn.SetDeadline(time.Now().Add(time.Second))
 	p.log(GOSSIP, "Connected with", peer)
 	// Interact with peer
 	return p.clientRecon(conn)
@@ -154,19 +160,9 @@ func (p *Peer) interactWithServer(conn net.Conn) msgProgressChan {
 			p.log(GOSSIP, "interact: got msg:", msg)
 			switch m := msg.(type) {
 			case *ReconRqstPoly:
-				p.execCmd(func() error {
-					resp = p.handleReconRqstPoly(m, conn)
-					out <- resp
-					return nil
-				})
-				continue
+				resp = p.handleReconRqstPoly(m, conn)
 			case *ReconRqstFull:
-				p.execCmd(func() error {
-					resp = p.handleReconRqstFull(m, conn)
-					out <- resp
-					return nil
-				})
-				continue
+				resp = p.handleReconRqstFull(m, conn)
 			case *Elements:
 				p.log(GOSSIP, "Elements:", m.ZSet)
 				resp = &msgProgress{elements: m.ZSet}
@@ -199,7 +195,7 @@ func (p *Peer) handleReconRqstPoly(rp *ReconRqstPoly, conn net.Conn) *msgProgres
 		remoteSamples, localSamples, remoteSize, localSize, points)
 	if err == LowMBar {
 		p.log(GOSSIP, "Low MBar")
-		if node.IsLeaf() || node.Size() < (p.ThreshMult()*p.MBar()) {
+		if node.IsLeaf() || node.Size() < (p.ThreshMult*p.MBar) {
 			p.log(GOSSIP, "Sending full elements for node:", node.Key())
 			WriteMsg(conn, &FullElements{ZSet: NewZSet(node.Elements()...)})
 			return &msgProgress{elements: NewZSet()}
