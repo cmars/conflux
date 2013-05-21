@@ -18,7 +18,7 @@ func createTestPeer(t *testing.T) *Peer {
 	testDbDir = filepath.Join(os.TempDir(), fmt.Sprintf("conflux-cask-test.%v", os.Getpid()))
 	err := os.MkdirAll(testDbDir, 0755)
 	assert.Equal(t, err, nil)
-	peer, err := NewPeer(testDbDir)
+	peer, err := NewPeer(testDbDir, nil)
 	assert.Equal(t, err, nil)
 	return peer
 }

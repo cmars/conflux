@@ -38,22 +38,21 @@ type client struct {
 	ptreePath    string
 }
 
-func NewPeer(basepath string) (p *Peer, err error) {
+func NewPeer(basepath string, settings *Settings) (p *Peer, err error) {
 	client, err := newClient(basepath)
 	if err != nil {
 		return nil, err
 	}
-	settings, err := newSettings(client)
-	if err != nil {
-		return nil, err
+	if settings == nil {
+		settings = newSettings(client)
 	}
-	tree, err := newPrefixTree(settings)
+	tree, err := newPrefixTree(client, settings)
 	if err != nil {
 		return nil, err
 	}
 	return &Peer{
 		RecoverChan: make(RecoverChan),
-		Settings:    settings.Settings,
+		Settings:    settings,
 		PrefixTree:  tree}, nil
 }
 
@@ -75,29 +74,22 @@ func newClient(basepath string) (c *client, err error) {
 	return
 }
 
-type settings struct {
-	*client
-	*Settings
-}
-
-func newSettings(c *client) (s *settings, err error) {
-	s = &settings{client: c}
+func newSettings(c *client) *Settings {
 	if fi, err := os.Stat(c.settingsPath); err == nil && !fi.IsDir() {
-		s.Settings = LoadSettings(c.settingsPath)
-	} else {
-		s.Settings = NewSettings()
+		return LoadSettings(c.settingsPath)
 	}
-	return s, err
+	return NewSettings()
 }
 
 type prefixTree struct {
-	*settings
+	*client
+	*Settings
 	ptree  *gocask.Gocask
 	points []*Zp
 }
 
-func newPrefixTree(s *settings) (tree *prefixTree, err error) {
-	tree = &prefixTree{settings: s}
+func newPrefixTree(c *client, s *Settings) (tree *prefixTree, err error) {
+	tree = &prefixTree{client: c, Settings: s}
 	tree.points = Zpoints(P_SKS, tree.NumSamples())
 	tree.ptree, err = gocask.NewGocask(tree.ptreePath)
 	if err != nil {
