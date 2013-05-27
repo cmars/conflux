@@ -54,8 +54,12 @@ func TestFullSync(t *testing.T) {
 	root, _ = peer2.PrefixTree.Root()
 	log.Println(root.(*MemPrefixNode).elements)
 	peer1.Start()
+	defer peer1.Stop()
 	peer2.Start()
+	defer peer2.Stop()
 	timer := time.NewTimer(time.Duration(120) * time.Second)
+	var zs1 *ZSet = NewZSet()
+	var zs2 *ZSet = NewZSet()
 POLLING:
 	for {
 		select {
@@ -69,6 +73,12 @@ POLLING:
 				assert.T(t, zp != nil)
 				peer1.Insert(zp)
 			}
+			peer1.execCmd(func() error {
+				root1, err := peer1.Root()
+				assert.Equal(t, err, nil)
+				zs1 = NewZSet(root1.Elements()...)
+				return err
+			})
 		case r2, ok := <-peer2.RecoverChan:
 			if !ok {
 				break POLLING
@@ -79,12 +89,19 @@ POLLING:
 				assert.T(t, zp != nil)
 				peer2.Insert(zp)
 			}
+			peer2.execCmd(func() error {
+				root2, err := peer2.Root()
+				assert.Equal(t, err, nil)
+				zs2 = NewZSet(root2.Elements()...)
+				return err
+			})
 		case _ = <-timer.C:
-			break POLLING
+			t.FailNow()
+		}
+		if zs1.Equal(zs2) {
+			return
 		}
 	}
-	peer1.Stop()
-	peer2.Stop()
 }
 
 // Test sync with polynomial interpolation.
@@ -120,8 +137,12 @@ func TestPolySyncMBar(t *testing.T) {
 	root, _ = peer2.PrefixTree.Root()
 	log.Println(root.(*MemPrefixNode).elements)
 	peer1.Start()
+	defer peer1.Stop()
 	peer2.Start()
+	defer peer2.Stop()
 	timer := time.NewTimer(time.Duration(120) * time.Second)
+	var zs1 *ZSet = NewZSet()
+	var zs2 *ZSet = NewZSet()
 POLLING:
 	for {
 		select {
@@ -135,6 +156,12 @@ POLLING:
 			if !ok {
 				break POLLING
 			}
+			peer1.execCmd(func() error {
+				root1, err := peer1.Root()
+				assert.Equal(t, err, nil)
+				zs1 = NewZSet(root1.Elements()...)
+				return err
+			})
 		case r2, ok := <-peer2.RecoverChan:
 			t.Logf("Peer2 recover: %v", r2)
 			log.Println("Peer2 recover:", r2)
@@ -145,12 +172,19 @@ POLLING:
 			if !ok {
 				break POLLING
 			}
+			peer2.execCmd(func() error {
+				root2, err := peer2.Root()
+				assert.Equal(t, err, nil)
+				zs2 = NewZSet(root2.Elements()...)
+				return err
+			})
 		case _ = <-timer.C:
-			break POLLING
+			t.FailNow()
+		}
+		if zs1.Equal(zs2) {
+			return
 		}
 	}
-	peer1.Stop()
-	peer2.Stop()
 }
 
 // Test sync with polynomial interpolation.
@@ -187,8 +221,12 @@ func TestPolySyncLowMBar(t *testing.T) {
 	root2, _ := peer2.PrefixTree.Root()
 	log.Println(root2.(*MemPrefixNode).Elements())
 	peer1.Start()
+	defer peer1.Stop()
 	peer2.Start()
+	defer peer2.Stop()
 	timer := time.NewTimer(time.Duration(120) * time.Second)
+	var zs1 *ZSet = NewZSet()
+	var zs2 *ZSet = NewZSet()
 POLLING:
 	for {
 		select {
@@ -209,6 +247,12 @@ POLLING:
 				log.Println("Peer1 insert:", zp)
 				peer1.Insert(zp)
 			}
+			peer1.execCmd(func() error {
+				root1, err := peer1.Root()
+				assert.Equal(t, err, nil)
+				zs1 = NewZSet(root1.Elements()...)
+				return err
+			})
 		case r2, ok := <-peer2.RecoverChan:
 			if !ok {
 				break POLLING
@@ -226,10 +270,17 @@ POLLING:
 				log.Println("Peer2 insert:", zp)
 				peer2.Insert(zp)
 			}
+			peer2.execCmd(func() error {
+				root2, err := peer2.Root()
+				assert.Equal(t, err, nil)
+				zs2 = NewZSet(root2.Elements()...)
+				return err
+			})
 		case _ = <-timer.C:
-			break POLLING
+			t.FailNow()
+		}
+		if zs1.Equal(zs2) {
+			return
 		}
 	}
-	peer1.Stop()
-	peer2.Stop()
 }

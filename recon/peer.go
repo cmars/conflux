@@ -35,6 +35,7 @@ const SERVE = "serve:"
 
 type Recover struct {
 	RemoteAddr     net.Addr
+	RemoteConfig   map[string]string
 	RemoteElements []*Zp
 }
 
@@ -46,9 +47,9 @@ type RecoverChan chan *Recover
 
 var PNodeNotFound error = errors.New("Prefix-tree node not found")
 
-type serverStop chan interface{}
-
+type serverEnable chan bool
 type gossipEnable chan bool
+type stopped chan interface{}
 
 type reconCmd func() error
 
@@ -61,8 +62,9 @@ type Peer struct {
 	RecoverChan  RecoverChan
 	reconCmdReq  reconCmdReq
 	reconCmdResp reconCmdResp
-	stop         serverStop
+	serverEnable serverEnable
 	gossipEnable gossipEnable
+	stopped      stopped
 }
 
 func NewMemPeer() *Peer {
@@ -82,8 +84,9 @@ func (p *Peer) log(v ...interface{}) {
 }
 
 func (p *Peer) Start() {
-	p.stop = make(serverStop)
+	p.serverEnable = make(serverEnable)
 	p.gossipEnable = make(gossipEnable)
+	p.stopped = make(stopped)
 	p.reconCmdReq = make(reconCmdReq)
 	p.reconCmdResp = make(reconCmdResp)
 	go p.Serve()
@@ -92,12 +95,19 @@ func (p *Peer) Start() {
 }
 
 func (p *Peer) Stop() {
+	p.log(SERVE, "Stopping")
+	go func() { p.serverEnable <- false }()
+	go func() { p.gossipEnable <- false }()
+	<-p.stopped
+	<-p.stopped
+	close(p.stopped)
 	close(p.reconCmdReq)
-	close(p.gossipEnable)
-	close(p.stop)
+	close(p.reconCmdResp)
+	close(p.RecoverChan)
+	p.log(SERVE, "Stopped")
 }
 
-// Handle and execute recon cmds in a single goroutine.
+// handleCmds executes recon cmds in a single goroutine.
 // This forces sequential reads and writes to the prefix
 // tree.
 func (p *Peer) handleCmds() {
@@ -136,28 +146,52 @@ func (p *Peer) Serve() {
 		log.Print(err)
 		return
 	}
+	defer ln.Close()
 	for {
 		select {
-		case _, isOpen := <-p.stop:
-			if !isOpen {
+		case enabled, isOpen := <-p.serverEnable:
+			if !enabled || !isOpen {
+				close(p.serverEnable)
+				p.stopped <- true
 				return
 			}
 		default:
 		}
+		ln.(*net.TCPListener).SetDeadline(time.Now().Add(time.Second * 5))
 		conn, err := ln.Accept()
 		if err != nil {
 			p.log(SERVE, err)
 			continue
 		}
-		p.log(SERVE, "connection from:", conn.RemoteAddr())
-		config := &Config{Contents: map[string]string{"foo": "bar"}}
-		WriteMsg(conn, config)
-		p.log(SERVE, "sent config")
-		conn.SetDeadline(time.Now().Add(time.Second))
-		p.execCmd(func() error {
-			return p.interactWithClient(conn, NewBitstring(0))
-		})
+		err = p.accept(conn)
+		if err != nil {
+			p.log(SERVE, err)
+		}
 	}
+}
+
+func (p *Peer) accept(conn net.Conn) error {
+	defer conn.Close()
+	p.log(SERVE, "connection from:", conn.RemoteAddr())
+	// Read remote config from gossip client
+	msg, err := ReadMsg(conn)
+	if err != nil {
+		return err
+	}
+	remoteConfig, is := msg.(*Config)
+	if !is {
+		return errors.New(fmt.Sprintf("Expected remote config, got: %v", remoteConfig))
+	}
+	// Respond with our config
+	err = WriteMsg(conn, &Config{Contents: p.Config()})
+	if err != nil {
+		return err
+	}
+	p.log(SERVE, "remote config:", remoteConfig)
+	conn.SetDeadline(time.Now().Add(time.Second))
+	return p.execCmd(func() error {
+		return p.interactWithClient(conn, remoteConfig.Contents, NewBitstring(0))
+	})
 }
 
 type requestEntry struct {
@@ -316,7 +350,7 @@ func (rwc *reconWithClient) flushQueue() {
 	rwc.flushing = true
 }
 
-func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err error) {
+func (p *Peer) interactWithClient(conn net.Conn, remoteConfig map[string]string, bitstring *Bitstring) (err error) {
 	p.log(SERVE, "interacting with client")
 	recon := reconWithClient{Peer: p, conn: conn, rcvrSet: NewZSet()}
 	var root PrefixNode
@@ -371,8 +405,10 @@ func (p *Peer) interactWithClient(conn net.Conn, bitstring *Bitstring) (err erro
 	msg := &Done{}
 	WriteMsg(conn, msg)
 	items := recon.rcvrSet.Items()
-	p.RecoverChan <- &Recover{
-		RemoteAddr:     conn.RemoteAddr(),
-		RemoteElements: items}
+	if len(items) > 0 {
+		p.RecoverChan <- &Recover{
+			RemoteAddr:     conn.RemoteAddr(),
+			RemoteElements: items}
+	}
 	return
 }

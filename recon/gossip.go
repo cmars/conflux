@@ -40,11 +40,11 @@ func (p *Peer) Gossip() {
 	for {
 		select {
 		case enabled, isOpen = <-p.gossipEnable:
-			if !isOpen {
+			p.log(GOSSIP, "enabled:", enabled && isOpen)
+			if !enabled || !isOpen {
+				close(p.gossipEnable)
+				p.stopped <- true
 				return
-			}
-			if !enabled {
-				continue
 			}
 		default:
 		}
@@ -103,25 +103,21 @@ type msgProgressChan chan *msgProgress
 
 var ReconDone = errors.New("Reconciliation Done")
 
-func getRemoteConfig(conn net.Conn) (*Config, error) {
+func (p *Peer) clientRecon(conn net.Conn) error {
+	// Send config to server on connect
+	err := WriteMsg(conn, &Config{Contents: p.Config()})
+	if err != nil {
+		return err
+	}
+	// Receive remote peer's config
 	msg, err := ReadMsg(conn)
 	if err != nil {
-		return nil, err
-	}
-	config, is := msg.(*Config)
-	if !is {
-		return nil, errors.New(fmt.Sprintf(
-			"Remote config: expected config message, got %v", msg))
-	}
-	return config, nil
-}
-
-func (p *Peer) clientRecon(conn net.Conn) error {
-	// Get remote config
-	remoteConfig, err := getRemoteConfig(conn)
-	if err != nil {
-		p.log(GOSSIP, "Failed to get remote config", err)
 		return err
+	}
+	remoteConfig, is := msg.(*Config)
+	if !is {
+		return errors.New(fmt.Sprintf(
+			"Remote config: expected config message, got %v", msg))
 	}
 	p.log(GOSSIP, "Got RemoteConfig:", remoteConfig)
 	respSet := NewZSet()
@@ -139,10 +135,13 @@ func (p *Peer) clientRecon(conn net.Conn) error {
 		p.log(GOSSIP, "Recover set now:", respSet)
 	}
 	items := respSet.Items()
-	p.log(GOSSIP, "Sending recover:", items)
-	p.RecoverChan <- &Recover{
-		RemoteAddr:     conn.RemoteAddr(),
-		RemoteElements: items}
+	if len(items) > 0 {
+		p.log(GOSSIP, "Sending recover:", items)
+		p.RecoverChan <- &Recover{
+			RemoteAddr:     conn.RemoteAddr(),
+			RemoteConfig:   remoteConfig.Contents,
+			RemoteElements: items}
+	}
 	return nil
 }
 
