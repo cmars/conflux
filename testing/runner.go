@@ -19,21 +19,28 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-package recon
+package testing
 
 import (
 	"github.com/bmizerany/assert"
 	. "github.com/cmars/conflux"
+	. "github.com/cmars/conflux/recon"
 	"log"
 	"testing"
 	"time"
 )
 
+type PeerManager interface {
+	CreatePeer() (*Peer, string)
+	DestroyPeer(*Peer, string)
+}
+
 // Test full node sync.
-func TestFullSync(t *testing.T) {
+func RunFullSync(t *testing.T, peerMgr PeerManager) {
 	peer1ReconAddr := "localhost:22743"
 	peer2ReconAddr := "localhost:22745"
-	peer1 := NewMemPeer()
+	peer1, peer1Path := peerMgr.CreatePeer()
+	defer peerMgr.DestroyPeer(peer1, peer1Path)
 	peer1.Settings.LogName = "peer1"
 	peer1.Settings.HttpPort = 22742
 	peer1.Settings.ReconPort = 22743
@@ -42,8 +49,9 @@ func TestFullSync(t *testing.T) {
 	peer1.PrefixTree.Insert(Zi(P_SKS, 65537))
 	peer1.PrefixTree.Insert(Zi(P_SKS, 65539))
 	root, _ := peer1.PrefixTree.Root()
-	log.Println(root.(*MemPrefixNode).elements)
-	peer2 := NewMemPeer()
+	log.Println(root.Elements())
+	peer2, peer2Path := peerMgr.CreatePeer()
+	defer peerMgr.DestroyPeer(peer2, peer2Path)
 	peer2.Settings.LogName = "peer2"
 	peer2.Settings.HttpPort = 22744
 	peer2.Settings.ReconPort = 22745
@@ -52,11 +60,9 @@ func TestFullSync(t *testing.T) {
 	peer2.PrefixTree.Insert(Zi(P_SKS, 65537))
 	peer2.PrefixTree.Insert(Zi(P_SKS, 65541))
 	root, _ = peer2.PrefixTree.Root()
-	log.Println(root.(*MemPrefixNode).elements)
+	log.Println(root.Elements())
 	peer1.Start()
-	defer peer1.Stop()
 	peer2.Start()
-	defer peer2.Stop()
 	timer := time.NewTimer(time.Duration(120) * time.Second)
 	var zs1 *ZSet = NewZSet()
 	var zs2 *ZSet = NewZSet()
@@ -73,7 +79,7 @@ POLLING:
 				assert.T(t, zp != nil)
 				peer1.Insert(zp)
 			}
-			peer1.execCmd(func() error {
+			peer1.ExecCmd(func() error {
 				root1, err := peer1.Root()
 				assert.Equal(t, err, nil)
 				zs1 = NewZSet(root1.Elements()...)
@@ -89,7 +95,7 @@ POLLING:
 				assert.T(t, zp != nil)
 				peer2.Insert(zp)
 			}
-			peer2.execCmd(func() error {
+			peer2.ExecCmd(func() error {
 				root2, err := peer2.Root()
 				assert.Equal(t, err, nil)
 				zs2 = NewZSet(root2.Elements()...)
@@ -105,10 +111,11 @@ POLLING:
 }
 
 // Test sync with polynomial interpolation.
-func TestPolySyncMBar(t *testing.T) {
-	peer1ReconAddr := "localhost:22743"
+func RunPolySyncMBar(t *testing.T, peerMgr PeerManager) {
+	//peer1ReconAddr := "localhost:22743"
 	peer2ReconAddr := "localhost:22745"
-	peer1 := NewMemPeer()
+	peer1, peer1Path := peerMgr.CreatePeer()
+	defer peerMgr.DestroyPeer(peer1, peer1Path)
 	peer1.Settings.HttpPort = 22742
 	peer1.Settings.ReconPort = 22743
 	peer1.Settings.GossipIntervalSecs = 1
@@ -121,12 +128,13 @@ func TestPolySyncMBar(t *testing.T) {
 		peer1.PrefixTree.Insert(Zi(P_SKS, 68111*i))
 	}
 	root, _ := peer1.PrefixTree.Root()
-	log.Println(root.(*MemPrefixNode).elements)
-	peer2 := NewMemPeer()
+	log.Println(root.Elements())
+	peer2, peer2Path := peerMgr.CreatePeer()
+	defer peerMgr.DestroyPeer(peer2, peer2Path)
 	peer2.Settings.HttpPort = 22744
 	peer2.Settings.ReconPort = 22745
 	peer2.Settings.GossipIntervalSecs = 1
-	peer2.Settings.Partners = []string{peer1ReconAddr}
+	peer2.Settings.Partners = []string{/*peer1ReconAddr*/}
 	for i := 1; i < 100; i++ {
 		peer2.PrefixTree.Insert(Zi(P_SKS, 65537*i))
 	}
@@ -135,11 +143,9 @@ func TestPolySyncMBar(t *testing.T) {
 		peer2.PrefixTree.Insert(Zi(P_SKS, 70001*i))
 	}
 	root, _ = peer2.PrefixTree.Root()
-	log.Println(root.(*MemPrefixNode).elements)
+	log.Println(root.Elements())
 	peer1.Start()
-	defer peer1.Stop()
 	peer2.Start()
-	defer peer2.Stop()
 	timer := time.NewTimer(time.Duration(120) * time.Second)
 	var zs1 *ZSet = NewZSet()
 	var zs2 *ZSet = NewZSet()
@@ -156,7 +162,7 @@ POLLING:
 			if !ok {
 				break POLLING
 			}
-			peer1.execCmd(func() error {
+			peer1.ExecCmd(func() error {
 				root1, err := peer1.Root()
 				assert.Equal(t, err, nil)
 				zs1 = NewZSet(root1.Elements()...)
@@ -172,7 +178,7 @@ POLLING:
 			if !ok {
 				break POLLING
 			}
-			peer2.execCmd(func() error {
+			peer2.ExecCmd(func() error {
 				root2, err := peer2.Root()
 				assert.Equal(t, err, nil)
 				zs2 = NewZSet(root2.Elements()...)
@@ -188,9 +194,10 @@ POLLING:
 }
 
 // Test sync with polynomial interpolation.
-func TestPolySyncLowMBar(t *testing.T) {
+func RunPolySyncLowMBar(t *testing.T, peerMgr PeerManager) {
 	peer2ReconAddr := "localhost:22745"
-	peer1 := NewMemPeer()
+	peer1, peer1Path := peerMgr.CreatePeer()
+	defer peerMgr.DestroyPeer(peer1, peer1Path)
 	peer1.Settings.HttpPort = 22742
 	peer1.Settings.ReconPort = 22743
 	peer1.Settings.LogName = "peer1"
@@ -204,8 +211,9 @@ func TestPolySyncLowMBar(t *testing.T) {
 		peer1.PrefixTree.Insert(Zi(P_SKS, 68111*i))
 	}
 	root1, _ := peer1.PrefixTree.Root()
-	log.Println(root1.(*MemPrefixNode).Elements())
-	peer2 := NewMemPeer()
+	log.Println(root1.Elements())
+	peer2, peer2Path := peerMgr.CreatePeer()
+	defer peerMgr.DestroyPeer(peer2, peer2Path)
 	peer2.Settings.HttpPort = 22744
 	peer2.Settings.ReconPort = 22745
 	peer2.Settings.LogName = "peer2"
@@ -219,11 +227,9 @@ func TestPolySyncLowMBar(t *testing.T) {
 		peer2.PrefixTree.Insert(Zi(P_SKS, 70001*i))
 	}
 	root2, _ := peer2.PrefixTree.Root()
-	log.Println(root2.(*MemPrefixNode).Elements())
+	log.Println(root2.Elements())
 	peer1.Start()
-	defer peer1.Stop()
 	peer2.Start()
-	defer peer2.Stop()
 	timer := time.NewTimer(time.Duration(120) * time.Second)
 	var zs1 *ZSet = NewZSet()
 	var zs2 *ZSet = NewZSet()
@@ -234,7 +240,7 @@ POLLING:
 			if !ok {
 				break POLLING
 			}
-			peer1.execCmd(func() error {
+			peer1.ExecCmd(func() error {
 				root1, err := peer1.Root()
 				assert.Equal(t, err, nil)
 				log.Println("Peer1 has", len(root1.Elements()))
@@ -247,7 +253,7 @@ POLLING:
 				log.Println("Peer1 insert:", zp)
 				peer1.Insert(zp)
 			}
-			peer1.execCmd(func() error {
+			peer1.ExecCmd(func() error {
 				root1, err := peer1.Root()
 				assert.Equal(t, err, nil)
 				zs1 = NewZSet(root1.Elements()...)
@@ -257,7 +263,7 @@ POLLING:
 			if !ok {
 				break POLLING
 			}
-			peer2.execCmd(func() error {
+			peer2.ExecCmd(func() error {
 				root2, err := peer2.Root()
 				assert.Equal(t, err, nil)
 				log.Println("Peer2 has", len(root2.Elements()))
@@ -270,7 +276,7 @@ POLLING:
 				log.Println("Peer2 insert:", zp)
 				peer2.Insert(zp)
 			}
-			peer2.execCmd(func() error {
+			peer2.ExecCmd(func() error {
 				root2, err := peer2.Root()
 				assert.Equal(t, err, nil)
 				zs2 = NewZSet(root2.Elements()...)

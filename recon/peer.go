@@ -67,15 +67,18 @@ type Peer struct {
 	stopped      stopped
 }
 
+func NewPeer(settings *Settings, tree PrefixTree) *Peer {
+	return &Peer{
+		RecoverChan: make(RecoverChan),
+		Settings:    settings,
+		PrefixTree:  tree}
+}
+
 func NewMemPeer() *Peer {
 	settings := NewSettings()
 	tree := new(MemPrefixTree)
 	tree.Init()
-	peer := &Peer{
-		RecoverChan: make(RecoverChan),
-		Settings:    settings,
-		PrefixTree:  tree}
-	return peer
+	return NewPeer(settings, tree)
 }
 
 func (p *Peer) log(v ...interface{}) {
@@ -95,15 +98,30 @@ func (p *Peer) Start() {
 }
 
 func (p *Peer) Stop() {
+	if p.serverEnable == nil {
+		p.log(SERVE, "Stop: peer not running")
+		return
+	}
 	p.log(SERVE, "Stopping")
 	go func() { p.serverEnable <- false }()
 	go func() { p.gossipEnable <- false }()
+	// Drain recovery channel
+	go func() {
+		for _ = range p.RecoverChan {
+		}
+	}()
 	<-p.stopped
 	<-p.stopped
 	close(p.stopped)
 	close(p.reconCmdReq)
 	close(p.reconCmdResp)
 	close(p.RecoverChan)
+	p.serverEnable = nil
+	p.gossipEnable = nil
+	p.stopped = nil
+	p.reconCmdReq = nil
+	p.reconCmdResp = nil
+	p.RecoverChan = nil
 	p.log(SERVE, "Stopped")
 }
 
@@ -122,20 +140,20 @@ func (p *Peer) handleCmds() {
 	}
 }
 
-func (p *Peer) execCmd(cmd reconCmd) (err error) {
+func (p *Peer) ExecCmd(cmd reconCmd) (err error) {
 	p.reconCmdReq <- cmd
 	err = <-p.reconCmdResp
 	return
 }
 
 func (p *Peer) Insert(z *Zp) (err error) {
-	return p.execCmd(func() error {
+	return p.ExecCmd(func() error {
 		return p.PrefixTree.Insert(z)
 	})
 }
 
 func (p *Peer) Remove(z *Zp) (err error) {
-	return p.execCmd(func() error {
+	return p.ExecCmd(func() error {
 		return p.PrefixTree.Remove(z)
 	})
 }
@@ -189,7 +207,7 @@ func (p *Peer) accept(conn net.Conn) error {
 	}
 	p.log(SERVE, "remote config:", remoteConfig)
 	conn.SetDeadline(time.Now().Add(time.Second))
-	return p.execCmd(func() error {
+	return p.ExecCmd(func() error {
 		return p.interactWithClient(conn, remoteConfig.Contents, NewBitstring(0))
 	})
 }

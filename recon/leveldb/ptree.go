@@ -27,7 +27,7 @@ import (
 	"errors"
 	"fmt"
 	. "github.com/cmars/conflux"
-	. "github.com/cmars/conflux/recon"
+	"github.com/cmars/conflux/recon"
 	"github.com/jmhodges/levigo"
 	"os"
 	"path/filepath"
@@ -38,7 +38,7 @@ type client struct {
 	ptreePath    string
 }
 
-func NewPeer(basepath string, settings *Settings) (p *Peer, err error) {
+func NewPeer(basepath string, settings *recon.Settings) (p *recon.Peer, err error) {
 	client, err := newClient(basepath)
 	if err != nil {
 		return nil, err
@@ -50,8 +50,8 @@ func NewPeer(basepath string, settings *Settings) (p *Peer, err error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Peer{
-		RecoverChan: make(RecoverChan),
+	return &recon.Peer{
+		RecoverChan: make(recon.RecoverChan),
 		Settings:    settings,
 		PrefixTree:  tree}, nil
 }
@@ -74,16 +74,16 @@ func newClient(basepath string) (c *client, err error) {
 	return
 }
 
-func newSettings(c *client) *Settings {
+func newSettings(c *client) *recon.Settings {
 	if fi, err := os.Stat(c.settingsPath); err == nil && !fi.IsDir() {
-		return LoadSettings(c.settingsPath)
+		return recon.LoadSettings(c.settingsPath)
 	}
-	return NewSettings()
+	return recon.NewSettings()
 }
 
 type prefixTree struct {
 	*client
-	*Settings
+	*recon.Settings
 	ptree     *levigo.DB
 	options   *levigo.Options
 	rdOptions *levigo.ReadOptions
@@ -91,7 +91,7 @@ type prefixTree struct {
 	points    []*Zp
 }
 
-func newPrefixTree(c *client, s *Settings) (tree *prefixTree, err error) {
+func newPrefixTree(c *client, s *recon.Settings) (tree *prefixTree, err error) {
 	tree = &prefixTree{client: c, Settings: s}
 	tree.points = Zpoints(P_SKS, tree.NumSamples())
 	tree.options = levigo.NewOptions()
@@ -141,13 +141,13 @@ func (t *prefixTree) NumSamples() int     { return t.Settings.NumSamples }
 
 func (t *prefixTree) Points() []*Zp { return t.points }
 
-func (t *prefixTree) Root() (PrefixNode, error) {
+func (t *prefixTree) Root() (recon.PrefixNode, error) {
 	return t.Node(NewBitstring(0))
 }
 
-func (t *prefixTree) Node(bs *Bitstring) (node PrefixNode, err error) {
-	key := bytes.NewBuffer(nil)
-	err = WriteBitstring(key, bs)
+func (t *prefixTree) Node(bs *Bitstring) (node recon.PrefixNode, err error) {
+	key := bytes.NewBuffer([]byte{})
+	err = recon.WriteBitstring(key, bs)
 	if err != nil {
 		return
 	}
@@ -175,7 +175,7 @@ func (t *prefixTree) Insert(z *Zp) error {
 	if err != nil {
 		return err
 	}
-	return root.(*prefixNode).insert(z, AddElementArray(t, z), bs, 0)
+	return root.(*prefixNode).insert(z, recon.AddElementArray(t, z), bs, 0)
 }
 
 func (t *prefixTree) Remove(z *Zp) error {
@@ -185,7 +185,7 @@ func (t *prefixTree) Remove(z *Zp) error {
 	if err != nil {
 		return err
 	}
-	return root.(*prefixNode).remove(z, DelElementArray(t, z), bs, 0)
+	return root.(*prefixNode).remove(z, recon.DelElementArray(t, z), bs, 0)
 }
 
 func (t *prefixTree) newChildNode(parent *prefixNode, childIndex int) (*prefixNode, error) {
@@ -214,16 +214,16 @@ func (t *prefixTree) newChildNode(parent *prefixNode, childIndex int) (*prefixNo
 
 func (t *prefixTree) loadNode(nd *nodeData) (n *prefixNode, err error) {
 	n = &prefixNode{prefixTree: t}
-	n.key, err = ReadBitstring(bytes.NewBuffer(nd.KeyBuf))
+	n.key, err = recon.ReadBitstring(bytes.NewBuffer(nd.KeyBuf))
 	if err != nil {
 		return
 	}
 	n.numElements = nd.NumElements
-	n.svalues, err = ReadZZarray(bytes.NewBuffer(nd.SvaluesBuf))
+	n.svalues, err = recon.ReadZZarray(bytes.NewBuffer(nd.SvaluesBuf))
 	if err != nil {
 		return
 	}
-	n.elements, err = ReadZZarray(bytes.NewBuffer(nd.ElementsBuf))
+	n.elements, err = recon.ReadZZarray(bytes.NewBuffer(nd.ElementsBuf))
 	if err != nil {
 		return
 	}
@@ -236,21 +236,21 @@ func (t *prefixTree) saveNode(n *prefixNode) (err error) {
 	var out *bytes.Buffer
 	// Write key
 	out = bytes.NewBuffer(nil)
-	err = WriteBitstring(out, n.key)
+	err = recon.WriteBitstring(out, n.key)
 	if err != nil {
 		return
 	}
 	nd.KeyBuf = out.Bytes()
 	// Write sample values
 	out = bytes.NewBuffer(nil)
-	err = WriteZZarray(out, n.svalues)
+	err = recon.WriteZZarray(out, n.svalues)
 	if err != nil {
 		return
 	}
 	nd.SvaluesBuf = out.Bytes()
 	// Write elements
 	out = bytes.NewBuffer(nil)
-	err = WriteZZarray(out, n.elements)
+	err = recon.WriteZZarray(out, n.elements)
 	nd.ElementsBuf = out.Bytes()
 	nd.NumElements = n.numElements
 	nd.ChildKeys = n.childKeys
@@ -285,7 +285,7 @@ func (n *prefixNode) IsLeaf() bool {
 	return len(n.childKeys) == 0
 }
 
-func (n *prefixNode) Children() (result []PrefixNode) {
+func (n *prefixNode) Children() (result []recon.PrefixNode) {
 	key := n.Key()
 	for _, i := range n.childKeys {
 		childKey := NewBitstring(key.BitLen() + n.BitQuantum())
@@ -320,7 +320,7 @@ func (n *prefixNode) Key() *Bitstring {
 	return n.key
 }
 
-func (n *prefixNode) Parent() (PrefixNode, bool) {
+func (n *prefixNode) Parent() (recon.PrefixNode, bool) {
 	if n.key.BitLen() == 0 {
 		return nil, false
 	}
@@ -349,7 +349,7 @@ func (n *prefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) (err 
 		}
 	}
 	n.saveNode(n)
-	child := NextChild(n, bs, depth).(*prefixNode)
+	child := recon.NextChild(n, bs, depth).(*prefixNode)
 	return child.insert(z, marray, bs, depth+1)
 }
 
@@ -368,8 +368,8 @@ func (n *prefixNode) split(depth int) (err error) {
 	for _, element := range n.elements {
 		bs := NewBitstring(P_SKS.BitLen())
 		bs.SetBytes(ReverseBytes(element.Bytes()))
-		child := NextChild(n, bs, depth).(*prefixNode)
-		child.insert(element, AddElementArray(n.prefixTree, element), bs, depth+1)
+		child := recon.NextChild(n, bs, depth).(*prefixNode)
+		child.insert(element, recon.AddElementArray(n.prefixTree, element), bs, depth+1)
 	}
 	n.elements = nil
 	return
@@ -392,7 +392,7 @@ func (n *prefixNode) remove(z *Zp, marray []*Zp, bs *Bitstring, depth int) error
 			n.join()
 		} else {
 			n.saveNode(n)
-			child := NextChild(n, bs, depth).(*prefixNode)
+			child := recon.NextChild(n, bs, depth).(*prefixNode)
 			return child.remove(z, marray, bs, depth+1)
 		}
 	}

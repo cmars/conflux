@@ -56,7 +56,7 @@ func (p *Peer) Gossip() {
 			goto DELAY
 		}
 		p.log(GOSSIP, "Initiating recon with peer", peer)
-		p.execCmd(func() error {
+		p.ExecCmd(func() error {
 			return p.initiateRecon(peer)
 		})
 		//if err != nil {
