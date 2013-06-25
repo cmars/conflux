@@ -110,12 +110,15 @@ func (p *Peer) Stop() {
 		for _ = range p.RecoverChan {
 		}
 	}()
+	// Acknowledged stop of server & gossip client
 	<-p.stopped
 	<-p.stopped
+	// Close channels
 	close(p.stopped)
 	close(p.reconCmdReq)
 	close(p.reconCmdResp)
 	close(p.RecoverChan)
+	// Re-init
 	p.serverEnable = nil
 	p.gossipEnable = nil
 	p.stopped = nil
@@ -426,6 +429,7 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig map[string]string,
 	if len(items) > 0 {
 		p.RecoverChan <- &Recover{
 			RemoteAddr:     conn.RemoteAddr(),
+			RemoteConfig:   remoteConfig,
 			RemoteElements: items}
 	}
 	return
