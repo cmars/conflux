@@ -88,7 +88,7 @@ func (p *Peer) initiateRecon(peer net.Addr) error {
 	if err != nil {
 		return err
 	}
-	conn.SetDeadline(time.Now().Add(time.Second))
+	conn.SetDeadline(time.Now().Add(time.Second * 30))
 	p.log(GOSSIP, "Connected with", peer)
 	// Interact with peer
 	return p.clientRecon(conn)
@@ -104,11 +104,6 @@ type msgProgressChan chan *msgProgress
 var ReconDone = errors.New("Reconciliation Done")
 
 func (p *Peer) clientRecon(conn net.Conn) error {
-	// Send config to server on connect
-	err := WriteMsg(conn, &Config{Contents: p.Config()})
-	if err != nil {
-		return err
-	}
 	// Receive remote peer's config
 	msg, err := ReadMsg(conn)
 	if err != nil {
@@ -120,6 +115,11 @@ func (p *Peer) clientRecon(conn net.Conn) error {
 			"Remote config: expected config message, got %v", msg))
 	}
 	p.log(GOSSIP, "Got RemoteConfig:", remoteConfig)
+	// Send config to server on connect
+	err = WriteMsg(conn, &Config{Contents: p.Config()})
+	if err != nil {
+		return err
+	}
 	respSet := NewZSet()
 	for step := range p.interactWithServer(conn) {
 		if step.err != nil {

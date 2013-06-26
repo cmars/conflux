@@ -178,7 +178,6 @@ func (p *Peer) Serve() {
 			}
 		default:
 		}
-		ln.(*net.TCPListener).SetDeadline(time.Now().Add(time.Second * 5))
 		conn, err := ln.Accept()
 		if err != nil {
 			p.log(SERVE, err)
@@ -194,6 +193,11 @@ func (p *Peer) Serve() {
 func (p *Peer) accept(conn net.Conn) error {
 	defer conn.Close()
 	p.log(SERVE, "connection from:", conn.RemoteAddr())
+	// Respond with our config
+	err := WriteMsg(conn, &Config{Contents: p.Config()})
+	if err != nil {
+		return err
+	}
 	// Read remote config from gossip client
 	msg, err := ReadMsg(conn)
 	if err != nil {
@@ -203,13 +207,8 @@ func (p *Peer) accept(conn net.Conn) error {
 	if !is {
 		return errors.New(fmt.Sprintf("Expected remote config, got: %v", remoteConfig))
 	}
-	// Respond with our config
-	err = WriteMsg(conn, &Config{Contents: p.Config()})
-	if err != nil {
-		return err
-	}
 	p.log(SERVE, "remote config:", remoteConfig)
-	conn.SetDeadline(time.Now().Add(time.Second))
+	conn.SetDeadline(time.Now().Add(time.Second * 30))
 	return p.ExecCmd(func() error {
 		return p.interactWithClient(conn, remoteConfig.Contents, NewBitstring(0))
 	})

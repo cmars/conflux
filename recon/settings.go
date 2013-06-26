@@ -80,10 +80,16 @@ func LoadSettings(path string) *Settings {
 	s.GossipIntervalSecs = *gossipIntervalSecs
 	s.MaxOutstandingReconRequests = *maxOutstandingReconRequests
 	for _, partner := range strings.Split(*partners, ",") {
-		s.Partners = append(s.Partners, partner)
+		partner = strings.TrimSpace(partner)
+		if partner != "" {
+			s.Partners = append(s.Partners, partner)
+		}
 	}
 	for _, filter := range strings.Split(*filters, ",") {
-		s.Filters = append(s.Filters, filter)
+		filter = strings.TrimSpace(filter)
+		if filter != "" {
+			s.Filters = append(s.Filters, filter)
+		}
 	}
 	s.updateDerived()
 	return s
@@ -91,6 +97,9 @@ func LoadSettings(path string) *Settings {
 
 func (s *Settings) PartnerAddrs() (addrs []net.Addr, err error) {
 	for _, partner := range s.Partners {
+		if partner == "" {
+			continue
+		}
 		addr, err := net.ResolveTCPAddr("tcp", partner)
 		if err != nil {
 			return nil, err

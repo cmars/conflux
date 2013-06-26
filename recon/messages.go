@@ -487,8 +487,19 @@ func (msg *Config) unmarshal(r io.Reader) error {
 }
 
 func ReadMsg(r io.Reader) (msg ReconMsg, err error) {
+	var msgSize int
+	msgSize, err = ReadInt(r)
+	if err != nil {
+		return nil, err
+	}
+	msgBuf := make([]byte, msgSize)
+	_, err = io.ReadFull(r, msgBuf)
+	if err != nil {
+		return nil, err
+	}
+	br := bytes.NewBuffer(msgBuf)
 	buf := make([]byte, 1)
-	_, err = io.ReadFull(r, buf[:1])
+	_, err = io.ReadFull(br, buf[:1])
 	if err != nil {
 		return nil, err
 	}
@@ -519,16 +530,20 @@ func ReadMsg(r io.Reader) (msg ReconMsg, err error) {
 	default:
 		return nil, errors.New(fmt.Sprintf("Unexpected message code: %d", msgType))
 	}
-	err = msg.unmarshal(r)
+	err = msg.unmarshal(br)
 	return
 }
 
 func WriteMsg(w io.Writer, msg ReconMsg) (err error) {
+	bw := bytes.NewBuffer(nil)
 	buf := make([]byte, 1)
 	buf[0] = byte(msg.MsgType())
-	_, err = w.Write(buf)
+	_, err = bw.Write(buf)
 	if err != nil {
 		return
 	}
-	return msg.marshal(w)
+	msg.marshal(bw)
+	WriteInt(w, bw.Len())
+	_, err = w.Write(bw.Bytes())
+	return err
 }
