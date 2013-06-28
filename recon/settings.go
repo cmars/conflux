@@ -25,7 +25,7 @@ type Settings struct {
 
 func NewSettings() *Settings {
 	s := &Settings{
-		Version:                     "experimental",
+		Version:                     "1.1.3",
 		LogName:                     "conflux.recon",
 		HttpPort:                    11371,
 		ReconPort:                   11370,
@@ -66,7 +66,7 @@ func LoadSettings(path string) *Settings {
 	gossipIntervalSecs := c.Int("GossipIntervalSecs", s.GossipIntervalSecs)
 	maxOutstandingReconRequests := c.Int("MaxOutstandingReconRequests", s.MaxOutstandingReconRequests)
 	partners := c.String("Partners", "")
-	filters := c.String("Filters", "")
+	filters := c.String("Filters", "yminsky.dedup")
 	c.Parse(path)
 	s.Version = *version
 	s.LogName = *logName

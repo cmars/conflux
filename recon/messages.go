@@ -431,6 +431,9 @@ func (msg *DbRepl) MsgType() MsgType {
 	return MsgTypeDbRepl
 }
 
+var RemoteConfigPassed string = "passed"
+var RemoteConfigFailed string = "failed"
+
 type Config struct {
 	Version    string
 	HttpPort   int
@@ -441,8 +444,8 @@ type Config struct {
 }
 
 func (msg *Config) String() string {
-	return fmt.Sprintf("%v: Version=%v HttpPort=%v BitQuantum=%v MBar=%v", msg.MsgType(),
-		msg.Version, msg.HttpPort, msg.BitQuantum, msg.MBar)
+	return fmt.Sprintf("%v: Version=%v HttpPort=%v BitQuantum=%v MBar=%v Filters=%s", msg.MsgType(),
+		msg.Version, msg.HttpPort, msg.BitQuantum, msg.MBar, msg.Filters)
 }
 
 func (msg *Config) MsgType() MsgType {

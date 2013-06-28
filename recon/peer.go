@@ -47,6 +47,8 @@ type RecoverChan chan *Recover
 
 var PNodeNotFound error = errors.New("Prefix-tree node not found")
 
+var RemoteRejectConfigError error = errors.New("Remote rejected configuration")
+
 type serverEnable chan bool
 type gossipEnable chan bool
 type stopped chan interface{}
@@ -81,11 +83,6 @@ func NewMemPeer() *Peer {
 	return NewPeer(settings, tree)
 }
 
-func (p *Peer) log(v ...interface{}) {
-	v = append([]interface{}{p.LogName}, v...)
-	log.Println(v...)
-}
-
 func (p *Peer) Start() {
 	p.serverEnable = make(serverEnable)
 	p.gossipEnable = make(gossipEnable)
@@ -99,10 +96,10 @@ func (p *Peer) Start() {
 
 func (p *Peer) Stop() {
 	if p.serverEnable == nil {
-		p.log(SERVE, "Stop: peer not running")
+		log.Println(SERVE, "Stop: peer not running")
 		return
 	}
-	p.log(SERVE, "Stopping")
+	log.Println(SERVE, "Stopping")
 	go func() { p.serverEnable <- false }()
 	go func() { p.gossipEnable <- false }()
 	// Drain recovery channel
@@ -125,7 +122,7 @@ func (p *Peer) Stop() {
 	p.reconCmdReq = nil
 	p.reconCmdResp = nil
 	p.RecoverChan = nil
-	p.log(SERVE, "Stopped")
+	log.Println(SERVE, "Stopped")
 }
 
 // handleCmds executes recon cmds in a single goroutine.
@@ -147,7 +144,7 @@ func (p *Peer) ExecCmd(cmd reconCmd) (err error) {
 	p.reconCmdReq <- cmd
 	err = <-p.reconCmdResp
 	if err != nil {
-		p.log("", err)
+		log.Println("CMD", err)
 	}
 	return
 }
@@ -184,37 +181,78 @@ func (p *Peer) Serve() {
 		ln.(*net.TCPListener).SetDeadline(time.Now().Add(time.Second * 17))
 		conn, err := ln.Accept()
 		if err != nil {
-			p.log(SERVE, err)
+			log.Println(SERVE, err)
 			continue
 		}
 		err = p.accept(conn)
 		if err != nil {
-			p.log(SERVE, err)
+			log.Println(SERVE, err)
 		}
 	}
 }
 
+func (p *Peer) handleConfig(conn net.Conn, role string) (remoteConfig *Config, err error) {
+	// Send config to server on connect
+	log.Println(role, "writing config:", p.Config())
+	err = WriteMsg(conn, p.Config())
+	if err != nil {
+		return
+	}
+	// Receive remote peer's config
+	log.Println(role, "reading remote config:", conn.RemoteAddr())
+	var msg ReconMsg
+	msg, err = ReadMsg(conn)
+	if err != nil {
+		return
+	}
+	var is bool
+	remoteConfig, is = msg.(*Config)
+	if !is {
+		err = errors.New(fmt.Sprintf(
+			"Remote config: expected config message, got %v", msg))
+		return
+	}
+	log.Println(role, "remote config:", remoteConfig)
+	if remoteConfig.BitQuantum != p.Config().BitQuantum {
+		WriteString(conn, RemoteConfigFailed)
+		WriteString(conn, "mismatched bitquantum")
+		log.Println(role, "Cannot peer: BitQuantum remote=", remoteConfig.BitQuantum,
+			"!=", p.Config().BitQuantum)
+		err = IncompatiblePeerError
+		return
+	}
+	if remoteConfig.MBar != p.Config().MBar {
+		WriteString(conn, RemoteConfigFailed)
+		WriteString(conn, "mismatched mbar")
+		log.Println(role, "Cannot peer: MBar remote=", remoteConfig.MBar,
+			"!=", p.Config().MBar)
+		err = IncompatiblePeerError
+		return
+	}
+	err = WriteString(conn, RemoteConfigPassed)
+	if err != nil {
+		return
+	}
+	remoteConfigStatus, err := ReadString(conn)
+	if remoteConfigStatus != RemoteConfigPassed {
+		var reason string
+		if reason, err = ReadString(conn); err == nil {
+			log.Println(role, reason)
+			err = RemoteRejectConfigError
+		}
+		return
+	}
+	return
+}
+
 func (p *Peer) accept(conn net.Conn) error {
 	defer conn.Close()
-	p.log(SERVE, "connection from:", conn.RemoteAddr())
-	p.log(SERVE, "writing config:", conn.RemoteAddr())
-	// Respond with our config
-	err := WriteMsg(conn, p.Config())
-	if err != nil {
-		return err
-	}
-	p.log(SERVE, "reading remote config:", conn.RemoteAddr())
-	// Read remote config from gossip client
-	msg, err := ReadMsg(conn)
-	if err != nil {
-		return err
-	}
-	remoteConfig, is := msg.(*Config)
-	if !is {
-		return errors.New(fmt.Sprintf("Expected remote config, got: %v", remoteConfig))
-	}
-	p.log(SERVE, "remote config:", remoteConfig)
 	conn.SetDeadline(time.Now().Add(time.Second * 13))
+	log.Println(SERVE, "connection from:", conn.RemoteAddr())
+	remoteConfig, err := p.handleConfig(conn, SERVE)
+	if err != nil {
+		return err
+	}
 	return p.ExecCmd(func() error {
 		return p.interactWithClient(conn, remoteConfig, NewBitstring(0))
 	})
@@ -337,21 +375,21 @@ func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) {
 			Size:    req.node.Size(),
 			Samples: req.node.SValues()}
 	}
-	p.log(SERVE, "sendRequest:", msg)
+	log.Println(SERVE, "sendRequest:", msg)
 	WriteMsg(rwc.conn, msg)
 	rwc.pushBottom(&bottomEntry{requestEntry: req})
 }
 
 func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry) (err error) {
-	p.log(SERVE, "handleReply:", "got:", msg)
+	log.Println(SERVE, "handleReply:", "got:", msg)
 	switch m := msg.(type) {
 	case *SyncFail:
 		if req.node.IsLeaf() {
 			return errors.New("Syncfail received at leaf node")
 		}
-		p.log(SERVE, "SyncFail: pushing children")
+		log.Println(SERVE, "SyncFail: pushing children")
 		for _, childNode := range req.node.Children() {
-			p.log(SERVE, "push:", childNode.Key())
+			log.Println(SERVE, "push:", childNode.Key())
 			rwc.pushRequest(&requestEntry{key: childNode.Key(), node: childNode})
 		}
 	case *Elements:
@@ -361,7 +399,7 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 		localdiff := ZSetDiff(local, m.ZSet)
 		remotediff := ZSetDiff(m.ZSet, local)
 		elementsMsg := &Elements{ZSet: localdiff}
-		p.log(SERVE, "handleReply:", "sending:", elementsMsg)
+		log.Println(SERVE, "handleReply:", "sending:", elementsMsg)
 		WriteMsg(rwc.conn, elementsMsg)
 		rwc.rcvrSet.AddAll(remotediff)
 	default:
@@ -371,13 +409,13 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 }
 
 func (rwc *reconWithClient) flushQueue() {
-	rwc.log(SERVE, "flush queue")
+	log.Println(SERVE, "flush queue")
 	rwc.pushBottom(&bottomEntry{state: reconStateFlushEnded})
 	rwc.flushing = true
 }
 
 func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring *Bitstring) (err error) {
-	p.log(SERVE, "interacting with client")
+	log.Println(SERVE, "interacting with client")
 	recon := reconWithClient{Peer: p, conn: conn, rcvrSet: NewZSet()}
 	var root PrefixNode
 	root, err = p.Root()
@@ -388,18 +426,18 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 	msgChan := readAllMsgs(conn)
 	for !recon.isDone() {
 		bottom := recon.topBottom()
-		p.log(SERVE, "interact: bottom:", bottom)
+		log.Println(SERVE, "interact: bottom:", bottom)
 		switch {
 		case bottom == nil:
 			req := recon.popRequest()
-			p.log(SERVE, "interact: popRequest:", req, "sending...")
+			log.Println(SERVE, "interact: popRequest:", req, "sending...")
 			recon.sendRequest(p, req)
 		case bottom.state == reconStateFlushEnded:
-			p.log(SERVE, "interact: flush ended, popBottom")
+			log.Println(SERVE, "interact: flush ended, popBottom")
 			recon.popBottom()
 			recon.flushing = false
 		case bottom.state == reconStateBottom:
-			p.log("Queue length:", len(recon.bottomQ))
+			log.Println(SERVE, "Queue length:", len(recon.bottomQ))
 			var msg ReconMsg
 			hasMsg := false
 			select {
