@@ -35,7 +35,7 @@ const SERVE = "serve:"
 
 type Recover struct {
 	RemoteAddr     net.Addr
-	RemoteConfig   map[string]string
+	RemoteConfig   *Config
 	RemoteElements []*Zp
 }
 
@@ -146,6 +146,9 @@ func (p *Peer) handleCmds() {
 func (p *Peer) ExecCmd(cmd reconCmd) (err error) {
 	p.reconCmdReq <- cmd
 	err = <-p.reconCmdResp
+	if err != nil {
+		p.log("", err)
+	}
 	return
 }
 
@@ -178,6 +181,7 @@ func (p *Peer) Serve() {
 			}
 		default:
 		}
+		ln.(*net.TCPListener).SetDeadline(time.Now().Add(time.Second * 17))
 		conn, err := ln.Accept()
 		if err != nil {
 			p.log(SERVE, err)
@@ -193,11 +197,13 @@ func (p *Peer) Serve() {
 func (p *Peer) accept(conn net.Conn) error {
 	defer conn.Close()
 	p.log(SERVE, "connection from:", conn.RemoteAddr())
+	p.log(SERVE, "writing config:", conn.RemoteAddr())
 	// Respond with our config
-	err := WriteMsg(conn, &Config{Contents: p.Config()})
+	err := WriteMsg(conn, p.Config())
 	if err != nil {
 		return err
 	}
+	p.log(SERVE, "reading remote config:", conn.RemoteAddr())
 	// Read remote config from gossip client
 	msg, err := ReadMsg(conn)
 	if err != nil {
@@ -208,9 +214,9 @@ func (p *Peer) accept(conn net.Conn) error {
 		return errors.New(fmt.Sprintf("Expected remote config, got: %v", remoteConfig))
 	}
 	p.log(SERVE, "remote config:", remoteConfig)
-	conn.SetDeadline(time.Now().Add(time.Second * 30))
+	conn.SetDeadline(time.Now().Add(time.Second * 13))
 	return p.ExecCmd(func() error {
-		return p.interactWithClient(conn, remoteConfig.Contents, NewBitstring(0))
+		return p.interactWithClient(conn, remoteConfig, NewBitstring(0))
 	})
 }
 
@@ -370,7 +376,7 @@ func (rwc *reconWithClient) flushQueue() {
 	rwc.flushing = true
 }
 
-func (p *Peer) interactWithClient(conn net.Conn, remoteConfig map[string]string, bitstring *Bitstring) (err error) {
+func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring *Bitstring) (err error) {
 	p.log(SERVE, "interacting with client")
 	recon := reconWithClient{Peer: p, conn: conn, rcvrSet: NewZSet()}
 	var root PrefixNode

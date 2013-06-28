@@ -134,7 +134,7 @@ func RunPolySyncMBar(t *testing.T, peerMgr PeerManager) {
 	peer2.Settings.HttpPort = 22744
 	peer2.Settings.ReconPort = 22745
 	peer2.Settings.GossipIntervalSecs = 1
-	peer2.Settings.Partners = []string{/*peer1ReconAddr*/}
+	peer2.Settings.Partners = []string{ /*peer1ReconAddr*/}
 	for i := 1; i < 100; i++ {
 		peer2.PrefixTree.Insert(Zi(P_SKS, 65537*i))
 	}

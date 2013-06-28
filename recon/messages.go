@@ -134,7 +134,7 @@ func WriteInt(w io.Writer, n int) (err error) {
 func ReadString(r io.Reader) (string, error) {
 	var n int
 	n, err := ReadInt(r)
-	if err != nil {
+	if err != nil || n == 0 {
 		return "", err
 	}
 	buf := make([]byte, n)
@@ -432,16 +432,17 @@ func (msg *DbRepl) MsgType() MsgType {
 }
 
 type Config struct {
-	Contents map[string]string
+	Version    string
+	HttpPort   int
+	BitQuantum int
+	MBar       int
+	Filters    string
+	Custom     map[string]string
 }
 
 func (msg *Config) String() string {
-	b := bytes.NewBuffer(nil)
-	fmt.Fprintf(b, "%v:", msg.MsgType())
-	for k, v := range msg.Contents {
-		fmt.Fprintf(b, " %v=%v", k, v)
-	}
-	return b.String()
+	return fmt.Sprintf("%v: Version=%v HttpPort=%v BitQuantum=%v MBar=%v", msg.MsgType(),
+		msg.Version, msg.HttpPort, msg.BitQuantum, msg.MBar)
 }
 
 func (msg *Config) MsgType() MsgType {
@@ -449,39 +450,110 @@ func (msg *Config) MsgType() MsgType {
 }
 
 func (msg *Config) marshal(w io.Writer) (err error) {
-	err = WriteInt(w, len(msg.Contents))
-	if err != nil {
+	if err = WriteInt(w, 5+len(msg.Custom)); err != nil {
 		return
 	}
-	for k, v := range msg.Contents {
-		err = WriteString(w, k)
-		if err != nil {
-			return
-		}
-		err = WriteString(w, v)
-		if err != nil {
-			return
+	if err = WriteString(w, "version"); err != nil {
+		return
+	}
+	if err = WriteString(w, msg.Version); err != nil {
+		return
+	}
+	if err = WriteString(w, "http port"); err != nil {
+		return
+	}
+	if err = WriteInt(w, 4); err != nil {
+		return
+	}
+	if err = WriteInt(w, msg.HttpPort); err != nil {
+		return
+	}
+	if err = WriteString(w, "bitquantum"); err != nil {
+		return
+	}
+	if err = WriteInt(w, 4); err != nil {
+		return
+	}
+	if err = WriteInt(w, msg.BitQuantum); err != nil {
+		return
+	}
+	if err = WriteString(w, "mbar"); err != nil {
+		return
+	}
+	if err = WriteInt(w, 4); err != nil {
+		return
+	}
+	if err = WriteInt(w, msg.MBar); err != nil {
+		return
+	}
+	if err = WriteString(w, "filters"); err != nil {
+		return
+	}
+	if err = WriteString(w, msg.Filters); err != nil {
+		return
+	}
+	if msg.Custom != nil {
+		for k, v := range msg.Custom {
+			if err = WriteString(w, k); err != nil {
+				return
+			}
+			if err = WriteString(w, v); err != nil {
+				return
+			}
 		}
 	}
 	return
 }
 
-func (msg *Config) unmarshal(r io.Reader) error {
-	n, err := ReadInt(r)
-	if err != nil {
+func (msg *Config) unmarshal(r io.Reader) (err error) {
+	var n int
+	if n, err = ReadInt(r); err != nil {
 		return err
 	}
-	msg.Contents = make(map[string]string)
+	msg.Custom = make(map[string]string)
+	var ival int
+	var k, v string
 	for i := 0; i < n; i++ {
-		k, err := ReadString(r)
+		k, err = ReadString(r)
 		if err != nil {
 			return err
 		}
-		v, err := ReadString(r)
-		if err != nil {
-			return err
+		switch k {
+		case "http port":
+			fallthrough
+		case "bitquantum":
+			fallthrough
+		case "mbar":
+			// Read the int length
+			if ival, err = ReadInt(r); err != nil {
+				return err
+			} else if ival != 4 {
+				return errors.New(fmt.Sprintf("Invalid length=%d for integer config value %s", ival, k))
+			}
+			// Read the int
+			if ival, err = ReadInt(r); err != nil {
+				return err
+			}
+		default:
+			v, err = ReadString(r)
+			if err != nil {
+				return err
+			}
 		}
-		msg.Contents[k] = v
+		switch k {
+		case "version":
+			msg.Version = v
+		case "http port":
+			msg.HttpPort = ival
+		case "bitquantum":
+			msg.BitQuantum = ival
+		case "mbar":
+			msg.MBar = ival
+		case "filters":
+			msg.Filters = v
+		default:
+			msg.Custom[k] = v
+		}
 	}
 	return nil
 }

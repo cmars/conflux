@@ -50,18 +50,14 @@ func (p *Peer) Gossip() {
 		}
 		peer, err := p.choosePartner()
 		if err != nil {
-			if err != NoPartnersError {
-				p.log(GOSSIP, "choosePartner:", err)
-			}
+			p.log(GOSSIP, "choosePartner:", err)
 			goto DELAY
 		}
 		p.log(GOSSIP, "Initiating recon with peer", peer)
-		p.ExecCmd(func() error {
-			return p.initiateRecon(peer)
-		})
-		//if err != nil {
-		//log.Print(err)
-		//}
+		err = p.initiateRecon(peer)
+		if err != nil {
+			p.log(GOSSIP, "Recon error:", err)
+		}
 	DELAY:
 		delay := time.Duration(p.GossipIntervalSecs) * time.Second
 		// jitter the delay
@@ -70,6 +66,7 @@ func (p *Peer) Gossip() {
 }
 
 var NoPartnersError error = errors.New("That feel when no recon partner")
+var IncompatiblePeerError error = errors.New("Remote peer configuration is not compatible")
 
 func (p *Peer) choosePartner() (net.Addr, error) {
 	partners, err := p.PartnerAddrs()
@@ -88,22 +85,9 @@ func (p *Peer) initiateRecon(peer net.Addr) error {
 	if err != nil {
 		return err
 	}
-	conn.SetDeadline(time.Now().Add(time.Second * 30))
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(time.Second * 11))
 	p.log(GOSSIP, "Connected with", peer)
-	// Interact with peer
-	return p.clientRecon(conn)
-}
-
-type msgProgress struct {
-	elements *ZSet
-	err      error
-}
-
-type msgProgressChan chan *msgProgress
-
-var ReconDone = errors.New("Reconciliation Done")
-
-func (p *Peer) clientRecon(conn net.Conn) error {
 	// Receive remote peer's config
 	msg, err := ReadMsg(conn)
 	if err != nil {
@@ -115,11 +99,37 @@ func (p *Peer) clientRecon(conn net.Conn) error {
 			"Remote config: expected config message, got %v", msg))
 	}
 	p.log(GOSSIP, "Got RemoteConfig:", remoteConfig)
+	if remoteConfig.BitQuantum != p.Config().BitQuantum {
+		p.log(GOSSIP, "Cannot peer: BitQuantum remote=", remoteConfig.BitQuantum,
+			"!=", p.Config().BitQuantum)
+		return IncompatiblePeerError
+	}
+	if remoteConfig.MBar != p.Config().MBar {
+		p.log(GOSSIP, "Cannot peer: MBar remote=", remoteConfig.MBar,
+			"!=", p.Config().MBar)
+		return IncompatiblePeerError
+	}
 	// Send config to server on connect
-	err = WriteMsg(conn, &Config{Contents: p.Config()})
+	err = WriteMsg(conn, p.Config())
 	if err != nil {
 		return err
 	}
+	// Interact with peer
+	return p.ExecCmd(func() error {
+		return p.clientRecon(conn, remoteConfig)
+	})
+}
+
+type msgProgress struct {
+	elements *ZSet
+	err      error
+}
+
+type msgProgressChan chan *msgProgress
+
+var ReconDone = errors.New("Reconciliation Done")
+
+func (p *Peer) clientRecon(conn net.Conn, remoteConfig *Config) error {
 	respSet := NewZSet()
 	for step := range p.interactWithServer(conn) {
 		if step.err != nil {
@@ -139,7 +149,7 @@ func (p *Peer) clientRecon(conn net.Conn) error {
 		p.log(GOSSIP, "Sending recover:", items)
 		p.RecoverChan <- &Recover{
 			RemoteAddr:     conn.RemoteAddr(),
-			RemoteConfig:   remoteConfig.Contents,
+			RemoteConfig:   remoteConfig,
 			RemoteElements: items}
 	}
 	return nil

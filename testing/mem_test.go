@@ -23,6 +23,7 @@ package testing
 
 import (
 	. "github.com/cmars/conflux/recon"
+	"os"
 	"testing"
 )
 

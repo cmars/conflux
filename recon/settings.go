@@ -1,7 +1,6 @@
 package recon
 
 import (
-	"fmt"
 	"github.com/stvp/go-toml-config"
 	"net"
 	"strings"
@@ -39,14 +38,13 @@ func NewSettings() *Settings {
 	return s
 }
 
-func (s *Settings) Config() map[string]string {
-	m := make(map[string]string)
-	m["version"] = s.Version
-	m["http port"] = fmt.Sprintf("%d", s.HttpPort)
-	m["bitquantum"] = fmt.Sprintf("%d", s.BitQuantum)
-	m["mbar"] = fmt.Sprintf("%d", s.MBar)
-	m["filters"] = strings.Join(s.Filters, ",")
-	return m
+func (s *Settings) Config() *Config {
+	return &Config{
+		Version:    s.Version,
+		HttpPort:   s.HttpPort,
+		BitQuantum: s.BitQuantum,
+		MBar:       s.MBar,
+		Filters:    strings.Join(s.Filters, ",")}
 }
 
 func (s *Settings) updateDerived() {
