@@ -28,7 +28,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"time"
 )
 
 const SERVE = "serve:"
@@ -178,7 +177,6 @@ func (p *Peer) Serve() {
 			}
 		default:
 		}
-		ln.(*net.TCPListener).SetDeadline(time.Now().Add(time.Second * 17))
 		conn, err := ln.Accept()
 		if err != nil {
 			log.Println(SERVE, err)
@@ -247,7 +245,6 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (remoteConfig *Config, e
 
 func (p *Peer) accept(conn net.Conn) error {
 	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(time.Second * 13))
 	log.Println(SERVE, "connection from:", conn.RemoteAddr())
 	remoteConfig, err := p.handleConfig(conn, SERVE)
 	if err != nil {
@@ -308,6 +305,7 @@ type reconWithClient struct {
 	rcvrSet  *ZSet
 	flushing bool
 	conn     net.Conn
+	messages []ReconMsg
 }
 
 func (rwc *reconWithClient) pushBottom(bottom *bottomEntry) {
@@ -357,6 +355,7 @@ func readAllMsgs(r io.Reader) chan ReconMsg {
 				close(c)
 				return
 			}
+			log.Println(SERVE, "ReadMsg:", msg)
 			c <- msg
 		}
 	}()
@@ -376,7 +375,7 @@ func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) {
 			Samples: req.node.SValues()}
 	}
 	log.Println(SERVE, "sendRequest:", msg)
-	WriteMsg(rwc.conn, msg)
+	rwc.messages = append(rwc.messages, msg)
 	rwc.pushBottom(&bottomEntry{requestEntry: req})
 }
 
@@ -400,7 +399,7 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 		remotediff := ZSetDiff(m.ZSet, local)
 		elementsMsg := &Elements{ZSet: localdiff}
 		log.Println(SERVE, "handleReply:", "sending:", elementsMsg)
-		WriteMsg(rwc.conn, elementsMsg)
+		rwc.messages = append(rwc.messages, elementsMsg)
 		rwc.rcvrSet.AddAll(remotediff)
 	default:
 		err = errors.New(fmt.Sprintf("unexpected message: %v", m))
@@ -410,6 +409,14 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 
 func (rwc *reconWithClient) flushQueue() {
 	log.Println(SERVE, "flush queue")
+	rwc.messages = append(rwc.messages, &Flush{})
+	for _, msg := range rwc.messages {
+		err := WriteMsg(rwc.conn, msg)
+		if err != nil {
+			log.Println(SERVE, "Error writing Flush message:", err)
+		}
+	}
+	rwc.messages = nil
 	rwc.pushBottom(&bottomEntry{state: reconStateFlushEnded})
 	rwc.flushing = true
 }
@@ -439,10 +446,11 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 		case bottom.state == reconStateBottom:
 			log.Println(SERVE, "Queue length:", len(recon.bottomQ))
 			var msg ReconMsg
+			var ok bool
 			hasMsg := false
 			select {
-			case msg = <-msgChan:
-				hasMsg = true
+			case msg, ok = <-msgChan:
+				hasMsg = ok
 			default:
 			}
 			if hasMsg {
@@ -454,20 +462,23 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 					recon.flushQueue()
 				} else {
 					recon.popBottom()
-					msg = <-msgChan
-					err = recon.handleReply(p, msg, bottom.requestEntry)
+					msg, ok = <-msgChan
+					if ok {
+						err = recon.handleReply(p, msg, bottom.requestEntry)
+					}
 				}
 			} else {
 				req := recon.popRequest()
 				recon.sendRequest(p, req)
 			}
+		default:
+			log.Println("failed to match expected patterns")
 		}
 		if err != nil {
 			return
 		}
 	}
-	msg := &Done{}
-	WriteMsg(conn, msg)
+	WriteMsg(conn, &Done{})
 	items := recon.rcvrSet.Items()
 	if len(items) > 0 {
 		p.RecoverChan <- &Recover{
