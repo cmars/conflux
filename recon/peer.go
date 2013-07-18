@@ -25,9 +25,9 @@ import (
 	"errors"
 	"fmt"
 	. "github.com/cmars/conflux"
-	"io"
 	"log"
 	"net"
+	"time"
 )
 
 const SERVE = "serve:"
@@ -76,7 +76,7 @@ func NewPeer(settings *Settings, tree PrefixTree) *Peer {
 }
 
 func NewMemPeer() *Peer {
-	settings := NewSettings()
+	settings := DefaultSettings()
 	tree := new(MemPrefixTree)
 	tree.Init()
 	return NewPeer(settings, tree)
@@ -161,7 +161,7 @@ func (p *Peer) Remove(z *Zp) (err error) {
 }
 
 func (p *Peer) Serve() {
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", p.ReconPort))
+	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", p.ReconPort()))
 	if err != nil {
 		log.Print(err)
 		return
@@ -244,14 +244,15 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (remoteConfig *Config, e
 }
 
 func (p *Peer) accept(conn net.Conn) error {
-	defer conn.Close()
 	log.Println(SERVE, "connection from:", conn.RemoteAddr())
 	remoteConfig, err := p.handleConfig(conn, SERVE)
 	if err != nil {
 		return err
 	}
 	return p.ExecCmd(func() error {
-		return p.interactWithClient(conn, remoteConfig, NewBitstring(0))
+		err := p.interactWithClient(conn, remoteConfig, NewBitstring(0))
+		defer conn.Close()
+		return err
 	})
 }
 
@@ -345,26 +346,9 @@ func (rwc *reconWithClient) isDone() bool {
 	return len(rwc.requestQ) == 0 && len(rwc.bottomQ) == 0
 }
 
-// TODO: need to send error back on chan as well
-func readAllMsgs(r io.Reader) chan ReconMsg {
-	c := make(chan ReconMsg)
-	go func() {
-		for {
-			msg, err := ReadMsg(r)
-			if err != nil {
-				close(c)
-				return
-			}
-			log.Println(SERVE, "ReadMsg:", msg)
-			c <- msg
-		}
-	}()
-	return c
-}
-
 func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) {
 	var msg ReconMsg
-	if req.node.IsLeaf() || (req.node.Size() < p.MBar) {
+	if req.node.IsLeaf() || (req.node.Size() < p.MBar()) {
 		msg = &ReconRqstFull{
 			Prefix:   req.key,
 			Elements: NewZSet(req.node.Elements()...)}
@@ -411,6 +395,7 @@ func (rwc *reconWithClient) flushQueue() {
 	log.Println(SERVE, "flush queue")
 	rwc.messages = append(rwc.messages, &Flush{})
 	for _, msg := range rwc.messages {
+		log.Println("WriteMsg:", msg)
 		err := WriteMsg(rwc.conn, msg)
 		if err != nil {
 			log.Println(SERVE, "Error writing Flush message:", err)
@@ -430,7 +415,6 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 		return
 	}
 	recon.pushRequest(&requestEntry{node: root, key: bitstring})
-	msgChan := readAllMsgs(conn)
 	for !recon.isDone() {
 		bottom := recon.topBottom()
 		log.Println(SERVE, "interact: bottom:", bottom)
@@ -446,26 +430,31 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 		case bottom.state == reconStateBottom:
 			log.Println(SERVE, "Queue length:", len(recon.bottomQ))
 			var msg ReconMsg
-			var ok bool
-			hasMsg := false
-			select {
-			case msg, ok = <-msgChan:
-				hasMsg = ok
-			default:
+			var hasMsg bool
+			// Set a small read timeout to simulate non-blocking I/O
+			if err = conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+				return
+			}
+			msg, err = ReadMsg(conn)
+			hasMsg = (err == nil)
+			// Restore blocking I/O
+			if err = conn.SetReadDeadline(time.Unix(int64(0), int64(0))); err != nil {
+				return
 			}
 			if hasMsg {
 				recon.popBottom()
 				err = recon.handleReply(p, msg, bottom.requestEntry)
-			} else if len(recon.bottomQ) > p.MaxOutstandingReconRequests ||
+			} else if len(recon.bottomQ) > p.MaxOutstandingReconRequests() ||
 				len(recon.requestQ) == 0 {
 				if !recon.flushing {
 					recon.flushQueue()
 				} else {
 					recon.popBottom()
-					msg, ok = <-msgChan
-					if ok {
-						err = recon.handleReply(p, msg, bottom.requestEntry)
+					if msg, err = ReadMsg(conn); err != nil {
+						return
 					}
+					log.Println("Reply:", msg)
+					err = recon.handleReply(p, msg, bottom.requestEntry)
 				}
 			} else {
 				req := recon.popRequest()

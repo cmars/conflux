@@ -41,22 +41,22 @@ func RunFullSync(t *testing.T, peerMgr PeerManager) {
 	peer2ReconAddr := "localhost:22745"
 	peer1, peer1Path := peerMgr.CreatePeer()
 	defer peerMgr.DestroyPeer(peer1, peer1Path)
-	peer1.Settings.LogName = "peer1"
-	peer1.Settings.HttpPort = 22742
-	peer1.Settings.ReconPort = 22743
-	peer1.Settings.GossipIntervalSecs = 1
-	peer1.Settings.Partners = []string{peer2ReconAddr}
+	peer1.Settings.Set("conflux.recon.logname", "peer1")
+	peer1.Settings.Set("conflux.recon.httpPort", 22742)
+	peer1.Settings.Set("conflux.recon.reconPort", 22743)
+	peer1.Settings.Set("conflux.recon.gossipIntervalSecs", 1)
+	peer1.Settings.Set("conflux.recon.partners", []interface{}{peer2ReconAddr})
 	peer1.PrefixTree.Insert(Zi(P_SKS, 65537))
 	peer1.PrefixTree.Insert(Zi(P_SKS, 65539))
 	root, _ := peer1.PrefixTree.Root()
 	log.Println(root.Elements())
 	peer2, peer2Path := peerMgr.CreatePeer()
 	defer peerMgr.DestroyPeer(peer2, peer2Path)
-	peer2.Settings.LogName = "peer2"
-	peer2.Settings.HttpPort = 22744
-	peer2.Settings.ReconPort = 22745
-	peer2.Settings.GossipIntervalSecs = 1
-	peer2.Settings.Partners = []string{peer1ReconAddr}
+	peer2.Settings.Set("conflux.recon.logname", "peer2")
+	peer2.Settings.Set("conflux.recon.httpPort", 22744)
+	peer2.Settings.Set("conflux.recon.reconPort", 22745)
+	peer2.Settings.Set("conflux.recon.gossipIntervalSecs", 1)
+	peer2.Settings.Set("conflux.recon.partners", []interface{}{peer1ReconAddr})
 	peer2.PrefixTree.Insert(Zi(P_SKS, 65537))
 	peer2.PrefixTree.Insert(Zi(P_SKS, 65541))
 	root, _ = peer2.PrefixTree.Root()
@@ -116,10 +116,11 @@ func RunPolySyncMBar(t *testing.T, peerMgr PeerManager) {
 	peer2ReconAddr := "localhost:22745"
 	peer1, peer1Path := peerMgr.CreatePeer()
 	defer peerMgr.DestroyPeer(peer1, peer1Path)
-	peer1.Settings.HttpPort = 22742
-	peer1.Settings.ReconPort = 22743
-	peer1.Settings.GossipIntervalSecs = 1
-	peer1.Settings.Partners = []string{peer2ReconAddr}
+	peer1.Settings.Set("conflux.recon.logname", "peer1")
+	peer1.Settings.Set("conflux.recon.httpPort", 22742)
+	peer1.Settings.Set("conflux.recon.reconPort", 22743)
+	peer1.Settings.Set("conflux.recon.gossipIntervalSecs", 1)
+	peer1.Settings.Set("conflux.recon.partners", []interface{}{peer2ReconAddr})
 	for i := 1; i < 100; i++ {
 		peer1.PrefixTree.Insert(Zi(P_SKS, 65537*i))
 	}
@@ -131,10 +132,11 @@ func RunPolySyncMBar(t *testing.T, peerMgr PeerManager) {
 	log.Println(root.Elements())
 	peer2, peer2Path := peerMgr.CreatePeer()
 	defer peerMgr.DestroyPeer(peer2, peer2Path)
-	peer2.Settings.HttpPort = 22744
-	peer2.Settings.ReconPort = 22745
-	peer2.Settings.GossipIntervalSecs = 1
-	peer2.Settings.Partners = []string{ /*peer1ReconAddr*/}
+	peer2.Settings.Set("conflux.recon.logname", "peer2")
+	peer2.Settings.Set("conflux.recon.httpPort", 22744)
+	peer2.Settings.Set("conflux.recon.reconPort", 22745)
+	peer2.Settings.Set("conflux.recon.gossipIntervalSecs", 1)
+	peer2.Settings.Set("conflux.recon.partners", []interface{}{ /*peer2ReconAddr*/})
 	for i := 1; i < 100; i++ {
 		peer2.PrefixTree.Insert(Zi(P_SKS, 65537*i))
 	}
@@ -198,11 +200,11 @@ func RunPolySyncLowMBar(t *testing.T, peerMgr PeerManager) {
 	peer2ReconAddr := "localhost:22745"
 	peer1, peer1Path := peerMgr.CreatePeer()
 	defer peerMgr.DestroyPeer(peer1, peer1Path)
-	peer1.Settings.HttpPort = 22742
-	peer1.Settings.ReconPort = 22743
-	peer1.Settings.LogName = "peer1"
-	peer1.Settings.GossipIntervalSecs = 1
-	peer1.Settings.Partners = []string{peer2ReconAddr}
+	peer1.Settings.Set("conflux.recon.logname", "peer1")
+	peer1.Settings.Set("conflux.recon.httpPort", 22742)
+	peer1.Settings.Set("conflux.recon.reconPort", 22743)
+	peer1.Settings.Set("conflux.recon.gossipIntervalSecs", 1)
+	peer1.Settings.Set("conflux.recon.partners", []interface{}{peer2ReconAddr})
 	for i := 1; i < 100; i++ {
 		peer1.PrefixTree.Insert(Zi(P_SKS, 65537*i))
 	}
@@ -214,11 +216,11 @@ func RunPolySyncLowMBar(t *testing.T, peerMgr PeerManager) {
 	log.Println(root1.Elements())
 	peer2, peer2Path := peerMgr.CreatePeer()
 	defer peerMgr.DestroyPeer(peer2, peer2Path)
-	peer2.Settings.HttpPort = 22744
-	peer2.Settings.ReconPort = 22745
-	peer2.Settings.LogName = "peer2"
-	peer2.Settings.GossipIntervalSecs = 1
-	//peer2.Settings.partners = peer1ReconAddr
+	peer2.Settings.Set("conflux.recon.logname", "peer2")
+	peer2.Settings.Set("conflux.recon.httpPort", 22744)
+	peer2.Settings.Set("conflux.recon.reconPort", 22745)
+	peer2.Settings.Set("conflux.recon.gossipIntervalSecs", 1)
+	peer2.Settings.Set("conflux.recon.partners", []interface{}{ /*peer2ReconAddr*/})
 	for i := 1; i < 100; i++ {
 		peer2.PrefixTree.Insert(Zi(P_SKS, 65537*i))
 	}

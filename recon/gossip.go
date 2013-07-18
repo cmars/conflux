@@ -59,7 +59,7 @@ func (p *Peer) Gossip() {
 			log.Println(GOSSIP, "Recon error:", err)
 		}
 	DELAY:
-		delay := time.Duration(p.GossipIntervalSecs) * time.Second
+		delay := time.Duration(p.GossipIntervalSecs()) * time.Second
 		// jitter the delay
 		time.Sleep(delay)
 	}
@@ -190,7 +190,7 @@ func (p *Peer) handleReconRqstPoly(rp *ReconRqstPoly) *msgProgress {
 		remoteSamples, localSamples, remoteSize, localSize, points)
 	if err == LowMBar {
 		log.Println(GOSSIP, "Low MBar")
-		if node.IsLeaf() || node.Size() < (p.ThreshMult*p.MBar) {
+		if node.IsLeaf() || node.Size() < (p.ThreshMult()*p.MBar()) {
 			log.Println(GOSSIP, "Sending full elements for node:", node.Key())
 			return &msgProgress{elements: NewZSet(), messages: []ReconMsg{&FullElements{ZSet: NewZSet(node.Elements()...)}}}
 		}

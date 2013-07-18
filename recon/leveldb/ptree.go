@@ -44,7 +44,10 @@ func NewPeer(basepath string, settings *recon.Settings) (p *recon.Peer, err erro
 		return nil, err
 	}
 	if settings == nil {
-		settings = newSettings(client)
+		settings, err = newSettings(client)
+		if err != nil {
+			return nil, err
+		}
 	}
 	tree, err := newPrefixTree(client, settings)
 	if err != nil {
@@ -74,11 +77,11 @@ func newClient(basepath string) (c *client, err error) {
 	return
 }
 
-func newSettings(c *client) *recon.Settings {
+func newSettings(c *client) (*recon.Settings, error) {
 	if fi, err := os.Stat(c.settingsPath); err == nil && !fi.IsDir() {
 		return recon.LoadSettings(c.settingsPath)
 	}
-	return recon.NewSettings()
+	return recon.DefaultSettings(), nil
 }
 
 type prefixTree struct {
@@ -133,11 +136,6 @@ func (t *prefixTree) ensureRoot() error {
 	_, err = t.newChildNode(nil, 0)
 	return err
 }
-
-func (t *prefixTree) SplitThreshold() int { return t.Settings.SplitThreshold }
-func (t *prefixTree) JoinThreshold() int  { return t.Settings.JoinThreshold }
-func (t *prefixTree) BitQuantum() int     { return t.Settings.BitQuantum }
-func (t *prefixTree) NumSamples() int     { return t.Settings.NumSamples }
 
 func (t *prefixTree) Points() []*Zp { return t.points }
 
