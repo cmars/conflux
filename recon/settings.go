@@ -23,6 +23,7 @@ package recon
 
 import (
 	"bytes"
+	"fmt"
 	"github.com/pelletier/go-toml"
 	"net"
 	"strconv"
@@ -58,8 +59,10 @@ func (s *Settings) GetInt(key string, defaultValue int) int {
 	switch v := s.GetDefault(key, defaultValue).(type) {
 	case int:
 		return v
-	case string:
-		i, err := strconv.Atoi(v)
+	case int64:
+		return int(v)
+	default:
+		i, err := strconv.Atoi(fmt.Sprintf("%v", v))
 		if err != nil {
 			panic(err)
 		}
