@@ -42,7 +42,9 @@ func createTestPeer(t *testing.T) (*recon.Peer, string) {
 	testDbDir := filepath.Join(os.TempDir(), fmt.Sprintf("conflux-cask-test.%v", suffix))
 	err := os.MkdirAll(testDbDir, 0755)
 	assert.Equal(t, err, nil)
-	peer, err := NewPeer(testDbDir, nil)
+	settings := DefaultSettings()
+	settings.Set("conflux.recon.leveldb.path", testDbDir)
+	peer, err := NewPeer(settings)
 	assert.Equal(t, err, nil)
 	return peer, testDbDir
 }

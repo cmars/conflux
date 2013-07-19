@@ -30,63 +30,40 @@ import (
 	"github.com/cmars/conflux/recon"
 	"github.com/jmhodges/levigo"
 	"os"
-	"path/filepath"
 )
 
-type client struct {
-	settingsPath string
-	ptreePath    string
-}
-
-func NewPeer(basepath string, settings *recon.Settings) (p *recon.Peer, err error) {
-	client, err := newClient(basepath)
+func NewPeer(settings *DbSettings) (p *recon.Peer, err error) {
+	err = initDb(settings.DbPath())
 	if err != nil {
 		return nil, err
 	}
-	if settings == nil {
-		settings, err = newSettings(client)
-		if err != nil {
-			return nil, err
-		}
-	}
-	tree, err := newPrefixTree(client, settings)
+	tree, err := newPrefixTree(settings)
 	if err != nil {
 		return nil, err
 	}
 	return &recon.Peer{
 		RecoverChan: make(recon.RecoverChan),
-		Settings:    settings,
+		Settings:    settings.Settings,
 		PrefixTree:  tree}, nil
 }
 
-func newClient(basepath string) (c *client, err error) {
-	c = &client{}
-	c.settingsPath = filepath.Join(basepath, "conflux.recon.conf")
-	c.ptreePath = filepath.Join(basepath, "ptree")
+func initDb(path string) (err error) {
 	var fi os.FileInfo
-	fi, err = os.Stat(c.ptreePath)
+	fi, err = os.Stat(path)
 	if os.IsNotExist(err) {
-		err = os.MkdirAll(c.ptreePath, os.FileMode(0755))
+		err = os.MkdirAll(path, os.FileMode(0755))
 		if err != nil {
 			return
 		}
 	} else if !fi.IsDir() {
-		err = errors.New(fmt.Sprintf("Not a directory: %s", c.ptreePath))
+		err = errors.New(fmt.Sprintf("Not a directory: %s", path))
 		return
 	}
 	return
 }
 
-func newSettings(c *client) (*recon.Settings, error) {
-	if fi, err := os.Stat(c.settingsPath); err == nil && !fi.IsDir() {
-		return recon.LoadSettings(c.settingsPath)
-	}
-	return recon.DefaultSettings(), nil
-}
-
 type prefixTree struct {
-	*client
-	*recon.Settings
+	*DbSettings
 	ptree     *levigo.DB
 	options   *levigo.Options
 	rdOptions *levigo.ReadOptions
@@ -94,8 +71,8 @@ type prefixTree struct {
 	points    []*Zp
 }
 
-func newPrefixTree(c *client, s *recon.Settings) (tree *prefixTree, err error) {
-	tree = &prefixTree{client: c, Settings: s}
+func newPrefixTree(s *DbSettings) (tree *prefixTree, err error) {
+	tree = &prefixTree{DbSettings: s}
 	tree.points = Zpoints(P_SKS, tree.NumSamples())
 	tree.options = levigo.NewOptions()
 	tree.options.SetErrorIfExists(false)
@@ -113,7 +90,7 @@ func newPrefixTree(c *client, s *recon.Settings) (tree *prefixTree, err error) {
 	tree.rdOptions.SetFillCache(false)
 	tree.wrOptions = levigo.NewWriteOptions()
 	tree.wrOptions.SetSync(false)
-	tree.ptree, err = levigo.Open(tree.ptreePath, tree.options)
+	tree.ptree, err = levigo.Open(s.DbPath(), tree.options)
 	if err != nil {
 		return
 	}
