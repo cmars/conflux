@@ -153,16 +153,19 @@ func WriteString(w io.Writer, text string) (err error) {
 }
 
 func ReadBitstring(r io.Reader) (*Bitstring, error) {
-	var n int
-	n, err := ReadInt(r)
+	nbits, err := ReadInt(r)
 	if err != nil {
 		return nil, err
 	}
-	bs := NewBitstring(n)
-	if n == 0 {
+	bs := NewBitstring(nbits)
+	nbytes, err := ReadInt(r)
+	if err != nil {
+		return nil, err
+	}
+	if nbits == 0 {
 		return bs, nil
 	}
-	buf := make([]byte, bs.ByteLen())
+	buf := make([]byte, nbytes)
 	_, err = io.ReadFull(r, buf)
 	bs.SetBytes(buf)
 	return bs, err
@@ -170,6 +173,10 @@ func ReadBitstring(r io.Reader) (*Bitstring, error) {
 
 func WriteBitstring(w io.Writer, bs *Bitstring) (err error) {
 	err = WriteInt(w, bs.BitLen())
+	if err != nil {
+		return
+	}
+	err = WriteInt(w, len(bs.Bytes()))
 	if err != nil {
 		return
 	}
@@ -238,8 +245,10 @@ func WriteZp(w io.Writer, z *Zp) (err error) {
 	if err != nil {
 		return
 	}
-	pad := make([]byte, sksZpNbytes-len(num))
-	_, err = w.Write(pad)
+	if len(num) < sksZpNbytes {
+		pad := make([]byte, sksZpNbytes-len(num))
+		_, err = w.Write(pad)
+	}
 	return
 }
 
@@ -610,7 +619,7 @@ func ReadMsg(r io.Reader) (msg ReconMsg, err error) {
 	return
 }
 
-func WriteMsg(w io.Writer, msg ReconMsg) (err error) {
+func WriteMsgDirect(w io.Writer, msg ReconMsg) (err error) {
 	data := bytes.NewBuffer(nil)
 	buf := make([]byte, 1)
 	buf[0] = byte(msg.MsgType())
@@ -622,15 +631,22 @@ func WriteMsg(w io.Writer, msg ReconMsg) (err error) {
 	if err != nil {
 		return
 	}
-	bufw := bufio.NewWriter(w)
-	err = WriteInt(bufw, data.Len())
+	err = WriteInt(w, data.Len())
 	if err != nil {
 		return
 	}
-	_, err = bufw.Write(data.Bytes())
-	if err != nil {
-		return
+	_, err = w.Write(data.Bytes())
+	return err
+}
+
+func WriteMsg(w io.Writer, msgs ...ReconMsg) (err error) {
+	bufw := bufio.NewWriter(w)
+	for _, msg := range msgs {
+		err = WriteMsgDirect(bufw, msg)
+		if err != nil {
+			return
+		}
 	}
 	err = bufw.Flush()
-	return err
+	return
 }

@@ -22,6 +22,7 @@
 package recon
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	. "github.com/cmars/conflux"
@@ -212,22 +213,31 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (remoteConfig *Config, e
 	}
 	log.Println(role, "remote config:", remoteConfig)
 	if remoteConfig.BitQuantum != p.Config().BitQuantum {
-		WriteString(conn, RemoteConfigFailed)
-		WriteString(conn, "mismatched bitquantum")
+		bufw := bufio.NewWriter(conn)
+		WriteString(bufw, RemoteConfigFailed)
+		WriteString(bufw, "mismatched bitquantum")
+		bufw.Flush()
 		log.Println(role, "Cannot peer: BitQuantum remote=", remoteConfig.BitQuantum,
 			"!=", p.Config().BitQuantum)
 		err = IncompatiblePeerError
 		return
 	}
 	if remoteConfig.MBar != p.Config().MBar {
-		WriteString(conn, RemoteConfigFailed)
-		WriteString(conn, "mismatched mbar")
+		bufw := bufio.NewWriter(conn)
+		WriteString(bufw, RemoteConfigFailed)
+		WriteString(bufw, "mismatched mbar")
+		bufw.Flush()
 		log.Println(role, "Cannot peer: MBar remote=", remoteConfig.MBar,
 			"!=", p.Config().MBar)
 		err = IncompatiblePeerError
 		return
 	}
-	err = WriteString(conn, RemoteConfigPassed)
+	bufw := bufio.NewWriter(conn)
+	err = WriteString(bufw, RemoteConfigPassed)
+	if err != nil {
+		return
+	}
+	err = bufw.Flush()
 	if err != nil {
 		return
 	}
@@ -394,12 +404,9 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 func (rwc *reconWithClient) flushQueue() {
 	log.Println(SERVE, "flush queue")
 	rwc.messages = append(rwc.messages, &Flush{})
-	for _, msg := range rwc.messages {
-		log.Println("WriteMsg:", msg)
-		err := WriteMsg(rwc.conn, msg)
-		if err != nil {
-			log.Println(SERVE, "Error writing Flush message:", err)
-		}
+	err := WriteMsg(rwc.conn, rwc.messages...)
+	if err != nil {
+		log.Println(SERVE, "Error writing messages:", err)
 	}
 	rwc.messages = nil
 	rwc.pushBottom(&bottomEntry{state: reconStateFlushEnded})
