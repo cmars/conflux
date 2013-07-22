@@ -22,6 +22,7 @@
 package recon
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -610,15 +611,26 @@ func ReadMsg(r io.Reader) (msg ReconMsg, err error) {
 }
 
 func WriteMsg(w io.Writer, msg ReconMsg) (err error) {
-	bw := bytes.NewBuffer(nil)
+	data := bytes.NewBuffer(nil)
 	buf := make([]byte, 1)
 	buf[0] = byte(msg.MsgType())
-	_, err = bw.Write(buf)
+	_, err = data.Write(buf)
 	if err != nil {
 		return
 	}
-	msg.marshal(bw)
-	WriteInt(w, bw.Len())
-	_, err = w.Write(bw.Bytes())
+	err = msg.marshal(data)
+	if err != nil {
+		return
+	}
+	bufw := bufio.NewWriter(w)
+	err = WriteInt(bufw, data.Len())
+	if err != nil {
+		return
+	}
+	_, err = bufw.Write(data.Bytes())
+	if err != nil {
+		return
+	}
+	err = bufw.Flush()
 	return err
 }
