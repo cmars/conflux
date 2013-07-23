@@ -128,6 +128,14 @@ func (s *Settings) MaxOutstandingReconRequests() int {
 	return s.GetInt("conflux.recon.maxOutstandingReconRequests", 100)
 }
 
+func (s *Settings) ConnTimeout() int {
+	return s.GetInt("conflux.recon.connTimeout", 0)
+}
+
+func (s *Settings) ReadTimeout() int {
+	return s.GetInt("conflux.recon.readTimeout", 0)
+}
+
 func DefaultSettings() (settings *Settings) {
 	buf := bytes.NewBuffer(nil)
 	var tree *toml.TomlTree

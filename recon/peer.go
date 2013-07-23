@@ -178,10 +178,16 @@ func (p *Peer) Serve() {
 			}
 		default:
 		}
+		if p.ConnTimeout() > 0 {
+			ln.(*net.TCPListener).SetDeadline(time.Now().Add(time.Second * time.Duration(p.ConnTimeout())))
+		}
 		conn, err := ln.Accept()
 		if err != nil {
 			log.Println(SERVE, err)
 			continue
+		}
+		if p.ReadTimeout() > 0 {
+			conn.SetReadDeadline(time.Now().Add(time.Second * time.Duration(p.ReadTimeout())))
 		}
 		err = p.accept(conn)
 		if err != nil {
@@ -389,8 +395,8 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 		rwc.rcvrSet.AddAll(m.ZSet)
 	case *FullElements:
 		local := NewZSet(req.node.Elements()...)
-		localdiff := ZSetDiff(local, m.ZSet)
-		remotediff := ZSetDiff(m.ZSet, local)
+		localdiff := ZSetDiff(m.ZSet, local)
+		remotediff := ZSetDiff(local, m.ZSet)
 		elementsMsg := &Elements{ZSet: localdiff}
 		log.Println(SERVE, "handleReply:", "sending:", elementsMsg)
 		rwc.messages = append(rwc.messages, elementsMsg)

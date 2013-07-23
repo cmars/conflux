@@ -605,11 +605,11 @@ func ReadMsg(r io.Reader) (msg ReconMsg, err error) {
 	case MsgTypeFlush:
 		msg = &Flush{}
 	case MsgTypeError:
-		msg = &Error{}
+		msg = &Error{&textMsg{}}
 	case MsgTypeDbRqst:
-		msg = &DbRqst{}
+		msg = &DbRqst{&textMsg{}}
 	case MsgTypeDbRepl:
-		msg = &DbRepl{}
+		msg = &DbRepl{&textMsg{}}
 	case MsgTypeConfig:
 		msg = &Config{}
 	default:

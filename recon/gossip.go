@@ -86,6 +86,9 @@ func (p *Peer) initiateRecon(peer net.Addr) error {
 		return err
 	}
 	defer conn.Close()
+	if p.ReadTimeout() > 0 {
+		conn.SetReadDeadline(time.Now().Add(time.Second * time.Duration(p.ReadTimeout())))
+	}
 	remoteConfig, err := p.handleConfig(conn, GOSSIP)
 	// Interact with peer
 	return p.ExecCmd(func() error {

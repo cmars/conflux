@@ -44,8 +44,10 @@ func RunFullSync(t *testing.T, peerMgr PeerManager) {
 	peer1.Settings.Set("conflux.recon.logname", "peer1")
 	peer1.Settings.Set("conflux.recon.httpPort", 22742)
 	peer1.Settings.Set("conflux.recon.reconPort", 22743)
-	peer1.Settings.Set("conflux.recon.gossipIntervalSecs", 1)
+	peer1.Settings.Set("conflux.recon.gossipIntervalSecs", 30)
 	peer1.Settings.Set("conflux.recon.partners", []interface{}{peer2ReconAddr})
+	peer1.Settings.Set("conflux.recon.readTimeout", 10)
+	peer1.Settings.Set("conflux.recon.connTimeout", 3)
 	peer1.PrefixTree.Insert(Zi(P_SKS, 65537))
 	peer1.PrefixTree.Insert(Zi(P_SKS, 65539))
 	root, _ := peer1.PrefixTree.Root()
@@ -55,8 +57,10 @@ func RunFullSync(t *testing.T, peerMgr PeerManager) {
 	peer2.Settings.Set("conflux.recon.logname", "peer2")
 	peer2.Settings.Set("conflux.recon.httpPort", 22744)
 	peer2.Settings.Set("conflux.recon.reconPort", 22745)
-	peer2.Settings.Set("conflux.recon.gossipIntervalSecs", 1)
+	peer2.Settings.Set("conflux.recon.gossipIntervalSecs", 30)
 	peer2.Settings.Set("conflux.recon.partners", []interface{}{peer1ReconAddr})
+	peer2.Settings.Set("conflux.recon.readTimeout", 10)
+	peer2.Settings.Set("conflux.recon.connTimeout", 3)
 	peer2.PrefixTree.Insert(Zi(P_SKS, 65537))
 	peer2.PrefixTree.Insert(Zi(P_SKS, 65541))
 	root, _ = peer2.PrefixTree.Root()
@@ -119,8 +123,10 @@ func RunPolySyncMBar(t *testing.T, peerMgr PeerManager) {
 	peer1.Settings.Set("conflux.recon.logname", "peer1")
 	peer1.Settings.Set("conflux.recon.httpPort", 22742)
 	peer1.Settings.Set("conflux.recon.reconPort", 22743)
-	peer1.Settings.Set("conflux.recon.gossipIntervalSecs", 1)
+	peer1.Settings.Set("conflux.recon.gossipIntervalSecs", 30)
 	peer1.Settings.Set("conflux.recon.partners", []interface{}{peer2ReconAddr})
+	peer1.Settings.Set("conflux.recon.readTimeout", 10)
+	peer1.Settings.Set("conflux.recon.connTimeout", 3)
 	for i := 1; i < 100; i++ {
 		peer1.PrefixTree.Insert(Zi(P_SKS, 65537*i))
 	}
@@ -135,8 +141,10 @@ func RunPolySyncMBar(t *testing.T, peerMgr PeerManager) {
 	peer2.Settings.Set("conflux.recon.logname", "peer2")
 	peer2.Settings.Set("conflux.recon.httpPort", 22744)
 	peer2.Settings.Set("conflux.recon.reconPort", 22745)
-	peer2.Settings.Set("conflux.recon.gossipIntervalSecs", 1)
+	peer2.Settings.Set("conflux.recon.gossipIntervalSecs", 30)
 	peer2.Settings.Set("conflux.recon.partners", []interface{}{ /*peer2ReconAddr*/})
+	peer2.Settings.Set("conflux.recon.readTimeout", 10)
+	peer2.Settings.Set("conflux.recon.connTimeout", 3)
 	for i := 1; i < 100; i++ {
 		peer2.PrefixTree.Insert(Zi(P_SKS, 65537*i))
 	}
@@ -146,8 +154,8 @@ func RunPolySyncMBar(t *testing.T, peerMgr PeerManager) {
 	}
 	root, _ = peer2.PrefixTree.Root()
 	log.Println(root.Elements())
-	peer1.Start()
 	peer2.Start()
+	peer1.Start()
 	timer := time.NewTimer(time.Duration(120) * time.Second)
 	var zs1 *ZSet = NewZSet()
 	var zs2 *ZSet = NewZSet()
@@ -203,8 +211,10 @@ func RunPolySyncLowMBar(t *testing.T, peerMgr PeerManager) {
 	peer1.Settings.Set("conflux.recon.logname", "peer1")
 	peer1.Settings.Set("conflux.recon.httpPort", 22742)
 	peer1.Settings.Set("conflux.recon.reconPort", 22743)
-	peer1.Settings.Set("conflux.recon.gossipIntervalSecs", 1)
+	peer1.Settings.Set("conflux.recon.gossipIntervalSecs", 30)
 	peer1.Settings.Set("conflux.recon.partners", []interface{}{peer2ReconAddr})
+	peer1.Settings.Set("conflux.recon.readTimeout", 10)
+	peer1.Settings.Set("conflux.recon.connTimeout", 3)
 	for i := 1; i < 100; i++ {
 		peer1.PrefixTree.Insert(Zi(P_SKS, 65537*i))
 	}
@@ -219,8 +229,10 @@ func RunPolySyncLowMBar(t *testing.T, peerMgr PeerManager) {
 	peer2.Settings.Set("conflux.recon.logname", "peer2")
 	peer2.Settings.Set("conflux.recon.httpPort", 22744)
 	peer2.Settings.Set("conflux.recon.reconPort", 22745)
-	peer2.Settings.Set("conflux.recon.gossipIntervalSecs", 1)
+	peer2.Settings.Set("conflux.recon.gossipIntervalSecs", 30)
 	peer2.Settings.Set("conflux.recon.partners", []interface{}{ /*peer2ReconAddr*/})
+	peer2.Settings.Set("conflux.recon.readTimeout", 10)
+	peer2.Settings.Set("conflux.recon.connTimeout", 3)
 	for i := 1; i < 100; i++ {
 		peer2.PrefixTree.Insert(Zi(P_SKS, 65537*i))
 	}
@@ -230,8 +242,8 @@ func RunPolySyncLowMBar(t *testing.T, peerMgr PeerManager) {
 	}
 	root2, _ := peer2.PrefixTree.Root()
 	log.Println(root2.Elements())
-	peer1.Start()
 	peer2.Start()
+	peer1.Start()
 	timer := time.NewTimer(time.Duration(120) * time.Second)
 	var zs1 *ZSet = NewZSet()
 	var zs2 *ZSet = NewZSet()
