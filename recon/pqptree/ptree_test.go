@@ -22,43 +22,33 @@
 package pqptree
 
 import (
-	"crypto/rand"
-	"encoding/base64"
-	"fmt"
 	"github.com/bmizerany/assert"
 	. "github.com/cmars/conflux"
 	"github.com/cmars/conflux/recon"
-	"os"
-	"path/filepath"
+	"github.com/jmoiron/sqlx"
 	"testing"
 )
 
 const TEST_DB = "recon_test"
 
-func createTestPeer(t *testing.T) (*recon.Peer, string) {
-	tag := make([]byte, 32)
-	rand.Read(tag)
-	suffix := base64.URLEncoding.EncodeToString(tag)
-	testDbDir := filepath.Join(os.TempDir(), fmt.Sprintf("conflux-cask-test.%v", suffix))
-	err := os.MkdirAll(testDbDir, 0755)
+func createTestPeer(t *testing.T) *recon.Peer {
+	db, err := sqlx.Connect("postgres", "dbname=pqptree_test host=/var/run/postgresql sslmode=disable")
 	assert.Equal(t, err, nil)
 	settings := DefaultSettings()
-	settings.Set("conflux.recon.leveldb.path", testDbDir)
-	peer, err := NewPeer(settings)
+	ptree, err := New("test", db, settings)
 	assert.Equal(t, err, nil)
-	return peer, testDbDir
+	peer := recon.NewPeer(settings.Settings, ptree)
+	assert.Equal(t, err, nil)
+	return peer
 }
 
-func destroyTestPeer(peer *recon.Peer, path string) {
+func destroyTestPeer(peer *recon.Peer) {
 	peer.Stop()
-	peer.PrefixTree.(*prefixTree).ptree.Close()
-	//levigo.DestroyDatabase(path, peer.PrefixTree.(*prefixTree).options)
-	os.RemoveAll(path)
 }
 
 func TestInsertNodesNoSplit(t *testing.T) {
-	peer, path := createTestPeer(t)
-	defer destroyTestPeer(peer, path)
+	peer := createTestPeer(t)
+	defer destroyTestPeer(peer)
 	peer.PrefixTree.Insert(Zi(P_SKS, 100))
 	peer.PrefixTree.Insert(Zi(P_SKS, 300))
 	peer.PrefixTree.Insert(Zi(P_SKS, 500))
@@ -77,8 +67,8 @@ func TestInsertNodesNoSplit(t *testing.T) {
 }
 
 func TestJustOneKey(t *testing.T) {
-	peer, path := createTestPeer(t)
-	defer destroyTestPeer(peer, path)
+	peer := createTestPeer(t)
+	defer destroyTestPeer(peer)
 	tree := peer.PrefixTree
 	tree.Init()
 	tree.Insert(Zs(P_SKS, "224045810486609649306292620830306652473"))
@@ -102,8 +92,8 @@ func TestJustOneKey(t *testing.T) {
 }
 
 func TestInsertNodeSplit(t *testing.T) {
-	peer, path := createTestPeer(t)
-	defer destroyTestPeer(peer, path)
+	peer := createTestPeer(t)
+	defer destroyTestPeer(peer)
 	tree := peer.PrefixTree
 	tree.Init()
 	// Add a bunch of nodes, enough to cause splits

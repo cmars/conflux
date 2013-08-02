@@ -409,10 +409,10 @@ func (t *pqPrefixTree) newChildNode(parent *pqPrefixNode, childIndex int) *pqPre
 func (n *pqPrefixNode) upsertNode(tx *sqlx.Tx) error {
 	rs, err := tx.Execv(n.SqlTemplate(`
 INSERT INTO {{.Namespace}}_pnode (node_key, svalues, num_elements, child_keys)
-SELECT $1, $2, $3 $4 WHERE NOT EXISTS (
+SELECT $1, $2, $3, $4 WHERE NOT EXISTS (
     SELECT 1 FROM {{.Namespace}}_pnode WHERE node_key = $1)
 RETURNING *`),
-		n.NodeKey, n.SValues, n.NumElements, n.ChildKeys)
+		n.NodeKey, n.PNode.SValues, n.NumElements, n.ChildKeys)
 	if err != nil {
 		return err
 	}

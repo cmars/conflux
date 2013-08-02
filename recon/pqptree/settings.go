@@ -43,3 +43,7 @@ func (s *Settings) Namespace() string {
 func NewSettings(reconSettings *recon.Settings) *Settings {
 	return &Settings{reconSettings}
 }
+
+func DefaultSettings() *Settings {
+	return NewSettings(recon.DefaultSettings())
+}
