@@ -148,7 +148,7 @@ func DefaultSettings() (settings *Settings) {
 
 func NewSettings(tree *toml.TomlTree) (settings *Settings) {
 	settings = &Settings{tree, DefaultSplitThreshold, DefaultJoinThreshold, DefaultNumSamples}
-	settings.updateDerived()
+	settings.UpdateDerived()
 	return
 }
 
@@ -161,7 +161,7 @@ func (s *Settings) Config() *Config {
 		Filters:    strings.Join(s.Filters(), ",")}
 }
 
-func (s *Settings) updateDerived() {
+func (s *Settings) UpdateDerived() {
 	s.splitThreshold = s.ThreshMult() * s.MBar()
 	s.joinThreshold = s.splitThreshold / 2
 	s.numSamples = s.MBar() + 1

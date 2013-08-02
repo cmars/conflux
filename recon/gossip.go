@@ -221,6 +221,7 @@ func (p *Peer) handleReconRqstFull(rf *ReconRqstFull) *msgProgress {
 		return &msgProgress{err: ReconRqstPolyNotFound}
 	}
 	localset := NewZSet(node.Elements()...)
+	log.Println(GOSSIP, "localset=", localset)
 	localdiff := ZSetDiff(localset, rf.Elements)
 	remotediff := ZSetDiff(rf.Elements, localset)
 	log.Println(GOSSIP, "localdiff=", localdiff, "remotediff=", remotediff)
