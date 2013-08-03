@@ -22,6 +22,8 @@
 package pqptree
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"github.com/bmizerany/assert"
 	. "github.com/cmars/conflux"
 	"github.com/cmars/conflux/recon"
@@ -37,7 +39,10 @@ func createTestPeer(t *testing.T) *recon.Peer {
 	db.Execf("TRUNCATE TABLE test_pelement CASCADE")
 	db.Execf("TRUNCATE TABLE test_pnode CASCADE")
 	settings := DefaultSettings()
-	ptree, err := New("test", db, settings)
+	tag := make([]byte, 16)
+	rand.Read(tag)
+	suffix := hex.EncodeToString(tag)
+	ptree, err := New("test_" + suffix, db, settings)
 	assert.Equal(t, err, nil)
 	peer := recon.NewPeer(settings.Settings, ptree)
 	assert.Equal(t, err, nil)

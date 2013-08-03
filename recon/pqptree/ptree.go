@@ -30,8 +30,6 @@ import (
 	"github.com/cmars/conflux/recon"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
-	"log"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"text/template"
@@ -290,9 +288,6 @@ func (ch *changeElement) insert() (done bool, err error) {
 		} else {
 			ch.cur.upsertNode()
 			err = ch.cur.insertElement(ch.element)
-			if err != nil {
-				debug.PrintStack()
-			}
 			return err == nil, err
 		}
 	}
@@ -357,7 +352,6 @@ func (ch *changeElement) split() (err error) {
 		if err != nil {
 			return err
 		}
-		//log.Println("newChildNode:", child.Key())
 		ch.cur.childKeys = append(ch.cur.childKeys, i)
 		children = append(children, child)
 	}
@@ -367,7 +361,6 @@ func (ch *changeElement) split() (err error) {
 	}
 	// Move elements into child nodes
 	for _, element := range ch.cur.elements {
-		log.Println(element)
 		bs := NewBitstring(P_SKS.BitLen())
 		bs.SetBytes(ReverseBytes(element.Element))
 		childIndex := recon.NextChild(ch.cur, bs, ch.depth)
