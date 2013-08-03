@@ -34,6 +34,8 @@ const TEST_DB = "recon_test"
 func createTestPeer(t *testing.T) *recon.Peer {
 	db, err := sqlx.Connect("postgres", "dbname=pqptree_test host=/var/run/postgresql sslmode=disable")
 	assert.Equal(t, err, nil)
+	db.Execf("TRUNCATE TABLE test_pelement CASCADE")
+	db.Execf("TRUNCATE TABLE test_pnode CASCADE")
 	settings := DefaultSettings()
 	ptree, err := New("test", db, settings)
 	assert.Equal(t, err, nil)
@@ -43,7 +45,7 @@ func createTestPeer(t *testing.T) *recon.Peer {
 }
 
 func destroyTestPeer(peer *recon.Peer) {
-	peer.Stop()
+	peer.PrefixTree.(*pqPrefixTree).db.Close()
 }
 
 func TestInsertNodesNoSplit(t *testing.T) {
@@ -56,6 +58,11 @@ func TestInsertNodesNoSplit(t *testing.T) {
 	assert.Equal(t, nil, err)
 	assert.Equal(t, 3, len(root.Elements()))
 	assert.T(t, root.IsLeaf())
+	var result struct{ Count int }
+	// Should be 3 elements
+	err = peer.PrefixTree.(*pqPrefixTree).db.Get(&result, "SELECT COUNT(*) AS COUNT FROM test_pelement")
+	assert.Equal(t, nil, err)
+	assert.Equal(t, 3, result.Count)
 	peer.PrefixTree.Remove(Zi(P_SKS, 100))
 	peer.PrefixTree.Remove(Zi(P_SKS, 300))
 	peer.PrefixTree.Remove(Zi(P_SKS, 500))
@@ -64,6 +71,10 @@ func TestInsertNodesNoSplit(t *testing.T) {
 	for _, sv := range root.SValues() {
 		assert.Equal(t, 0, sv.Cmp(Zi(P_SKS, 1)))
 	}
+	// Should be 0 elements
+	err = peer.PrefixTree.(*pqPrefixTree).db.Get(&result, "SELECT COUNT(*) AS COUNT FROM test_pelement")
+	assert.Equal(t, nil, err)
+	assert.Equal(t, 0, result.Count)
 }
 
 func TestJustOneKey(t *testing.T) {
@@ -71,6 +82,8 @@ func TestJustOneKey(t *testing.T) {
 	defer destroyTestPeer(peer)
 	tree := peer.PrefixTree
 	tree.Init()
+	root, err := tree.Root()
+	assert.Equal(t, err, nil)
 	tree.Insert(Zs(P_SKS, "224045810486609649306292620830306652473"))
 	expect := NewZSet()
 	for _, sv := range []string{
@@ -82,10 +95,10 @@ func TestJustOneKey(t *testing.T) {
 		"306467079064992673198834899522272784863"} {
 		expect.Add(Zs(P_SKS, sv))
 	}
-	root, err := tree.Root()
 	assert.Equal(t, err, nil)
+	root, err = tree.Root()
 	for _, sv := range root.SValues() {
-		assert.T(t, expect.Has(sv))
+		assert.Tf(t, expect.Has(sv), "Unexpected svalue: %v", sv)
 		expect.Remove(sv)
 	}
 	assert.Equal(t, 0, len(expect.Items()))
@@ -93,13 +106,13 @@ func TestJustOneKey(t *testing.T) {
 
 func TestInsertNodeSplit(t *testing.T) {
 	peer := createTestPeer(t)
-	defer destroyTestPeer(peer)
+	//defer destroyTestPeer(peer)
 	tree := peer.PrefixTree
 	tree.Init()
 	// Add a bunch of nodes, enough to cause splits
 	for i := 0; i < tree.SplitThreshold()*4; i++ {
 		z := Zi(P_SKS, i+65536)
-		//t.Log("Insert:", z)
+		t.Log("Insert:", z)
 		tree.Insert(z)
 	}
 	// Remove a bunch of nodes, enough to cause joins
@@ -116,6 +129,7 @@ func TestInsertNodeSplit(t *testing.T) {
 	}
 	assert.Equal(t, 0, len(root.Children()))
 	assert.Equal(t, 0, len(root.Elements()))
+	//destroyTestPeer(peer)
 }
 
 /*

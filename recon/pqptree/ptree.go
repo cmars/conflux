@@ -30,15 +30,20 @@ import (
 	"github.com/cmars/conflux/recon"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
+	"log"
+	"runtime/debug"
+	"strconv"
+	"strings"
 	"text/template"
 )
 
 type PNode struct {
-	NodeKey     string `db:"node_key"`
-	SValues     []byte `db:"svalues"`
-	NumElements int    `db:"num_elements"`
-	ChildKeys   []int  `db:"child_keys"`
-	elements    []PElement
+	NodeKey        string `db:"node_key"`
+	SValues        []byte `db:"svalues"`
+	NumElements    int    `db:"num_elements"`
+	ChildKeyString string `db:"child_keys"`
+	childKeys      []int
+	elements       []PElement
 }
 
 type PElement struct {
@@ -48,10 +53,19 @@ type PElement struct {
 
 type pqPrefixTree struct {
 	*Settings
-	Namespace string
-	root      *PNode
-	db        *sqlx.DB
-	points    []*Zp
+	Namespace                string
+	root                     *PNode
+	db                       *sqlx.DB
+	points                   []*Zp
+	selectPNodeByNodeKey     string
+	selectPElementsByNodeKey string
+	deletePNode              string
+	deletePElements          string
+	deletePElement           string
+	insertPElement           string
+	updatePElement           string
+	insertNewPNode           string
+	updatePNode              string
 }
 
 type pqPrefixNode struct {
@@ -117,6 +131,7 @@ func New(namespace string, db *sqlx.DB, settings *Settings) (ptree recon.PrefixT
 	if err != nil {
 		return
 	}
+	tree.prepareStatements()
 	err = tree.ensureRoot()
 	if err != nil {
 		return
@@ -138,8 +153,39 @@ func (t *pqPrefixTree) createTables() (err error) {
 	if _, err = t.db.Execv(t.SqlTemplate(CreateTable_PNode)); err != nil {
 		return
 	}
-	_, err = t.db.Execv(t.SqlTemplate(CreateTable_PElement))
+	if _, err = t.db.Execv(t.SqlTemplate(CreateTable_PElement)); err != nil {
+		return
+	}
+	t.db.Execv(t.SqlTemplate(CreateIndex_PElement_NodeKey))
 	return
+}
+
+func (t *pqPrefixTree) prepareStatements() {
+	t.selectPNodeByNodeKey = t.SqlTemplate(
+		"SELECT * FROM {{.Namespace}}_pnode WHERE node_key = $1")
+	t.selectPElementsByNodeKey = t.SqlTemplate(
+		"SELECT * FROM {{.Namespace}}_pelement WHERE node_key = $1")
+	t.deletePNode = t.SqlTemplate(
+		"DELETE FROM {{.Namespace}}_pnode WHERE node_key = $1")
+	t.deletePElements = t.SqlTemplate(
+		`DELETE FROM {{.Namespace}}_pelement WHERE node_key = $1`)
+	t.deletePElement = t.SqlTemplate(`
+DELETE FROM {{.Namespace}}_pelement WHERE element = $1
+RETURNING *`)
+	t.insertPElement = t.SqlTemplate(`
+INSERT INTO {{.Namespace}}_pelement (node_key, element)
+VALUES ($1, $2)`)
+	t.updatePElement = t.SqlTemplate(`
+UPDATE {{.Namespace}}_pelement SET node_key = $1 WHERE element = $2`)
+	t.insertNewPNode = t.SqlTemplate(`
+INSERT INTO {{.Namespace}}_pnode (node_key, svalues, num_elements, child_keys)
+SELECT $1, $2, $3, $4 WHERE NOT EXISTS (
+SELECT 1 FROM {{.Namespace}}_pnode WHERE node_key = $1)
+RETURNING *`)
+	t.updatePNode = t.SqlTemplate(`
+UPDATE {{.Namespace}}_pnode
+SET svalues = $2, num_elements = $3, child_keys = $4
+WHERE node_key = $1`)
 }
 
 func (t *pqPrefixTree) Init() {
@@ -151,16 +197,7 @@ func (t *pqPrefixTree) ensureRoot() (err error) {
 		return
 	}
 	root := t.newChildNode(nil, 0)
-	tx, err := t.db.Beginx()
-	if err != nil {
-		return err
-	}
-	err = root.upsertNode(tx)
-	if err != nil {
-		tx.Rollback()
-		return err
-	}
-	return tx.Commit()
+	return root.upsertNode()
 }
 
 func (t *pqPrefixTree) Points() []*Zp { return t.points }
@@ -169,18 +206,48 @@ func (t *pqPrefixTree) Root() (recon.PrefixNode, error) {
 	return t.Node(NewBitstring(0))
 }
 
+func decodeIntArray(s string) ([]int, error) {
+	s = strings.Trim(s, "{}")
+	var result []int
+	for _, istr := range strings.Split(s, ",") {
+		if len(istr) > 0 {
+			i, err := strconv.Atoi(istr)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, i)
+		}
+	}
+	return result, nil
+}
+
+func encodeIntArray(iarr []int) string {
+	b := bytes.NewBuffer(nil)
+	fmt.Fprintf(b, "{")
+	for i, ival := range iarr {
+		if i > 0 {
+			fmt.Fprintf(b, ",")
+		}
+		fmt.Fprintf(b, "%d", ival)
+	}
+	fmt.Fprintf(b, "}")
+	return b.String()
+}
+
 func (t *pqPrefixTree) Node(bs *Bitstring) (recon.PrefixNode, error) {
 	nodeKey := mustEncodeBitstring(bs)
 	node := &pqPrefixNode{PNode: &PNode{}, pqPrefixTree: t}
-	err := t.db.Get(node.PNode, t.SqlTemplate(
-		"SELECT * FROM {{.Namespace}}_pnode WHERE node_key = $1"), nodeKey)
+	err := t.db.Get(node.PNode, t.selectPNodeByNodeKey, nodeKey)
 	if err == sql.ErrNoRows {
 		return nil, recon.PNodeNotFound
 	} else if err != nil {
 		return nil, err
 	}
-	err = t.db.Select(&node.PNode.elements, t.SqlTemplate(
-		"SELECT * FROM {{.Namespace}}_pelement WHERE node_key = $1"), nodeKey)
+	node.childKeys, err = decodeIntArray(node.ChildKeyString)
+	if err != nil {
+		return nil, err
+	}
+	err = t.db.Select(&node.PNode.elements, t.selectPElementsByNodeKey, nodeKey)
 	if err == sql.ErrNoRows {
 		err = nil
 	}
@@ -190,8 +257,6 @@ func (t *pqPrefixTree) Node(bs *Bitstring) (recon.PrefixNode, error) {
 type elementOperation func() (bool, error)
 
 type changeElement struct {
-	// Database transaction in which element change occurs
-	*sqlx.Tx
 	// Current node in prefix tree descent
 	cur *pqPrefixNode
 	// Element to be changed (added or removed)
@@ -223,73 +288,100 @@ func (ch *changeElement) insert() (done bool, err error) {
 				return
 			}
 		} else {
-			ch.cur.upsertNode(ch.Tx)
-			err = ch.cur.insertElement(ch.Tx, ch.element)
+			ch.cur.upsertNode()
+			err = ch.cur.insertElement(ch.element)
+			if err != nil {
+				debug.PrintStack()
+			}
 			return err == nil, err
 		}
 	}
-	ch.cur.upsertNode(ch.Tx)
-	ch.cur = recon.NextChild(ch.cur, ch.target, ch.depth).(*pqPrefixNode)
+	ch.cur.upsertNode()
+	childIndex := recon.NextChild(ch.cur, ch.target, ch.depth)
+	ch.cur = ch.cur.Children()[childIndex].(*pqPrefixNode)
 	ch.depth++
 	return false, err
 }
 
-func (n *pqPrefixNode) deleteNode(tx *sqlx.Tx) error {
-	err := n.deleteElements(tx)
+func (n *pqPrefixNode) deleteNode() error {
+	err := n.deleteElements()
 	if err != nil {
 		return err
 	}
-	_, err = tx.Execv(n.SqlTemplate(`
-DELETE FROM {{.Namespace}}_pnode WHERE node_key = $1`), n.NodeKey)
+	_, err = n.db.Execv(n.deletePNode, n.NodeKey)
 	return err
 }
 
-func (n *pqPrefixNode) deleteElements(tx *sqlx.Tx) error {
-	_, err := tx.Execv(n.SqlTemplate(`
-DELETE FROM {{.Namespace}}_pelement WHERE node_key = $1`), n.NodeKey)
+func (n *pqPrefixNode) deleteElements() error {
+	_, err := n.db.Execv(n.deletePElements, n.NodeKey)
+	if err != nil {
+		return err
+	}
+	n.elements = []PElement{}
+	return nil
+}
+
+func (n *pqPrefixNode) deleteElement(element *Zp) error {
+	elementBytes := element.Bytes()
+	_, err := n.db.Execv(n.deletePElement, elementBytes)
+	if err != nil {
+		return err
+	}
+	var elements []PElement
+	for _, element := range n.elements {
+		if !bytes.Equal(element.Element, elementBytes) {
+			elements = append(elements, element)
+		}
+	}
+	n.elements = elements
 	return err
 }
 
-func (n *pqPrefixNode) deleteElement(tx *sqlx.Tx, element *Zp) error {
-	_, err := tx.Execv(n.SqlTemplate(`
-DELETE FROM {{.Namespace}}_pelement WHERE element = $1
-RETURNING *`), element.Bytes())
-	return err
-}
-
-func (n *pqPrefixNode) insertElement(tx *sqlx.Tx, element *Zp) error {
-	_, err := tx.Execv(n.SqlTemplate(`
-INSERT INTO {{.Namespace}}_pelement (node_key, element)
-VALUES ($1, $2)`), n.NodeKey, element.Bytes())
+func (n *pqPrefixNode) insertElement(element *Zp) error {
+	_, err := n.db.Execv(n.insertPElement, n.NodeKey, element.Bytes())
+	if err != nil {
+		return err
+	}
+	n.elements = append(n.elements, PElement{NodeKey: n.PNode.NodeKey, Element: element.Bytes()})
 	return err
 }
 
 func (ch *changeElement) split() (err error) {
 	// Create child nodes
 	numChildren := 1 << uint(ch.cur.BitQuantum())
+	var children []*pqPrefixNode
 	for i := 0; i < numChildren; i++ {
 		// Create new empty child node
-		ch.cur.newChildNode(ch.cur, i)
-		ch.cur.ChildKeys = append(ch.cur.ChildKeys, i)
+		child := ch.cur.newChildNode(ch.cur, i)
+		err = child.upsertNode()
+		if err != nil {
+			return err
+		}
+		//log.Println("newChildNode:", child.Key())
+		ch.cur.childKeys = append(ch.cur.childKeys, i)
+		children = append(children, child)
+	}
+	err = ch.cur.upsertNode()
+	if err != nil {
+		return err
 	}
 	// Move elements into child nodes
 	for _, element := range ch.cur.elements {
+		log.Println(element)
 		bs := NewBitstring(P_SKS.BitLen())
 		bs.SetBytes(ReverseBytes(element.Element))
-		child := recon.NextChild(ch.cur, ch.target, ch.depth).(*pqPrefixNode)
-		childCh := &changeElement{
-			Tx:      ch.Tx,
-			cur:     child,
-			element: ch.element,
-			marray:  ch.marray,
-			target:  ch.target,
-			depth:   ch.depth + 1}
-		err = childCh.descend(childCh.insert)
+		childIndex := recon.NextChild(ch.cur, bs, ch.depth)
+		child := children[childIndex]
+		_, err = child.db.Execv(child.updatePElement, child.NodeKey, element.Element)
+		z := Zb(P_SKS, element.Element)
+		child.updateSvalues(z, recon.AddElementArray(child, z))
+	}
+	for _, child := range children {
+		err = child.upsertNode()
 		if err != nil {
 			return err
 		}
 	}
-	err = ch.cur.deleteElements(ch.Tx)
 	return
 }
 
@@ -297,35 +389,45 @@ func (ch *changeElement) remove() (done bool, err error) {
 	ch.cur.NumElements--
 	if !ch.cur.IsLeaf() {
 		if ch.cur.NumElements <= ch.cur.JoinThreshold() {
-			ch.join()
-		} else {
-			err = ch.cur.upsertNode(ch.Tx)
+			err = ch.join()
 			if err != nil {
 				return
 			}
-			ch.cur = recon.NextChild(ch.cur, ch.target, ch.depth).(*pqPrefixNode)
+		} else {
+			err = ch.cur.upsertNode()
+			if err != nil {
+				return
+			}
+			childIndex := recon.NextChild(ch.cur, ch.target, ch.depth)
+			ch.cur = ch.cur.Children()[childIndex].(*pqPrefixNode)
 			ch.depth++
 			return false, err
 		}
 	}
-	if err = ch.cur.upsertNode(ch.Tx); err != nil {
+	if err = ch.cur.upsertNode(); err != nil {
 		return
 	}
-	err = ch.cur.deleteElement(ch.Tx, ch.element)
+	err = ch.cur.deleteElement(ch.element)
 	return err == nil, err
 }
 
-func (ch *changeElement) join() {
+func (ch *changeElement) join() error {
 	var elements []PElement
 	for _, child := range ch.cur.Children() {
 		elements = append(elements, child.(*pqPrefixNode).elements...)
-		child.(*pqPrefixNode).deleteNode(ch.Tx)
+		for _, element := range child.(*pqPrefixNode).elements {
+			_, err := ch.cur.db.Execv(ch.cur.updatePElement, ch.cur.NodeKey, element.Element)
+			if err != nil {
+				return err
+			}
+		}
+		err := child.(*pqPrefixNode).deleteNode()
+		if err != nil {
+			return err
+		}
 	}
-	ch.cur.ChildKeys = nil
-	ch.cur.deleteElements(ch.Tx)
-	for _, element := range elements {
-		ch.cur.insertElement(ch.Tx, Zb(P_SKS, element.Element))
-	}
+	ch.cur.childKeys = nil
+	return ch.cur.upsertNode()
 }
 
 func (t *pqPrefixTree) Insert(z *Zp) error {
@@ -335,23 +437,12 @@ func (t *pqPrefixTree) Insert(z *Zp) error {
 	if err != nil {
 		return err
 	}
-	tx, err := t.db.Beginx()
-	if err != nil {
-		return err
-	}
 	ch := &changeElement{
-		Tx:      tx,
 		cur:     root.(*pqPrefixNode),
 		element: z,
 		marray:  recon.AddElementArray(t, z),
 		target:  bs}
-	err = ch.descend(ch.insert)
-	if err != nil {
-		tx.Rollback()
-		return err
-	} else {
-		return tx.Commit()
-	}
+	return ch.descend(ch.insert)
 }
 
 func (t *pqPrefixTree) Remove(z *Zp) error {
@@ -361,23 +452,12 @@ func (t *pqPrefixTree) Remove(z *Zp) error {
 	if err != nil {
 		return err
 	}
-	tx, err := t.db.Beginx()
-	if err != nil {
-		return err
-	}
 	ch := &changeElement{
-		Tx:      tx,
 		cur:     root.(*pqPrefixNode),
 		element: z,
 		marray:  recon.DelElementArray(t, z),
 		target:  bs}
-	err = ch.descend(ch.remove)
-	if err != nil {
-		tx.Rollback()
-		return err
-	} else {
-		return tx.Commit()
-	}
+	return ch.descend(ch.remove)
 }
 
 func (t *pqPrefixTree) newChildNode(parent *pqPrefixNode, childIndex int) *pqPrefixNode {
@@ -406,13 +486,10 @@ func (t *pqPrefixTree) newChildNode(parent *pqPrefixNode, childIndex int) *pqPre
 	return n
 }
 
-func (n *pqPrefixNode) upsertNode(tx *sqlx.Tx) error {
-	rs, err := tx.Execv(n.SqlTemplate(`
-INSERT INTO {{.Namespace}}_pnode (node_key, svalues, num_elements, child_keys)
-SELECT $1, $2, $3, $4 WHERE NOT EXISTS (
-    SELECT 1 FROM {{.Namespace}}_pnode WHERE node_key = $1)
-RETURNING *`),
-		n.NodeKey, n.PNode.SValues, n.NumElements, n.ChildKeys)
+func (n *pqPrefixNode) upsertNode() error {
+	n.ChildKeyString = encodeIntArray(n.childKeys)
+	rs, err := n.db.Execv(n.insertNewPNode,
+		n.NodeKey, n.PNode.SValues, n.NumElements, n.ChildKeyString)
 	if err != nil {
 		return err
 	}
@@ -420,23 +497,20 @@ RETURNING *`),
 	if err != nil {
 		return err
 	}
-	if nrows > 0 {
-		_, err = tx.Execv(n.SqlTemplate(`
-UPDATE {{.Namespace}}_pnode
-SET svalues = $2, num_elements = $3, child_keys = $4
-WHERE node_key = $1`),
-			n.NodeKey, n.SValues, n.NumElements, n.ChildKeys)
+	if nrows == 0 {
+		_, err = n.db.Execv(n.updatePNode,
+			n.NodeKey, n.PNode.SValues, n.NumElements, n.ChildKeyString)
 	}
 	return err
 }
 
 func (n *pqPrefixNode) IsLeaf() bool {
-	return len(n.ChildKeys) == 0
+	return len(n.childKeys) == 0
 }
 
 func (n *pqPrefixNode) Children() (result []recon.PrefixNode) {
 	key := n.Key()
-	for _, i := range n.ChildKeys {
+	for _, i := range n.childKeys {
 		childKey := NewBitstring(key.BitLen() + n.BitQuantum())
 		childKey.SetBytes(key.Bytes())
 		for j := 0; j < n.BitQuantum(); j++ {
@@ -448,7 +522,7 @@ func (n *pqPrefixNode) Children() (result []recon.PrefixNode) {
 		}
 		child, err := n.Node(childKey)
 		if err != nil {
-			panic(fmt.Sprintf("Children failed on child#%v: %v", i, err))
+			panic(fmt.Sprintf("Children failed on child#%v, key=%v: %v", i, childKey, err))
 		}
 		result = append(result, child)
 	}

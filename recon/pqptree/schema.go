@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS {{.Namespace}}_pelement (
 node_key TEXT NOT NULL,
 element bytea NOT NULL,
 --
-PRIMARY KEY (node_key, element),
-UNIQUE (element),
+PRIMARY KEY (element),
 FOREIGN KEY (node_key) REFERENCES {{.Namespace}}_pnode(node_key))`
+
+const CreateIndex_PElement_NodeKey = `
+CREATE INDEX {{.Namespace}}_pelement_node_key ON {{.Namespace}}_pelement (node_key)`

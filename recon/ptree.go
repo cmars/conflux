@@ -247,7 +247,8 @@ func (n *MemPrefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) er
 			return nil
 		}
 	}
-	child := NextChild(n, bs, depth).(*MemPrefixNode)
+	childIndex := NextChild(n, bs, depth)
+	child := n.Children()[childIndex].(*MemPrefixNode)
 	return child.insert(z, marray, bs, depth+1)
 }
 
@@ -264,13 +265,14 @@ func (n *MemPrefixNode) split(depth int) {
 	for _, element := range n.elements {
 		bs := NewBitstring(P_SKS.BitLen())
 		bs.SetBytes(ReverseBytes(element.Bytes()))
-		child := NextChild(n, bs, depth).(*MemPrefixNode)
+		childIndex := NextChild(n, bs, depth)
+		child := n.children[childIndex]
 		child.insert(element, AddElementArray(n.MemPrefixTree, element), bs, depth+1)
 	}
 	n.elements = nil
 }
 
-func NextChild(n PrefixNode, bs *Bitstring, depth int) PrefixNode {
+func NextChild(n PrefixNode, bs *Bitstring, depth int) int {
 	if n.IsLeaf() {
 		panic("Cannot dereference child of leaf node")
 	}
@@ -282,8 +284,7 @@ func NextChild(n PrefixNode, bs *Bitstring, depth int) PrefixNode {
 			childIndex |= mask
 		}
 	}
-	childNode := n.Children()[childIndex]
-	return childNode
+	return childIndex
 }
 
 func (n *MemPrefixNode) updateSvalues(z *Zp, marray []*Zp) {
@@ -302,7 +303,8 @@ func (n *MemPrefixNode) remove(z *Zp, marray []*Zp, bs *Bitstring, depth int) er
 		if n.numElements <= n.JoinThreshold() {
 			n.join()
 		} else {
-			child := NextChild(n, bs, depth).(*MemPrefixNode)
+			childIndex := NextChild(n, bs, depth)
+			child := n.Children()[childIndex].(*MemPrefixNode)
 			return child.remove(z, marray, bs, depth+1)
 		}
 	}
