@@ -42,7 +42,7 @@ func createTestPeer(t *testing.T) *recon.Peer {
 	tag := make([]byte, 16)
 	rand.Read(tag)
 	suffix := hex.EncodeToString(tag)
-	ptree, err := New("test_" + suffix, db, settings)
+	ptree, err := New("test_"+suffix, db, settings)
 	assert.Equal(t, err, nil)
 	peer := recon.NewPeer(settings.Settings, ptree)
 	assert.Equal(t, err, nil)

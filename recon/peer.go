@@ -395,8 +395,8 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 		rwc.rcvrSet.AddAll(m.ZSet)
 	case *FullElements:
 		local := NewZSet(req.node.Elements()...)
-		localdiff := ZSetDiff(m.ZSet, local)
-		remotediff := ZSetDiff(local, m.ZSet)
+		localdiff := ZSetDiff(local, m.ZSet)
+		remotediff := ZSetDiff(m.ZSet, local)
 		elementsMsg := &Elements{ZSet: localdiff}
 		log.Println(SERVE, "handleReply:", "sending:", elementsMsg)
 		rwc.messages = append(rwc.messages, elementsMsg)

@@ -25,6 +25,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/ascii85"
+	"errors"
 	"fmt"
 	. "github.com/cmars/conflux"
 	"github.com/cmars/conflux/recon"
@@ -423,7 +424,28 @@ func (ch *changeElement) join() error {
 	return ch.cur.upsertNode()
 }
 
+func (t *pqPrefixTree) hasElement(z *Zp) (bool, error) {
+	var result struct {
+		Count int
+	}
+	err := t.db.Get(&result, t.SqlTemplate(`
+SELECT COUNT(*) FROM {{.Namespace}}_pelement WHERE element = $1`), z.Bytes())
+	if err != nil {
+		return false, err
+	}
+	return result.Count > 0, nil
+}
+
+func ErrDuplicateElement(z *Zp) error {
+	return errors.New(fmt.Sprintf("Attempt to insert duplicate element %v", z))
+}
+
 func (t *pqPrefixTree) Insert(z *Zp) error {
+	if has, err := t.hasElement(z); has {
+		return ErrDuplicateElement(z)
+	} else if err != nil {
+		return err
+	}
 	bs := NewBitstring(P_SKS.BitLen())
 	bs.SetBytes(ReverseBytes(z.Bytes()))
 	root, err := t.Root()
