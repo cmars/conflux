@@ -20,6 +20,8 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+// primegen is a utility for generating large primes that bound
+// a given bit length.
 package main
 
 import (

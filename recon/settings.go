@@ -19,6 +19,8 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+// Package recon provides the SKS reconciliation protocol, prefix tree interface
+// and an in-memory prefix-tree implementation.
 package recon
 
 import (

@@ -19,6 +19,10 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+
+// Package conflux provides set reconciliation core functionality
+// and the supporting math: polynomial arithmetic over finite fields,
+// factoring and rational function interpolation.
 package conflux
 
 import (

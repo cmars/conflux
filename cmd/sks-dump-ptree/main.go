@@ -19,6 +19,9 @@
    You should have received a copy of the GNU General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+
+// sks-dump-ptree is a debugging utility developed to parse and
+// reverse engineer the SKS PTree databases.
 package main
 
 import (

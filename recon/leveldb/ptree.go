@@ -19,6 +19,8 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+// Package leveldb provides a LevelDB-backed implementation of the
+// recon prefix tree interface.
 package leveldb
 
 import (
