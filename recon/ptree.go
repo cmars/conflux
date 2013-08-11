@@ -35,6 +35,7 @@ type PrefixTree interface {
 	Points() []*Zp
 	Root() (PrefixNode, error)
 	Node(key *Bitstring) (PrefixNode, error)
+	HasElement(z *Zp) (bool, error)
 	Insert(z *Zp) error
 	Remove(z *Zp) error
 }
@@ -56,6 +57,9 @@ const DefaultMBar = 5
 const DefaultSplitThreshold = DefaultThreshMult * DefaultMBar
 const DefaultJoinThreshold = DefaultSplitThreshold / 2
 const DefaultNumSamples = DefaultMBar + 1
+
+var ErrSamplePointElement = errors.New("Sample point added to elements")
+var ErrUnexpectedLeafNode = errors.New("Unexpected leaf node")
 
 type MemPrefixTree struct {
 	// Tree configuration options
@@ -106,13 +110,14 @@ func Find(t PrefixTree, z *Zp) (PrefixNode, error) {
 	return t.Node(bs)
 }
 
-func AddElementArray(t PrefixTree, z *Zp) (marray []*Zp) {
+func AddElementArray(t PrefixTree, z *Zp) (marray []*Zp, err error) {
 	points := t.Points()
 	marray = make([]*Zp, len(points))
 	for i := 0; i < len(points); i++ {
 		marray[i] = Z(z.P).Sub(points[i], z)
 		if marray[i].IsZero() {
-			panic("Sample point added to elements")
+			err = ErrSamplePointElement
+			return
 		}
 	}
 	return
@@ -139,18 +144,26 @@ func (t *MemPrefixTree) Node(bs *Bitstring) (PrefixNode, error) {
 			}
 		}
 		if node.IsLeaf() {
-			return nil, errors.New("Unexpected leaf node")
+			return nil, ErrUnexpectedLeafNode
 		}
 		node = node.children[childIndex]
 	}
 	return node, nil
 }
 
+func (t *MemPrefixTree) HasElement(z *Zp) (bool, error) {
+	panic("not implemented")
+}
+
 // Insert a Z/Zp integer into the prefix tree
 func (t *MemPrefixTree) Insert(z *Zp) error {
 	bs := NewBitstring(P_SKS.BitLen())
 	bs.SetBytes(ReverseBytes(z.Bytes()))
-	return t.root.insert(z, AddElementArray(t, z), bs, 0)
+	marray, err := AddElementArray(t, z)
+	if err != nil {
+		return err
+	}
+	return t.root.insert(z, marray, bs, 0)
 }
 
 // Remove a Z/Zp integer from the prefix tree
@@ -236,7 +249,10 @@ func (n *MemPrefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) er
 	n.numElements++
 	if n.IsLeaf() {
 		if len(n.elements) > n.SplitThreshold() {
-			n.split(depth)
+			err := n.split(depth)
+			if err != nil {
+				return err
+			}
 		} else {
 			for _, nz := range n.elements {
 				if nz.Cmp(z) == 0 {
@@ -252,7 +268,7 @@ func (n *MemPrefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) er
 	return child.insert(z, marray, bs, depth+1)
 }
 
-func (n *MemPrefixNode) split(depth int) {
+func (n *MemPrefixNode) split(depth int) error {
 	// Create child nodes
 	numChildren := 1 << uint(n.BitQuantum())
 	for i := 0; i < numChildren; i++ {
@@ -267,9 +283,17 @@ func (n *MemPrefixNode) split(depth int) {
 		bs.SetBytes(ReverseBytes(element.Bytes()))
 		childIndex := NextChild(n, bs, depth)
 		child := n.children[childIndex]
-		child.insert(element, AddElementArray(n.MemPrefixTree, element), bs, depth+1)
+		marray, err := AddElementArray(n.MemPrefixTree, element)
+		if err != nil {
+			return err
+		}
+		err = child.insert(element, marray, bs, depth+1)
+		if err != nil {
+			return err
+		}
 	}
 	n.elements = nil
+	return nil
 }
 
 func NextChild(n PrefixNode, bs *Bitstring, depth int) int {

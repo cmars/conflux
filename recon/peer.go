@@ -149,6 +149,14 @@ func (p *Peer) ExecCmd(cmd reconCmd) (err error) {
 	return
 }
 
+func (p *Peer) HasElement(z *Zp) (has bool, err error) {
+	p.ExecCmd(func() error {
+		has, err = p.PrefixTree.HasElement(z)
+		return err
+	})
+	return
+}
+
 func (p *Peer) Insert(z *Zp) (err error) {
 	return p.ExecCmd(func() error {
 		return p.PrefixTree.Insert(z)
@@ -189,10 +197,12 @@ func (p *Peer) Serve() {
 		if p.ReadTimeout() > 0 {
 			conn.SetReadDeadline(time.Now().Add(time.Second * time.Duration(p.ReadTimeout())))
 		}
-		err = p.accept(conn)
-		if err != nil {
-			log.Println(SERVE, err)
-		}
+		go func(){
+			err = p.accept(conn)
+			if err != nil {
+				log.Println(SERVE, err)
+			}
+		}()
 	}
 }
 

@@ -370,7 +370,11 @@ func (ch *changeElement) split() (err error) {
 		child := children[childIndex]
 		_, err = child.db.Execv(child.updatePElement, child.NodeKey, element.Element)
 		z := Zb(P_SKS, element.Element)
-		child.updateSvalues(z, recon.AddElementArray(child, z))
+		marray, err := recon.AddElementArray(child, z)
+		if err != nil {
+			return err
+		}
+		child.updateSvalues(z, marray)
 	}
 	for _, child := range children {
 		err = child.upsertNode()
@@ -426,7 +430,7 @@ func (ch *changeElement) join() error {
 	return ch.cur.upsertNode()
 }
 
-func (t *pqPrefixTree) hasElement(z *Zp) (bool, error) {
+func (t *pqPrefixTree) HasElement(z *Zp) (bool, error) {
 	var result struct {
 		Count int
 	}
@@ -443,7 +447,7 @@ func ErrDuplicateElement(z *Zp) error {
 }
 
 func (t *pqPrefixTree) Insert(z *Zp) error {
-	if has, err := t.hasElement(z); has {
+	if has, err := t.HasElement(z); has {
 		return ErrDuplicateElement(z)
 	} else if err != nil {
 		return err
@@ -454,15 +458,24 @@ func (t *pqPrefixTree) Insert(z *Zp) error {
 	if err != nil {
 		return err
 	}
+	marray, err := recon.AddElementArray(t, z)
+	if err != nil {
+		return err
+	}
 	ch := &changeElement{
 		cur:     root.(*pqPrefixNode),
 		element: z,
-		marray:  recon.AddElementArray(t, z),
+		marray:  marray,
 		target:  bs}
 	return ch.descend(ch.insert)
 }
 
 func (t *pqPrefixTree) Remove(z *Zp) error {
+	if has, err := t.HasElement(z); !has {
+		return recon.PNodeNotFound
+	} else if err != nil {
+		return err
+	}
 	bs := NewBitstring(P_SKS.BitLen())
 	bs.SetBytes(ReverseBytes(z.Bytes()))
 	root, err := t.Root()
