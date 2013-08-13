@@ -105,8 +105,7 @@ func (t *MemPrefixTree) Init() {
 }
 
 func Find(t PrefixTree, z *Zp) (PrefixNode, error) {
-	bs := NewBitstring(P_SKS.BitLen())
-	bs.SetBytes(ReverseBytes(z.Bytes()))
+	bs := NewZpBitstring(z)
 	return t.Node(bs)
 }
 
@@ -157,8 +156,7 @@ func (t *MemPrefixTree) HasElement(z *Zp) (bool, error) {
 
 // Insert a Z/Zp integer into the prefix tree
 func (t *MemPrefixTree) Insert(z *Zp) error {
-	bs := NewBitstring(P_SKS.BitLen())
-	bs.SetBytes(ReverseBytes(z.Bytes()))
+	bs := NewZpBitstring(z)
 	marray, err := AddElementArray(t, z)
 	if err != nil {
 		return err
@@ -168,8 +166,7 @@ func (t *MemPrefixTree) Insert(z *Zp) error {
 
 // Remove a Z/Zp integer from the prefix tree
 func (t *MemPrefixTree) Remove(z *Zp) error {
-	bs := NewBitstring(P_SKS.BitLen())
-	bs.SetBytes(ReverseBytes(z.Bytes()))
+	bs := NewZpBitstring(z)
 	return t.root.remove(z, DelElementArray(t, z), bs, 0)
 }
 
@@ -279,8 +276,7 @@ func (n *MemPrefixNode) split(depth int) error {
 	}
 	// Move elements into child nodes
 	for _, element := range n.elements {
-		bs := NewBitstring(P_SKS.BitLen())
-		bs.SetBytes(ReverseBytes(element.Bytes()))
+		bs := NewZpBitstring(element)
 		childIndex := NextChild(n, bs, depth)
 		child := n.children[childIndex]
 		marray, err := AddElementArray(n.MemPrefixTree, element)

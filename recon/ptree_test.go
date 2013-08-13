@@ -113,8 +113,7 @@ func TestKeyMatch(t *testing.T) {
 	}
 	for i := 1; i < 100; i++ {
 		zi := Zi(P_SKS, 65537*i)
-		bs := NewBitstring(P_SKS.BitLen())
-		bs.SetBytes(ReverseBytes(zi.Bytes()))
+		bs := NewZpBitstring(zi)
 		node1, err := Find(tree1, zi)
 		assert.Equal(t, err, nil)
 		node2, err := Find(tree2, zi)

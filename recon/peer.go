@@ -197,7 +197,7 @@ func (p *Peer) Serve() {
 		if p.ReadTimeout() > 0 {
 			conn.SetReadDeadline(time.Now().Add(time.Second * time.Duration(p.ReadTimeout())))
 		}
-		go func(){
+		go func() {
 			err = p.accept(conn)
 			if err != nil {
 				log.Println(SERVE, err)

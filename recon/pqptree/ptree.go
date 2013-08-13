@@ -26,7 +26,7 @@ package pqptree
 import (
 	"bytes"
 	"database/sql"
-	"encoding/ascii85"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	. "github.com/cmars/conflux"
@@ -40,7 +40,7 @@ import (
 
 type PNode struct {
 	NodeKey        string `db:"node_key"`
-	SValues        []byte `db:"svalues"`
+	SValues        string `db:"svalues"`
 	NumElements    int    `db:"num_elements"`
 	ChildKeyString string `db:"child_keys"`
 	childKeys      []int
@@ -75,47 +75,41 @@ type pqPrefixNode struct {
 }
 
 func mustEncodeBitstring(bs *Bitstring) string {
-	buf := bytes.NewBuffer(nil)
-	w := ascii85.NewEncoder(buf)
+	w := bytes.NewBuffer(nil)
 	err := recon.WriteBitstring(w, bs)
 	if err != nil {
 		panic(err)
 	}
-	err = w.Close()
-	if err != nil {
-		panic(err)
-	}
-	return buf.String()
+	return hex.EncodeToString(w.Bytes())
 }
 
 func mustDecodeBitstring(enc string) *Bitstring {
-	buf := bytes.NewBufferString(enc)
-	r := ascii85.NewDecoder(buf)
-	bs, err := recon.ReadBitstring(r)
+	buf, err := hex.DecodeString(enc)
+	if err != nil {
+		panic(err)
+	}
+	bs, err := recon.ReadBitstring(bytes.NewBuffer(buf))
 	if err != nil {
 		panic(err)
 	}
 	return bs
 }
 
-func mustEncodeZZarray(arr []*Zp) []byte {
-	buf := bytes.NewBuffer(nil)
-	w := ascii85.NewEncoder(buf)
+func mustEncodeZZarray(arr []*Zp) string {
+	w := bytes.NewBuffer(nil)
 	err := recon.WriteZZarray(w, arr)
 	if err != nil {
 		panic(err)
 	}
-	err = w.Close()
+	return hex.EncodeToString(w.Bytes())
+}
+
+func mustDecodeZZarray(enc string) []*Zp {
+	buf, err := hex.DecodeString(enc)
 	if err != nil {
 		panic(err)
 	}
-	return buf.Bytes()
-}
-
-func mustDecodeZZarray(enc []byte) []*Zp {
-	buf := bytes.NewBuffer(enc)
-	r := ascii85.NewDecoder(buf)
-	arr, err := recon.ReadZZarray(r)
+	arr, err := recon.ReadZZarray(bytes.NewBuffer(buf))
 	if err != nil {
 		panic(err)
 	}
@@ -364,12 +358,11 @@ func (ch *changeElement) split() (err error) {
 	}
 	// Move elements into child nodes
 	for _, element := range ch.cur.elements {
-		bs := NewBitstring(P_SKS.BitLen())
-		bs.SetBytes(ReverseBytes(element.Element))
+		z := Zb(P_SKS, element.Element)
+		bs := NewZpBitstring(z)
 		childIndex := recon.NextChild(ch.cur, bs, ch.depth)
 		child := children[childIndex]
 		_, err = child.db.Execv(child.updatePElement, child.NodeKey, element.Element)
-		z := Zb(P_SKS, element.Element)
 		marray, err := recon.AddElementArray(child, z)
 		if err != nil {
 			return err
@@ -452,8 +445,7 @@ func (t *pqPrefixTree) Insert(z *Zp) error {
 	} else if err != nil {
 		return err
 	}
-	bs := NewBitstring(P_SKS.BitLen())
-	bs.SetBytes(ReverseBytes(z.Bytes()))
+	bs := NewZpBitstring(z)
 	root, err := t.Root()
 	if err != nil {
 		return err
@@ -476,8 +468,7 @@ func (t *pqPrefixTree) Remove(z *Zp) error {
 	} else if err != nil {
 		return err
 	}
-	bs := NewBitstring(P_SKS.BitLen())
-	bs.SetBytes(ReverseBytes(z.Bytes()))
+	bs := NewZpBitstring(z)
 	root, err := t.Root()
 	if err != nil {
 		return err
@@ -598,5 +589,11 @@ func (n *pqPrefixNode) updateSvalues(z *Zp, marray []*Zp) {
 	for i := 0; i < len(marray); i++ {
 		svalues[i] = Z(z.P).Mul(svalues[i], marray[i])
 	}
+	/*
+		log.Println("update svalues:")
+		for _, zi := range svalues {
+			log.Println(hex.EncodeToString(zi.Bytes()))
+		}
+	*/
 	n.PNode.SValues = mustEncodeZZarray(svalues)
 }

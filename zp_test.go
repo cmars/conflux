@@ -178,3 +178,17 @@ func TestZSetDiffEmpty(t *testing.T) {
 	assert.Equal(t, 2, len(zs3.Items()))
 	assert.Equal(t, 0, len(zs4.Items()))
 }
+
+func TestByteOrder(t *testing.T) {
+	z := Zi(P_SKS, 65536)
+	t.Logf("%x", z.Bytes())
+	assert.Equal(t, byte(0), z.Bytes()[0])
+	assert.Equal(t, byte(0), z.Bytes()[1])
+	assert.Equal(t, byte(1), z.Bytes()[2])
+}
+
+func TestByteRtt(t *testing.T) {
+	z := Zi(P_SKS, 65536)
+	z2 := Zb(P_SKS, z.Bytes())
+	assert.Equal(t, z.Bytes(), z2.Bytes())
+}

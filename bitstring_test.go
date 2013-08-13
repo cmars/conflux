@@ -71,16 +71,16 @@ func TestBsBytes(t *testing.T) {
 }
 
 func TestReverseByte(t *testing.T) {
-	assert.Equal(t, uint8(0x80), ReverseByte(0x01))
-	assert.Equal(t, uint8(0x18), ReverseByte(0x18))
-	assert.Equal(t, uint8(0x41), ReverseByte(0x82))
+	assert.Equal(t, uint8(0x80), reverseByte(0x01))
+	assert.Equal(t, uint8(0x18), reverseByte(0x18))
+	assert.Equal(t, uint8(0x41), reverseByte(0x82))
 }
 
 func TestReverseBytes(t *testing.T) {
-	assert.Equal(t, []byte{0x01}, ReverseBytes([]byte{0x80}))
-	assert.Equal(t, []byte{0x80}, ReverseBytes([]byte{0x01}))
-	assert.Equal(t, []byte{0x00, 0x00, 0x01}, ReverseBytes([]byte{0x80, 0x00, 0x00}))
-	assert.Equal(t, []byte{0xa5, 0xa5}, ReverseBytes([]byte{0xa5, 0xa5}))
-	assert.Equal(t, []byte{0x41, 0x82}, ReverseBytes([]byte{0x41, 0x82}))
-	assert.Equal(t, []byte{0xb7, 0xd0}, ReverseBytes([]byte{0x0b, 0xed}))
+	assert.Equal(t, []byte{0x01}, reverseBytes([]byte{0x80}))
+	assert.Equal(t, []byte{0x80}, reverseBytes([]byte{0x01}))
+	assert.Equal(t, []byte{0x00, 0x00, 0x01}, reverseBytes([]byte{0x00, 0x00, 0x80}))
+	assert.Equal(t, []byte{0xa5, 0xa5}, reverseBytes([]byte{0xa5, 0xa5}))
+	assert.Equal(t, []byte{0x41, 0x82}, reverseBytes([]byte{0x82, 0x41}))
+	assert.Equal(t, []byte{0xb7, 0xd0}, reverseBytes([]byte{0xed, 0x0b}))
 }

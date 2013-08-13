@@ -29,7 +29,7 @@ import (
 	"fmt"
 	. "github.com/cmars/conflux"
 	"io"
-	"math/big"
+	//"testing/iotest"
 )
 
 var sksZpNbytes int
@@ -233,15 +233,14 @@ func ReadZp(r io.Reader) (*Zp, error) {
 	if err != nil {
 		return nil, err
 	}
-	v := big.NewInt(0).SetBytes(ReverseBytes(buf))
-	z := &Zp{Int: v, P: P_SKS}
+	z := Zb(P_SKS, buf)
 	z.Norm()
 	return z, nil
 }
 
 func WriteZp(w io.Writer, z *Zp) (err error) {
-	num := z.Int.Bytes()
-	_, err = w.Write(ReverseBytes(num))
+	num := z.Bytes()
+	_, err = w.Write(num)
 	if err != nil {
 		return
 	}
@@ -572,6 +571,7 @@ func (msg *Config) unmarshal(r io.Reader) (err error) {
 }
 
 func ReadMsg(r io.Reader) (msg ReconMsg, err error) {
+	//r = iotest.NewReadLogger("ReadMsg", r)
 	var msgSize int
 	msgSize, err = ReadInt(r)
 	if err != nil {
@@ -620,6 +620,7 @@ func ReadMsg(r io.Reader) (msg ReconMsg, err error) {
 }
 
 func WriteMsgDirect(w io.Writer, msg ReconMsg) (err error) {
+	//w = iotest.NewWriteLogger("WriteMsgDirect", w)
 	data := bytes.NewBuffer(nil)
 	buf := make([]byte, 1)
 	buf[0] = byte(msg.MsgType())
@@ -640,6 +641,7 @@ func WriteMsgDirect(w io.Writer, msg ReconMsg) (err error) {
 }
 
 func WriteMsg(w io.Writer, msgs ...ReconMsg) (err error) {
+	//bufw := bufio.NewWriter(iotest.NewWriteLogger("WriteMsg", w))
 	bufw := bufio.NewWriter(w)
 	for _, msg := range msgs {
 		err = WriteMsgDirect(bufw, msg)
