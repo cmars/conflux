@@ -43,6 +43,16 @@ func (r *Recover) String() string {
 	return fmt.Sprintf("%v: %v", r.RemoteAddr, r.RemoteElements)
 }
 
+func (r *Recover) HkpAddr() (string, error) {
+	// Use remote HKP host:port as peer-unique identifier
+	host, _, err := net.SplitHostPort(r.RemoteAddr.String())
+	if err != nil {
+		log.Println("Cannot parse HKP remote address from", r.RemoteAddr, ":", err)
+		return "", err
+	}
+	return fmt.Sprintf("%s:%d", host, r.RemoteConfig.HttpPort), nil
+}
+
 type RecoverChan chan *Recover
 
 var PNodeNotFound error = errors.New("Prefix-tree node not found")
