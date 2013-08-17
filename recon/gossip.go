@@ -35,33 +35,35 @@ const GOSSIP = "gossip:"
 
 // Gossip with remote servers, acting as a client.
 func (p *Peer) Gossip() {
-	enabled := true
-	var isOpen bool
+	timer := time.NewTimer(time.Duration(0))
+	defer timer.Stop()
 	for {
 		select {
-		case enabled, isOpen = <-p.gossipEnable:
-			log.Println(GOSSIP, "enabled:", enabled && isOpen)
-			if !enabled || !isOpen {
-				close(p.gossipEnable)
-				p.stopped <- true
-				return
+		case stop, _ := <-p.gossipStop:
+			if stop != nil {
+				stop <- new(interface{})
 			}
-		default:
+			return
+		case <-timer.C:
+			var peer net.Addr
+			var err error
+			if p.paused {
+				goto DELAY
+			}
+			peer, err = p.choosePartner()
+			if err != nil {
+				log.Println(GOSSIP, "choosePartner:", err)
+				goto DELAY
+			}
+			log.Println(GOSSIP, "Initiating recon with peer", peer)
+			err = p.initiateRecon(peer)
+			if err != nil {
+				log.Println(GOSSIP, "Recon error:", err)
+			}
+		DELAY:
+			// jitter the delay
+			timer.Reset(time.Duration(p.GossipIntervalSecs()) * time.Second)
 		}
-		peer, err := p.choosePartner()
-		if err != nil {
-			log.Println(GOSSIP, "choosePartner:", err)
-			goto DELAY
-		}
-		log.Println(GOSSIP, "Initiating recon with peer", peer)
-		err = p.initiateRecon(peer)
-		if err != nil {
-			log.Println(GOSSIP, "Recon error:", err)
-		}
-	DELAY:
-		delay := time.Duration(p.GossipIntervalSecs()) * time.Second
-		// jitter the delay
-		time.Sleep(delay)
 	}
 }
 

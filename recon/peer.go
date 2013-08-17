@@ -59,10 +59,6 @@ var PNodeNotFound error = errors.New("Prefix-tree node not found")
 
 var RemoteRejectConfigError error = errors.New("Remote rejected configuration")
 
-type serverEnable chan bool
-type gossipEnable chan bool
-type stopped chan interface{}
-
 type reconCmd func() error
 
 type reconCmdReq chan reconCmd
@@ -74,16 +70,18 @@ type Peer struct {
 	RecoverChan  RecoverChan
 	reconCmdReq  reconCmdReq
 	reconCmdResp reconCmdResp
-	serverEnable serverEnable
-	gossipEnable gossipEnable
-	stopped      stopped
+	serverStop   chan stopNotify
+	gossipStop   chan stopNotify
+	paused       bool
 }
 
 func NewPeer(settings *Settings, tree PrefixTree) *Peer {
 	return &Peer{
-		RecoverChan: make(RecoverChan),
-		Settings:    settings,
-		PrefixTree:  tree}
+		RecoverChan:  make(RecoverChan),
+		Settings:     settings,
+		PrefixTree:   tree,
+		reconCmdReq:  make(reconCmdReq),
+		reconCmdResp: make(reconCmdResp)}
 }
 
 func NewMemPeer() *Peer {
@@ -94,45 +92,40 @@ func NewMemPeer() *Peer {
 }
 
 func (p *Peer) Start() {
-	p.serverEnable = make(serverEnable)
-	p.gossipEnable = make(gossipEnable)
-	p.stopped = make(stopped)
-	p.reconCmdReq = make(reconCmdReq)
-	p.reconCmdResp = make(reconCmdResp)
+	if p.serverStop != nil {
+		return
+	}
+	p.gossipStop = make(chan stopNotify)
+	p.serverStop = make(chan stopNotify)
 	go p.Serve()
 	go p.Gossip()
 	go p.handleCmds()
 }
 
+type stopNotify chan interface{}
+
 func (p *Peer) Stop() {
-	if p.serverEnable == nil {
-		log.Println(SERVE, "Stop: peer not running")
+	if p.serverStop == nil {
 		return
 	}
-	log.Println(SERVE, "Stopping")
-	go func() { p.serverEnable <- false }()
-	go func() { p.gossipEnable <- false }()
-	// Drain recovery channel
-	go func() {
-		for _ = range p.RecoverChan {
-		}
-	}()
-	// Acknowledged stop of server & gossip client
-	<-p.stopped
-	<-p.stopped
-	// Close channels
-	close(p.stopped)
-	close(p.reconCmdReq)
-	close(p.reconCmdResp)
-	close(p.RecoverChan)
-	// Re-init
-	p.serverEnable = nil
-	p.gossipEnable = nil
-	p.stopped = nil
-	p.reconCmdReq = nil
-	p.reconCmdResp = nil
-	p.RecoverChan = nil
-	log.Println(SERVE, "Stopped")
+	log.Println("Stopping server & client...")
+	serverStopped := make(stopNotify)
+	gossipStopped := make(stopNotify)
+	go func() { p.serverStop <- serverStopped }()
+	go func() { p.gossipStop <- gossipStopped }()
+	<-serverStopped
+	<-gossipStopped
+	log.Println("Done")
+	p.serverStop = nil
+	p.gossipStop = nil
+}
+
+func (p *Peer) Pause() {
+	p.paused = true
+}
+
+func (p *Peer) Resume() {
+	p.paused = false
 }
 
 // handleCmds executes recon cmds in a single goroutine.
@@ -188,12 +181,12 @@ func (p *Peer) Serve() {
 	defer ln.Close()
 	for {
 		select {
-		case enabled, isOpen := <-p.serverEnable:
-			if !enabled || !isOpen {
-				close(p.serverEnable)
-				p.stopped <- true
+		case stop, _ := <-p.serverStop:
+			if stop != nil {
+				stop <- new(interface{})
 				return
 			}
+			return
 		default:
 		}
 		if p.ConnTimeout() > 0 {
@@ -285,8 +278,10 @@ func (p *Peer) accept(conn net.Conn) error {
 	if err != nil {
 		return err
 	}
-	return p.ExecCmd(func() error {
-		err := p.interactWithClient(conn, remoteConfig, NewBitstring(0))
+	return p.ExecCmd(func() (err error) {
+		if !p.paused {
+			err = p.interactWithClient(conn, remoteConfig, NewBitstring(0))
+		}
 		defer conn.Close()
 		return err
 	})
