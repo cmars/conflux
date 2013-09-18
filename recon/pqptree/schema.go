@@ -40,3 +40,9 @@ FOREIGN KEY (node_key) REFERENCES {{.Namespace}}_pnode(node_key))`
 
 const CreateIndex_PElement_NodeKey = `
 CREATE INDEX {{.Namespace}}_pelement_node_key ON {{.Namespace}}_pelement (node_key)`
+
+const DropIndex_PElement_NodeKey = `DROP INDEX {{.Namespace}}_pelement_node_key`
+
+const DropTable_PElement = `DROP TABLE {{.Namespace}}_pelement`
+
+const DropTable_PNode = `DROP TABLE {{.Namespace}}_pnode CASCADE`

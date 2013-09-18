@@ -33,6 +33,7 @@ import (
 	"github.com/cmars/conflux/recon"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
+	"log"
 	"strconv"
 	"strings"
 	"text/template"
@@ -122,15 +123,7 @@ func New(namespace string, db *sqlx.DB, settings *Settings) (ptree recon.PrefixT
 		Namespace: namespace,
 		db:        db,
 		points:    Zpoints(P_SKS, settings.NumSamples())}
-	err = tree.createTables()
-	if err != nil {
-		return
-	}
 	tree.prepareStatements()
-	err = tree.ensureRoot()
-	if err != nil {
-		return
-	}
 	ptree = tree
 	return
 }
@@ -144,15 +137,33 @@ func (t *pqPrefixTree) SqlTemplate(sql string) string {
 	return result.String()
 }
 
-func (t *pqPrefixTree) createTables() (err error) {
-	if _, err = t.db.Execv(t.SqlTemplate(CreateTable_PNode)); err != nil {
-		return
+func (t *pqPrefixTree) Create() error {
+	var err error
+	for i, tmpl := range []string{
+		CreateTable_PNode, CreateTable_PElement, CreateIndex_PElement_NodeKey} {
+		sql := t.SqlTemplate(tmpl)
+		log.Println(sql)
+		if _, err = t.db.Execv(sql); err != nil {
+			log.Println(err)
+			if i < 2 {
+				return err
+			}
+		}
 	}
-	if _, err = t.db.Execv(t.SqlTemplate(CreateTable_PElement)); err != nil {
-		return
+	return t.ensureRoot()
+}
+
+func (t *pqPrefixTree) Drop() error {
+	var err error
+	for _, tmpl := range []string{
+		DropIndex_PElement_NodeKey, DropTable_PElement, DropTable_PNode} {
+		sql := t.SqlTemplate(tmpl)
+		log.Println(sql)
+		if _, err = t.db.Execv(sql); err != nil {
+			log.Println(err)
+		}
 	}
-	t.db.Execv(t.SqlTemplate(CreateIndex_PElement_NodeKey))
-	return
+	return nil
 }
 
 func (t *pqPrefixTree) prepareStatements() {

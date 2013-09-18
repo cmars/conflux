@@ -28,6 +28,8 @@ import (
 
 type PrefixTree interface {
 	Init()
+	Create() error
+	Drop() error
 	SplitThreshold() int
 	JoinThreshold() int
 	BitQuantum() int
@@ -100,8 +102,19 @@ func (t *MemPrefixTree) Init() {
 		t.numSamples = DefaultNumSamples
 	}
 	t.points = Zpoints(P_SKS, t.numSamples)
+	t.Create()
+}
+
+func (t *MemPrefixTree) Create() error {
 	t.root = new(MemPrefixNode)
 	t.root.init(t)
+	return nil
+}
+
+func (t *MemPrefixTree) Drop() error {
+	t.root = new(MemPrefixNode)
+	t.root.init(t)
+	return nil
 }
 
 func Find(t PrefixTree, z *Zp) (PrefixNode, error) {
