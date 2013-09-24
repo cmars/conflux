@@ -37,7 +37,6 @@ type PrefixTree interface {
 	Points() []*Zp
 	Root() (PrefixNode, error)
 	Node(key *Bitstring) (PrefixNode, error)
-	HasElement(z *Zp) (bool, error)
 	Insert(z *Zp) error
 	Remove(z *Zp) error
 }
@@ -161,10 +160,6 @@ func (t *MemPrefixTree) Node(bs *Bitstring) (PrefixNode, error) {
 		node = node.children[childIndex]
 	}
 	return node, nil
-}
-
-func (t *MemPrefixTree) HasElement(z *Zp) (bool, error) {
-	panic("not implemented")
 }
 
 // Insert a Z/Zp integer into the prefix tree

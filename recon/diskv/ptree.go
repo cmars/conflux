@@ -32,6 +32,7 @@ import (
 	. "github.com/cmars/conflux"
 	"github.com/cmars/conflux/recon"
 	"github.com/peterbourgon/diskv"
+	"hash/fnv"
 	"io"
 )
 
@@ -86,12 +87,9 @@ func mustDecodeZZarray(buf []byte) []*Zp {
 }
 
 func balancedTransform(s string) (path []string) {
-	for i, n, l := 0, 1, len(s); i+n < l && n < 8; {
-		path = append(path, s[l-(i+n):l-i])
-		i += n
-		n *= 2
-	}
-	return
+	h := fnv.New32a()
+	fmt.Fprintf(h, s)
+	return []string{fmt.Sprintf("%02x", h.Sum(nil)[0])}
 }
 
 func New(settings *Settings) (ptree recon.PrefixTree, err error) {
@@ -164,6 +162,9 @@ func (t *prefixTree) Node(bs *Bitstring) (recon.PrefixNode, error) {
 
 type elementOperation func() (bool, error)
 
+type nodeChangeFunc func(*prefixNode)
+type nodeChangeMap map[*prefixNode][]nodeChangeFunc
+
 type changeElement struct {
 	// Current node in prefix tree descent
 	cur *prefixNode
@@ -175,22 +176,60 @@ type changeElement struct {
 	target *Bitstring
 	// Current depth in descent
 	depth int
+	// Pending node changes
+	nodeChanges nodeChangeMap
+}
+
+func (ch *changeElement) pushChange(node *prefixNode, nodeChange nodeChangeFunc) {
+	if ch.nodeChanges == nil {
+		ch.nodeChanges = make(nodeChangeMap)
+	}
+	if changes, has := ch.nodeChanges[node]; has {
+		ch.nodeChanges[node] = append(changes, nodeChange)
+	} else {
+		ch.nodeChanges[node] = []nodeChangeFunc{nodeChange}
+	}
+}
+
+func (ch *changeElement) commit() {
+	for node, changes := range ch.nodeChanges {
+		for _, change := range changes {
+			change(node)
+		}
+		node.upsertNode()
+	}
+	ch.nodeChanges = nil
 }
 
 func (ch *changeElement) descend(op elementOperation) error {
 	for {
-		ch.cur.updateSvalues(ch.element, ch.marray)
+		ch.pushChange(ch.cur, func(n *prefixNode) {
+			n.updateSvalues(ch.element, ch.marray)
+		})
 		done, err := op()
-		if done || err != nil {
+		if err != nil {
 			return err
+		}
+		if done {
+			ch.commit()
+			return nil
 		}
 	}
 }
 
 func (ch *changeElement) insert() (done bool, err error) {
-	ch.cur.NumElements++
+	ch.pushChange(ch.cur, func(n *prefixNode) {
+		n.NumElements++
+	})
 	if ch.cur.IsLeaf() {
-		if len(ch.cur.NodeElements) > ch.cur.SplitThreshold() {
+		// Check for duplicate
+		for _, element := range ch.cur.NodeElements {
+			elementBytes := ch.element.Bytes()
+			if bytes.Equal(element, elementBytes) {
+				return true, ErrDuplicateElement(ch.element)
+			}
+		}
+		if len(ch.cur.NodeElements)+1 > ch.cur.SplitThreshold() {
 			err = ch.split()
 			if err != nil {
 				return
@@ -220,10 +259,16 @@ func (n *prefixNode) deleteElements() error {
 func (n *prefixNode) deleteElement(element *Zp) error {
 	elementBytes := element.Bytes()
 	var elements [][]byte
+	var removed bool
 	for _, element := range n.NodeElements {
-		if !bytes.Equal(element, elementBytes) {
+		if bytes.Equal(element, elementBytes) {
+			removed = true
+		} else {
 			elements = append(elements, element)
 		}
+	}
+	if !removed {
+		return ErrElementNotFound(element)
 	}
 	n.NodeElements = elements
 	return n.upsertNode()
@@ -263,7 +308,9 @@ func (ch *changeElement) split() (err error) {
 		if err != nil {
 			return err
 		}
-		child.updateSvalues(z, marray)
+		ch.pushChange(child, func(n *prefixNode) {
+			n.updateSvalues(z, marray)
+		})
 	}
 	for _, child := range children {
 		err = child.upsertNode()
@@ -275,9 +322,11 @@ func (ch *changeElement) split() (err error) {
 }
 
 func (ch *changeElement) remove() (done bool, err error) {
-	ch.cur.NumElements--
+	ch.pushChange(ch.cur, func(n *prefixNode) {
+		n.NumElements--
+	})
 	if !ch.cur.IsLeaf() {
-		if ch.cur.NumElements <= ch.cur.JoinThreshold() {
+		if ch.cur.NumElements-1 <= ch.cur.JoinThreshold() {
 			err = ch.join()
 			if err != nil {
 				return
@@ -297,7 +346,7 @@ func (ch *changeElement) remove() (done bool, err error) {
 		return
 	}
 	err = ch.cur.deleteElement(ch.element)
-	return err == nil, err
+	return true, err
 }
 
 func (ch *changeElement) join() error {
@@ -313,23 +362,15 @@ func (ch *changeElement) join() error {
 	return ch.cur.upsertNode()
 }
 
-func (t *prefixTree) HasElement(z *Zp) (bool, error) {
-	return t.dv.Has("z" + hex.EncodeToString(z.Bytes())), nil
-}
-
 func ErrDuplicateElement(z *Zp) error {
 	return errors.New(fmt.Sprintf("Attempt to insert duplicate element %v", z))
 }
 
+func ErrElementNotFound(z *Zp) error {
+	return errors.New(fmt.Sprintf("Expected element %v was not found", z))
+}
+
 func (t *prefixTree) Insert(z *Zp) error {
-	if has, err := t.HasElement(z); has {
-		return ErrDuplicateElement(z)
-	} else if err != nil {
-		return err
-	}
-	if err := t.dv.Write("z"+hex.EncodeToString(z.Bytes()), []byte{}); err != nil {
-		return err
-	}
 	bs := NewZpBitstring(z)
 	root, err := t.Root()
 	if err != nil {
@@ -348,14 +389,6 @@ func (t *prefixTree) Insert(z *Zp) error {
 }
 
 func (t *prefixTree) Remove(z *Zp) error {
-	if has, err := t.HasElement(z); !has {
-		return recon.PNodeNotFound
-	} else if err != nil {
-		return err
-	}
-	if err := t.dv.Erase("z" + hex.EncodeToString(z.Bytes())); err != nil {
-		return err
-	}
 	bs := NewZpBitstring(z)
 	root, err := t.Root()
 	if err != nil {

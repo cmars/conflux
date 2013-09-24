@@ -97,6 +97,54 @@ func TestJustOneKey(t *testing.T) {
 	assert.Equal(t, 0, len(expect.Items()))
 }
 
+func TestInsertRemoveProtection(t *testing.T) {
+	peer := createTestPeer(t)
+	defer destroyTestPeer(peer)
+	tree := peer.PrefixTree
+	tree.Init()
+	root, err := tree.Root()
+	// Snapshot original svalues
+	origSValues := root.SValues()
+	assert.Equal(t, err, nil)
+	// Add an element, should succeed
+	err = tree.Insert(Zs(P_SKS, "224045810486609649306292620830306652473"))
+	assert.Equal(t, err, nil)
+	// Snapshot svalues with one element added
+	root, err = tree.Root()
+	assert.Equal(t, err, nil)
+	oneSValues := root.SValues()
+	for i, sv := range oneSValues {
+		assert.NotEqual(t, origSValues[i], sv)
+	}
+	// Attempt to insert duplicate element, should fail
+	err = tree.Insert(Zs(P_SKS, "224045810486609649306292620830306652473"))
+	assert.T(t, err != nil)
+	// After attempt to insert duplicate, svalues should be unchanged
+	root, err = tree.Root()
+	assert.Equal(t, err, nil)
+	oneDupSValues := root.SValues()
+	for i, sv := range oneSValues {
+		assert.Equal(t, oneDupSValues[i], sv)
+	}
+	// Remove element, should be back to original svalues
+	err = tree.Remove(Zs(P_SKS, "224045810486609649306292620830306652473"))
+	assert.Equal(t, err, nil)
+	root, err = tree.Root()
+	assert.Equal(t, err, nil)
+	rmNotExist := root.SValues()
+	for i, sv := range rmNotExist {
+		assert.Equal(t, origSValues[i], sv)
+	}
+	// Remove non-existent element, svalues should be unchanged
+	err = tree.Remove(Zs(P_SKS, "224045810486609649306292620830306652473"))
+	assert.T(t, err != nil)
+	root, err = tree.Root()
+	assert.Equal(t, err, nil)
+	for i, sv := range root.SValues() {
+		assert.Equal(t, origSValues[i], sv)
+	}
+}
+
 func TestInsertNodeSplit(t *testing.T) {
 	peer := createTestPeer(t)
 	//defer destroyTestPeer(peer)
