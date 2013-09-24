@@ -85,23 +85,25 @@ func mustDecodeZZarray(buf []byte) []*Zp {
 	return arr
 }
 
-func flatTransform(s string) []string {
-	if len(s) > 10 {
-		return []string{s[0:2], s[2:11], s}
-	} else if len(s) > 2 {
-		return []string{s[0:2], s}
-	} else {
-		return []string{s}
+func balancedTransform(s string) (path []string) {
+	for i, n, l := 0, 1, len(s); i+n < l; {
+		path = append(path, s[i:i+n])
+		i += n
+		n *= 2
 	}
+	return
 }
 
 func New(settings *Settings) (ptree recon.PrefixTree, err error) {
+	if settings.BasePath() == "" {
+		settings.Set("conflux.recon.diskv.basePath", "conflux-ptree")
+	}
 	tree := &prefixTree{
 		Settings: settings,
 		points:   Zpoints(P_SKS, settings.NumSamples())}
 	tree.dv = diskv.New(diskv.Options{
 		BasePath:     settings.BasePath(),
-		Transform:    flatTransform,
+		Transform:    balancedTransform,
 		CacheSizeMax: uint64(settings.CacheSizeMax())})
 	ptree = tree
 	return
@@ -135,12 +137,12 @@ func (t *prefixTree) Root() (recon.PrefixNode, error) {
 
 func (t *prefixTree) getNode(key []byte) (node *prefixNode, err error) {
 	keyStr := hex.EncodeToString(key)
-	if !t.dv.Has(keyStr) {
+	if !t.dv.Has("n" + keyStr) {
 		err = recon.PNodeNotFound
 		return
 	}
 	var r io.ReadCloser
-	if r, err = t.dv.ReadStream(keyStr); err != nil {
+	if r, err = t.dv.ReadStream("n" + keyStr); err != nil {
 		return
 	}
 	defer r.Close()
@@ -207,7 +209,7 @@ func (ch *changeElement) insert() (done bool, err error) {
 }
 
 func (n *prefixNode) deleteNode() error {
-	return n.dv.Erase(hex.EncodeToString(n.NodeKey))
+	return n.dv.Erase("n" + hex.EncodeToString(n.NodeKey))
 }
 
 func (n *prefixNode) deleteElements() error {
@@ -312,7 +314,7 @@ func (ch *changeElement) join() error {
 }
 
 func (t *prefixTree) HasElement(z *Zp) (bool, error) {
-	return t.dv.Has(hex.EncodeToString(z.Bytes())), nil
+	return t.dv.Has("z" + hex.EncodeToString(z.Bytes())), nil
 }
 
 func ErrDuplicateElement(z *Zp) error {
@@ -325,7 +327,7 @@ func (t *prefixTree) Insert(z *Zp) error {
 	} else if err != nil {
 		return err
 	}
-	if err := t.dv.Write(hex.EncodeToString(z.Bytes()), []byte{}); err != nil {
+	if err := t.dv.Write("z"+hex.EncodeToString(z.Bytes()), []byte{}); err != nil {
 		return err
 	}
 	bs := NewZpBitstring(z)
@@ -351,7 +353,7 @@ func (t *prefixTree) Remove(z *Zp) error {
 	} else if err != nil {
 		return err
 	}
-	if err := t.dv.Erase(hex.EncodeToString(z.Bytes())); err != nil {
+	if err := t.dv.Erase("z" + hex.EncodeToString(z.Bytes())); err != nil {
 		return err
 	}
 	bs := NewZpBitstring(z)
@@ -399,7 +401,7 @@ func (n *prefixNode) upsertNode() (err error) {
 	if err = enc.Encode(n); err != nil {
 		return
 	}
-	return n.dv.WriteStream(hex.EncodeToString(n.NodeKey), bytes.NewBuffer(buf.Bytes()), false)
+	return n.dv.WriteStream("n"+hex.EncodeToString(n.NodeKey), bytes.NewBuffer(buf.Bytes()), false)
 }
 
 func (n *prefixNode) IsLeaf() bool {
