@@ -86,8 +86,8 @@ func mustDecodeZZarray(buf []byte) []*Zp {
 }
 
 func balancedTransform(s string) (path []string) {
-	for i, n, l := 0, 1, len(s); i+n < l; {
-		path = append(path, s[i:i+n])
+	for i, n, l := 0, 1, len(s); i+n < l && n < 8; {
+		path = append(path, s[l-(i+n):l-i])
 		i += n
 		n *= 2
 	}
