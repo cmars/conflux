@@ -120,6 +120,10 @@ func (p *Peer) Stop() {
 	p.gossipStop = nil
 }
 
+func (p *Peer) Flush() error {
+	return p.PrefixTree.Flush()
+}
+
 func (p *Peer) Pause() {
 	p.paused = true
 }

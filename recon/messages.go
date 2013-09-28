@@ -298,8 +298,8 @@ type ReconRqstFull struct {
 }
 
 func (msg *ReconRqstFull) String() string {
-	return fmt.Sprintf("%v: prefix=%v elements=%v",
-		msg.MsgType(), msg.Prefix, msg.Elements)
+	return fmt.Sprintf("%v: prefix=%v (%d elements)",
+		msg.MsgType(), msg.Prefix, msg.Elements.Len())
 }
 
 func (msg *ReconRqstFull) MsgType() MsgType {

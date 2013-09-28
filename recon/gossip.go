@@ -133,7 +133,7 @@ func (p *Peer) clientRecon(conn net.Conn, remoteConfig *Config) error {
 		}
 		log.Println(GOSSIP, "Add step:", step)
 		respSet.AddAll(step.elements)
-		log.Println(GOSSIP, "Recover set now:", respSet)
+		log.Println(GOSSIP, "Recover set now:", respSet.Len(), "elements")
 	}
 	items := respSet.Items()
 	if len(items) > 0 {
@@ -164,7 +164,7 @@ func (p *Peer) interactWithServer(conn net.Conn) msgProgressChan {
 			case *ReconRqstFull:
 				resp = p.handleReconRqstFull(m)
 			case *Elements:
-				log.Println(GOSSIP, "Elements:", m.ZSet)
+				log.Println(GOSSIP, "Elements:", m.ZSet.Len())
 				resp = &msgProgress{elements: m.ZSet}
 			case *Done:
 				resp = &msgProgress{err: ReconDone}
