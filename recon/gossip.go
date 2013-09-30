@@ -52,7 +52,9 @@ func (p *Peer) Gossip() {
 			}
 			peer, err = p.choosePartner()
 			if err != nil {
-				log.Println(GOSSIP, "choosePartner:", err)
+				if err != NoPartnersError {
+					log.Println(GOSSIP, "choosePartner:", err)
+				}
 				goto DELAY
 			}
 			log.Println(GOSSIP, "Initiating recon with peer", peer)
@@ -67,7 +69,7 @@ func (p *Peer) Gossip() {
 	}
 }
 
-var NoPartnersError error = errors.New("That feel when no recon partner")
+var NoPartnersError error = errors.New("No recon partners configured")
 var IncompatiblePeerError error = errors.New("Remote peer configuration is not compatible")
 
 func (p *Peer) choosePartner() (net.Addr, error) {
