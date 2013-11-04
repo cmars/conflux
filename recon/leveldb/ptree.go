@@ -19,7 +19,7 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-// Package leveldb provides a LevelDB-backed implementation of the
+// Package leveldb provides a key-value storage implementation of the
 // recon prefix tree interface.
 package leveldb
 
@@ -30,90 +30,98 @@ import (
 	"fmt"
 	. "github.com/cmars/conflux"
 	"github.com/cmars/conflux/recon"
-	"github.com/jmhodges/levigo"
+	"github.com/syndtr/goleveldb/leveldb"
 	"os"
 )
 
-func NewPeer(settings *DbSettings) (p *recon.Peer, err error) {
-	err = initDb(settings.DbPath())
-	if err != nil {
-		return nil, err
-	}
-	tree, err := newPrefixTree(settings)
-	if err != nil {
-		return nil, err
-	}
-	return &recon.Peer{
-		RecoverChan: make(recon.RecoverChan),
-		Settings:    settings.Settings,
-		PrefixTree:  tree}, nil
+type prefixTree struct {
+	*Settings
+	root   *prefixNode
+	db     *leveldb.DB
+	points []*Zp
 }
 
-func initDb(path string) (err error) {
-	var fi os.FileInfo
-	fi, err = os.Stat(path)
-	if os.IsNotExist(err) {
-		err = os.MkdirAll(path, os.FileMode(0755))
-		if err != nil {
-			return
-		}
-	} else if !fi.IsDir() {
-		err = errors.New(fmt.Sprintf("Not a directory: %s", path))
-		return
+type prefixNode struct {
+	*prefixTree
+	NodeKey      []byte
+	NodeSValues  []byte
+	NumElements  int
+	ChildKeys    []int
+	NodeElements [][]byte
+}
+
+func mustEncodeBitstring(bs *Bitstring) []byte {
+	w := bytes.NewBuffer(nil)
+	err := recon.WriteBitstring(w, bs)
+	if err != nil {
+		panic(err)
 	}
+	return w.Bytes()
+}
+
+func mustDecodeBitstring(buf []byte) *Bitstring {
+	bs, err := recon.ReadBitstring(bytes.NewBuffer(buf))
+	if err != nil {
+		panic(err)
+	}
+	return bs
+}
+
+func mustEncodeZZarray(arr []*Zp) []byte {
+	w := bytes.NewBuffer(nil)
+	err := recon.WriteZZarray(w, arr)
+	if err != nil {
+		panic(err)
+	}
+	return w.Bytes()
+}
+
+func mustDecodeZZarray(buf []byte) []*Zp {
+	arr, err := recon.ReadZZarray(bytes.NewBuffer(buf))
+	if err != nil {
+		panic(err)
+	}
+	return arr
+}
+
+const COLLECTION_NAME = "conflux.recon"
+
+func New(settings *Settings) (ptree recon.PrefixTree, err error) {
+	tree := &prefixTree{
+		Settings: settings,
+		points:   Zpoints(P_SKS, settings.NumSamples())}
+	ptree = tree
 	return
 }
 
-type prefixTree struct {
-	*DbSettings
-	ptree     *levigo.DB
-	options   *levigo.Options
-	rdOptions *levigo.ReadOptions
-	wrOptions *levigo.WriteOptions
-	points    []*Zp
-}
-
-func newPrefixTree(s *DbSettings) (tree *prefixTree, err error) {
-	tree = &prefixTree{DbSettings: s}
-	tree.points = Zpoints(P_SKS, tree.NumSamples())
-	tree.options = levigo.NewOptions()
-	tree.options.SetErrorIfExists(false)
-	tree.options.SetCreateIfMissing(true)
-	tree.options.SetCache(levigo.NewLRUCache(1 << 20))
-	tree.options.SetEnv(levigo.NewDefaultEnv())
-	tree.options.SetInfoLog(nil)
-	tree.options.SetWriteBufferSize(1 << 20)
-	tree.options.SetParanoidChecks(true)
-	tree.options.SetBlockSize(8192)
-	tree.options.SetBlockRestartInterval(8)
-	tree.options.SetCompression(levigo.NoCompression)
-	tree.rdOptions = levigo.NewReadOptions()
-	tree.rdOptions.SetVerifyChecksums(false)
-	tree.rdOptions.SetFillCache(false)
-	tree.wrOptions = levigo.NewWriteOptions()
-	tree.wrOptions.SetSync(false)
-	tree.ptree, err = levigo.Open(s.DbPath(), tree.options)
-	if err != nil {
+func (t *prefixTree) Create() (err error) {
+	if t.db, err = leveldb.OpenFile(t.Settings.Path(), nil); err != nil {
 		return
 	}
-	err = tree.ensureRoot()
-	if err != nil {
-		return
-	}
-	return tree, err
+	return t.ensureRoot()
 }
 
-func (t *prefixTree) Init() {}
-
-var ErrKeyNotFound error = errors.New("Key not found")
-
-func (t *prefixTree) ensureRoot() error {
-	_, err := t.Root()
-	if err != ErrKeyNotFound {
-		return err
+func (t *prefixTree) Drop() error {
+	if t.db != nil {
+		t.db.Close()
 	}
-	_, err = t.newChildNode(nil, 0)
-	return err
+	return os.Remove(t.Settings.Path())
+}
+
+func (t *prefixTree) Close() (err error) {
+	return t.db.Close()
+}
+
+func (t *prefixTree) Init() {
+}
+
+func (t *prefixTree) ensureRoot() (err error) {
+	_, err = t.Root()
+	if err != recon.PNodeNotFound {
+		return
+	}
+	root := t.newChildNode(nil, 0)
+	return root.upsertNode()
 }
 
 func (t *prefixTree) Points() []*Zp { return t.points }
@@ -122,149 +130,303 @@ func (t *prefixTree) Root() (recon.PrefixNode, error) {
 	return t.Node(NewBitstring(0))
 }
 
-func (t *prefixTree) Node(bs *Bitstring) (node recon.PrefixNode, err error) {
-	key := bytes.NewBuffer([]byte{})
-	err = recon.WriteBitstring(key, bs)
+func (t *prefixTree) hasKey(key []byte) bool {
+	_, err := t.db.Get(key, nil)
+	return err == nil
+}
+
+func (t *prefixTree) getNode(key []byte) (node *prefixNode, err error) {
+	var val []byte
+	if val, err = t.db.Get(key, nil); err != nil {
+		if err == leveldb.ErrNotFound {
+			err = recon.PNodeNotFound
+		}
+		return
+	}
+	if len(val) == 0 {
+		err = recon.PNodeNotFound
+		return
+	}
+	dec := gob.NewDecoder(bytes.NewBuffer(val))
+	node = new(prefixNode)
+	err = dec.Decode(node)
+	node.prefixTree = t
+	return
+}
+
+func (t *prefixTree) Node(bs *Bitstring) (recon.PrefixNode, error) {
+	nodeKey := mustEncodeBitstring(bs)
+	node, err := t.getNode(nodeKey)
 	if err != nil {
-		return
+		return nil, err
 	}
-	ndRaw, err := t.ptree.Get(t.rdOptions, key.Bytes())
+	return node, err
+}
+
+type elementOperation func() (bool, error)
+
+type changeElement struct {
+	// Current node in prefix tree descent
+	cur *prefixNode
+	// Element to be changed (added or removed)
+	element *Zp
+	// Mask used to update sample values
+	marray []*Zp
+	// Target prefix tree key to shoot for
+	target *Bitstring
+	// Current depth in descent
+	depth int
+}
+
+func (ch *changeElement) descend(op elementOperation) error {
+	for {
+		ch.cur.updateSvalues(ch.element, ch.marray)
+		done, err := op()
+		if err != nil {
+			return err
+		}
+		if done {
+			return nil
+		}
+	}
+}
+
+func (ch *changeElement) insert() (done bool, err error) {
+	ch.cur.NumElements++
+	if ch.cur.IsLeaf() {
+		if len(ch.cur.NodeElements)+1 > ch.cur.SplitThreshold() {
+			err = ch.split()
+			if err != nil {
+				return
+			}
+		} else {
+			err = ch.cur.upsertNode()
+			if err != nil {
+				return true, err
+			}
+			err = ch.cur.insertElement(ch.element)
+			return true, err
+		}
+	}
+	err = ch.cur.upsertNode()
+	childIndex := recon.NextChild(ch.cur, ch.target, ch.depth)
+	ch.cur = ch.cur.Children()[childIndex].(*prefixNode)
+	ch.depth++
+	return false, err
+}
+
+func (n *prefixNode) deleteNode() (err error) {
+	err = n.db.Delete(n.NodeKey, nil)
+	return
+}
+
+func (n *prefixNode) deleteElements() error {
+	n.NodeElements = nil
+	return n.upsertNode()
+}
+
+func (n *prefixNode) deleteElement(element *Zp) error {
+	elementBytes := element.Bytes()
+	var elements [][]byte
+	var removed bool
+	for _, element := range n.NodeElements {
+		if bytes.Equal(element, elementBytes) {
+			removed = true
+		} else {
+			elements = append(elements, element)
+		}
+	}
+	if !removed {
+		return ErrElementNotFound(element)
+	}
+	n.NodeElements = elements
+	return n.upsertNode()
+}
+
+func (n *prefixNode) insertElement(element *Zp) error {
+	n.NodeElements = append(n.NodeElements, element.Bytes())
+	return n.upsertNode()
+}
+
+func (ch *changeElement) split() (err error) {
+	// Create child nodes
+	numChildren := 1 << uint(ch.cur.BitQuantum())
+	var children []*prefixNode
+	for i := 0; i < numChildren; i++ {
+		// Create new empty child node
+		child := ch.cur.newChildNode(ch.cur, i)
+		err = child.upsertNode()
+		if err != nil {
+			return err
+		}
+		ch.cur.ChildKeys = append(ch.cur.ChildKeys, i)
+		children = append(children, child)
+	}
+	err = ch.cur.upsertNode()
 	if err != nil {
+		return err
+	}
+	// Move elements into child nodes
+	for _, element := range ch.cur.NodeElements {
+		z := Zb(P_SKS, element)
+		bs := NewZpBitstring(z)
+		childIndex := recon.NextChild(ch.cur, bs, ch.depth)
+		child := children[childIndex]
+		child.NodeElements = append(child.NodeElements, element)
+		marray, err := recon.AddElementArray(child, z)
+		if err != nil {
+			return err
+		}
+		ch.cur.updateSvalues(z, marray)
+	}
+	for _, child := range children {
+		err = child.upsertNode()
+		if err != nil {
+			return err
+		}
+	}
+	return
+}
+
+func (ch *changeElement) remove() (done bool, err error) {
+	ch.cur.NumElements--
+	if !ch.cur.IsLeaf() {
+		if ch.cur.NumElements-1 <= ch.cur.JoinThreshold() {
+			err = ch.join()
+			if err != nil {
+				return
+			}
+		} else {
+			err = ch.cur.upsertNode()
+			if err != nil {
+				return
+			}
+			childIndex := recon.NextChild(ch.cur, ch.target, ch.depth)
+			ch.cur = ch.cur.Children()[childIndex].(*prefixNode)
+			ch.depth++
+			return false, err
+		}
+	}
+	if err = ch.cur.upsertNode(); err != nil {
 		return
 	}
-	if ndRaw == nil {
-		err = ErrKeyNotFound
-		return
+	err = ch.cur.deleteElement(ch.element)
+	return true, err
+}
+
+func (ch *changeElement) join() error {
+	var elements [][]byte
+	for _, child := range ch.cur.Children() {
+		elements = append(elements, child.(*prefixNode).NodeElements...)
+		if err := child.(*prefixNode).deleteNode(); err != nil {
+			return err
+		}
 	}
-	dec := gob.NewDecoder(bytes.NewBuffer(ndRaw))
-	nd := new(nodeData)
-	err = dec.Decode(nd)
-	if err != nil {
-		return
-	}
-	return t.loadNode(nd)
+	ch.cur.NodeElements = elements
+	ch.cur.ChildKeys = nil
+	return ch.cur.upsertNode()
+}
+
+func ErrDuplicateElement(z *Zp) error {
+	return errors.New(fmt.Sprintf("Attempt to insert duplicate element %v", z))
+}
+
+func ErrElementNotFound(z *Zp) error {
+	return errors.New(fmt.Sprintf("Expected element %v was not found", z))
 }
 
 func (t *prefixTree) Insert(z *Zp) error {
-	bs := NewBitstring(P_SKS.BitLen())
-	bs.SetBytes(ReverseBytes(z.Bytes()))
+	_, lookupErr := t.db.Get(z.Bytes(), nil)
+	if lookupErr == nil {
+		return ErrDuplicateElement(z)
+	} else if lookupErr != leveldb.ErrNotFound {
+		return lookupErr
+	}
+	bs := NewZpBitstring(z)
 	root, err := t.Root()
 	if err != nil {
 		return err
 	}
-	return root.(*prefixNode).insert(z, recon.AddElementArray(t, z), bs, 0)
+	marray, err := recon.AddElementArray(t, z)
+	if err != nil {
+		return err
+	}
+	ch := &changeElement{
+		cur:     root.(*prefixNode),
+		element: z,
+		marray:  marray,
+		target:  bs}
+	err = ch.descend(ch.insert)
+	if err != nil {
+		return err
+	}
+	return t.db.Put(z.Bytes(), []byte{}, nil)
 }
 
 func (t *prefixTree) Remove(z *Zp) error {
-	bs := NewBitstring(P_SKS.BitLen())
-	bs.SetBytes(ReverseBytes(z.Bytes()))
+	_, lookupErr := t.db.Get(z.Bytes(), nil)
+	if lookupErr != nil {
+		return lookupErr
+	}
+	bs := NewZpBitstring(z)
 	root, err := t.Root()
 	if err != nil {
 		return err
 	}
-	return root.(*prefixNode).remove(z, recon.DelElementArray(t, z), bs, 0)
+	ch := &changeElement{
+		cur:     root.(*prefixNode),
+		element: z,
+		marray:  recon.DelElementArray(t, z),
+		target:  bs}
+	err = ch.descend(ch.remove)
+	if err != nil {
+		return err
+	}
+	return t.db.Delete(z.Bytes(), nil)
 }
 
-func (t *prefixTree) newChildNode(parent *prefixNode, childIndex int) (*prefixNode, error) {
+func (t *prefixTree) newChildNode(parent *prefixNode, childIndex int) *prefixNode {
 	n := &prefixNode{prefixTree: t}
+	var key *Bitstring
 	if parent != nil {
 		parentKey := parent.Key()
-		n.key = NewBitstring(parentKey.BitLen() + t.BitQuantum())
-		n.key.SetBytes(parentKey.Bytes())
+		key = NewBitstring(parentKey.BitLen() + t.BitQuantum())
+		key.SetBytes(parentKey.Bytes())
 		for j := 0; j < parent.BitQuantum(); j++ {
 			if (childIndex>>uint(j))&0x1 == 1 {
-				n.key.Set(parentKey.BitLen() + j)
+				key.Set(parentKey.BitLen() + j)
 			} else {
-				n.key.Unset(parentKey.BitLen() + j)
+				key.Unset(parentKey.BitLen() + j)
 			}
 		}
 	} else {
-		n.key = NewBitstring(0)
+		key = NewBitstring(0)
 	}
-	n.svalues = make([]*Zp, t.NumSamples())
-	for i := 0; i < len(n.svalues); i++ {
-		n.svalues[i] = Zi(P_SKS, 1)
+	n.NodeKey = mustEncodeBitstring(key)
+	svalues := make([]*Zp, t.NumSamples())
+	for i := 0; i < len(svalues); i++ {
+		svalues[i] = Zi(P_SKS, 1)
 	}
-	err := t.saveNode(n)
-	return n, err
+	n.NodeSValues = mustEncodeZZarray(svalues)
+	return n
 }
 
-func (t *prefixTree) loadNode(nd *nodeData) (n *prefixNode, err error) {
-	n = &prefixNode{prefixTree: t}
-	n.key, err = recon.ReadBitstring(bytes.NewBuffer(nd.KeyBuf))
-	if err != nil {
+func (n *prefixNode) upsertNode() (err error) {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	if err = enc.Encode(n); err != nil {
 		return
 	}
-	n.numElements = nd.NumElements
-	n.svalues, err = recon.ReadZZarray(bytes.NewBuffer(nd.SvaluesBuf))
-	if err != nil {
-		return
-	}
-	n.elements, err = recon.ReadZZarray(bytes.NewBuffer(nd.ElementsBuf))
-	if err != nil {
-		return
-	}
-	n.childKeys = nd.ChildKeys
-	return
-}
-
-func (t *prefixTree) saveNode(n *prefixNode) (err error) {
-	nd := &nodeData{}
-	var out *bytes.Buffer
-	// Write key
-	out = bytes.NewBuffer(nil)
-	err = recon.WriteBitstring(out, n.key)
-	if err != nil {
-		return
-	}
-	nd.KeyBuf = out.Bytes()
-	// Write sample values
-	out = bytes.NewBuffer(nil)
-	err = recon.WriteZZarray(out, n.svalues)
-	if err != nil {
-		return
-	}
-	nd.SvaluesBuf = out.Bytes()
-	// Write elements
-	out = bytes.NewBuffer(nil)
-	err = recon.WriteZZarray(out, n.elements)
-	nd.ElementsBuf = out.Bytes()
-	nd.NumElements = n.numElements
-	nd.ChildKeys = n.childKeys
-	ndBuf := bytes.NewBuffer(nil)
-	enc := gob.NewEncoder(ndBuf)
-	err = enc.Encode(nd)
-	if err != nil {
-		return
-	}
-	err = t.ptree.Put(t.wrOptions, nd.KeyBuf, ndBuf.Bytes())
-	return
-}
-
-type nodeData struct {
-	KeyBuf      []byte
-	NumElements int
-	SvaluesBuf  []byte
-	ElementsBuf []byte
-	ChildKeys   []int
-}
-
-type prefixNode struct {
-	*prefixTree
-	key         *Bitstring
-	numElements int
-	svalues     []*Zp
-	elements    []*Zp
-	childKeys   []int
+	return n.db.Put(n.NodeKey, buf.Bytes(), nil)
 }
 
 func (n *prefixNode) IsLeaf() bool {
-	return len(n.childKeys) == 0
+	return len(n.ChildKeys) == 0
 }
 
 func (n *prefixNode) Children() (result []recon.PrefixNode) {
 	key := n.Key()
-	for _, i := range n.childKeys {
+	for _, i := range n.ChildKeys {
 		childKey := NewBitstring(key.BitLen() + n.BitQuantum())
 		childKey.SetBytes(key.Bytes())
 		for j := 0; j < n.BitQuantum(); j++ {
@@ -276,33 +438,37 @@ func (n *prefixNode) Children() (result []recon.PrefixNode) {
 		}
 		child, err := n.Node(childKey)
 		if err != nil {
-			panic(fmt.Sprintf("Children failed on child#%v: %v", i, err))
+			panic(fmt.Sprintf("Children failed on child#%v, key=%v: %v", i, childKey, err))
 		}
 		result = append(result, child)
 	}
 	return
 }
 
-func (n *prefixNode) Elements() []*Zp {
-	return n.elements
+func (n *prefixNode) Elements() (result []*Zp) {
+	for _, element := range n.NodeElements {
+		result = append(result, Zb(P_SKS, element))
+	}
+	return
 }
 
-func (n *prefixNode) Size() int { return n.numElements }
+func (n *prefixNode) Size() int { return n.NumElements }
 
 func (n *prefixNode) SValues() []*Zp {
-	return n.svalues
+	return mustDecodeZZarray(n.NodeSValues)
 }
 
 func (n *prefixNode) Key() *Bitstring {
-	return n.key
+	return mustDecodeBitstring(n.NodeKey)
 }
 
 func (n *prefixNode) Parent() (recon.PrefixNode, bool) {
-	if n.key.BitLen() == 0 {
+	key := n.Key()
+	if key.BitLen() == 0 {
 		return nil, false
 	}
-	parentKey := NewBitstring(n.key.BitLen() - n.BitQuantum())
-	parentKey.SetBytes(n.key.Bytes())
+	parentKey := NewBitstring(key.BitLen() - n.BitQuantum())
+	parentKey.SetBytes(key.Bytes())
 	parent, err := n.Node(parentKey)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to get parent: %v", err))
@@ -310,92 +476,13 @@ func (n *prefixNode) Parent() (recon.PrefixNode, bool) {
 	return parent, true
 }
 
-func (n *prefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) (err error) {
-	n.updateSvalues(z, marray)
-	n.numElements++
-	if n.IsLeaf() {
-		if len(n.elements) > n.SplitThreshold() {
-			err = n.split(depth)
-			if err != nil {
-				return
-			}
-		} else {
-			n.elements = append(n.elements, z)
-			n.saveNode(n)
-			return
-		}
-	}
-	n.saveNode(n)
-	child := recon.NextChild(n, bs, depth).(*prefixNode)
-	return child.insert(z, marray, bs, depth+1)
-}
-
-func (n *prefixNode) split(depth int) (err error) {
-	// Create child nodes
-	numChildren := 1 << uint(n.BitQuantum())
-	for i := 0; i < numChildren; i++ {
-		// Create new empty child node
-		_, err = n.newChildNode(n, i)
-		if err != nil {
-			return
-		}
-		n.childKeys = append(n.childKeys, i)
-	}
-	// Move elements into child nodes
-	for _, element := range n.elements {
-		bs := NewBitstring(P_SKS.BitLen())
-		bs.SetBytes(ReverseBytes(element.Bytes()))
-		child := recon.NextChild(n, bs, depth).(*prefixNode)
-		child.insert(element, recon.AddElementArray(n.prefixTree, element), bs, depth+1)
-	}
-	n.elements = nil
-	return
-}
-
 func (n *prefixNode) updateSvalues(z *Zp, marray []*Zp) {
 	if len(marray) != len(n.points) {
 		panic("Inconsistent NumSamples size")
 	}
+	svalues := mustDecodeZZarray(n.NodeSValues)
 	for i := 0; i < len(marray); i++ {
-		n.svalues[i] = Z(z.P).Mul(n.svalues[i], marray[i])
+		svalues[i] = Z(z.P).Mul(svalues[i], marray[i])
 	}
-}
-
-func (n *prefixNode) remove(z *Zp, marray []*Zp, bs *Bitstring, depth int) error {
-	n.updateSvalues(z, marray)
-	n.numElements--
-	if !n.IsLeaf() {
-		if n.numElements <= n.JoinThreshold() {
-			n.join()
-		} else {
-			n.saveNode(n)
-			child := recon.NextChild(n, bs, depth).(*prefixNode)
-			return child.remove(z, marray, bs, depth+1)
-		}
-	}
-	n.elements = withRemoved(n.elements, z)
-	n.saveNode(n)
-	return nil
-}
-
-func (n *prefixNode) join() {
-	for _, child := range n.Children() {
-		n.elements = append(n.elements, child.Elements()...)
-	}
-	n.childKeys = nil
-}
-
-func withRemoved(elements []*Zp, z *Zp) (result []*Zp) {
-	var has bool
-	for _, element := range elements {
-		if element.Cmp(z) != 0 {
-			result = append(result, element)
-		} else {
-			has = true
-		}
-	}
-	if !has {
-		panic("Remove non-existent element from node")
-	}
-	return
+	n.NodeSValues = mustEncodeZZarray(svalues)
 }

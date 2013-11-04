@@ -30,7 +30,7 @@ type PrefixTree interface {
 	Init()
 	Create() error
 	Drop() error
-	Flush() error
+	Close() error
 	SplitThreshold() int
 	JoinThreshold() int
 	BitQuantum() int
@@ -117,7 +117,7 @@ func (t *MemPrefixTree) Drop() error {
 	return nil
 }
 
-func (t *MemPrefixTree) Flush() error { return nil }
+func (t *MemPrefixTree) Close() error { return nil }
 
 func Find(t PrefixTree, z *Zp) (PrefixNode, error) {
 	bs := NewZpBitstring(z)

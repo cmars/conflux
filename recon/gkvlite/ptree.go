@@ -124,6 +124,11 @@ func (t *prefixTree) Flush() error {
 	return t.f.Sync()
 }
 
+func (t *prefixTree) Close() error {
+	t.s.Close()
+	return t.f.Close()
+}
+
 func (t *prefixTree) Init() {
 }
 

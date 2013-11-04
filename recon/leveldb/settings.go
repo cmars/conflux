@@ -23,28 +23,20 @@ package leveldb
 
 import (
 	"github.com/cmars/conflux/recon"
-	"github.com/pelletier/go-toml"
 )
 
-type DbSettings struct {
+type Settings struct {
 	*recon.Settings
 }
 
-func (s *DbSettings) DbPath() string {
-	return s.GetString("conflux.recon.leveldb.path", "/var/lib/hockeypuck/ptree-leveldb")
+func (s *Settings) Path() string {
+	return s.GetString("conflux.recon.leveldb.path", "conflux-ptree")
 }
 
-func NewSettings(tree *toml.TomlTree) *DbSettings {
-	reconSettings := recon.NewSettings(tree)
-	return &DbSettings{reconSettings}
+func NewSettings(reconSettings *recon.Settings) *Settings {
+	return &Settings{reconSettings}
 }
 
-func DefaultSettings() *DbSettings {
-	reconSettings := recon.DefaultSettings()
-	return &DbSettings{reconSettings}
-}
-
-func LoadSettings(path string) (*DbSettings, error) {
-	reconSettings, err := recon.LoadSettings(path)
-	return &DbSettings{reconSettings}, err
+func DefaultSettings() *Settings {
+	return NewSettings(recon.DefaultSettings())
 }

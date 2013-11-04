@@ -27,29 +27,29 @@ import (
 	"testing"
 )
 
-type ldbPeerManager struct {
+type peerManager struct {
 	t *testing.T
 }
 
-func (lpm *ldbPeerManager) CreatePeer() (peer *recon.Peer, path string) {
-	return createTestPeer(lpm.t)
+func (lpm *peerManager) CreatePeer() (peer *recon.Peer, path string) {
+	return createTestPeer(lpm.t), ""
 }
 
-func (lpm *ldbPeerManager) DestroyPeer(peer *recon.Peer, path string) {
-	destroyTestPeer(peer, path)
+func (lpm *peerManager) DestroyPeer(peer *recon.Peer, path string) {
+	destroyTestPeer(peer)
 }
 
 // Test full node sync.
 func TestFullSync(t *testing.T) {
-	RunFullSync(t, &ldbPeerManager{t})
+	RunFullSync(t, &peerManager{t})
 }
 
 // Test sync with polynomial interpolation.
 func TestPolySyncMBar(t *testing.T) {
-	RunPolySyncMBar(t, &ldbPeerManager{t})
+	RunPolySyncMBar(t, &peerManager{t})
 }
 
 // Test sync with polynomial interpolation.
 func TestPolySyncLowMBar(t *testing.T) {
-	RunPolySyncLowMBar(t, &ldbPeerManager{t})
+	RunPolySyncLowMBar(t, &peerManager{t})
 }
