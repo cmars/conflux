@@ -47,6 +47,7 @@ func (p *Peer) Gossip() {
 		case <-timer.C:
 			var peer net.Addr
 			var err error
+			var conn net.Conn
 			if p.paused {
 				goto DELAY
 			}
@@ -58,7 +59,12 @@ func (p *Peer) Gossip() {
 				goto DELAY
 			}
 			log.Println(GOSSIP, "Initiating recon with peer", peer)
-			err = p.initiateRecon(peer)
+			conn, err = net.DialTimeout(peer.Network(), peer.String(), time.Second)
+			if err != nil {
+				log.Println(GOSSIP, "Error connecting to", peer, ":", err)
+				goto DELAY
+			}
+			err = p.InitiateRecon(conn)
 			if err != nil {
 				log.Println(GOSSIP, "Recon error:", err)
 			}
@@ -83,17 +89,15 @@ func (p *Peer) choosePartner() (net.Addr, error) {
 	return partners[rand.Intn(len(partners))], nil
 }
 
-func (p *Peer) initiateRecon(peer net.Addr) error {
-	// Connect to peer
-	conn, err := net.DialTimeout(peer.Network(), peer.String(), time.Second)
-	if err != nil {
-		return err
-	}
+func (p *Peer) InitiateRecon(conn net.Conn) error {
 	defer conn.Close()
 	if p.ReadTimeout() > 0 {
 		conn.SetReadDeadline(time.Now().Add(time.Second * time.Duration(p.ReadTimeout())))
 	}
 	remoteConfig, err := p.handleConfig(conn, GOSSIP)
+	if err != nil {
+		return err
+	}
 	// Interact with peer
 	return p.ExecCmd(func() error {
 		return p.clientRecon(conn, remoteConfig)

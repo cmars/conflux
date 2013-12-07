@@ -23,12 +23,18 @@
 package testing
 
 import (
-	"github.com/bmizerany/assert"
-	. "github.com/cmars/conflux"
-	. "github.com/cmars/conflux/recon"
+	"fmt"
+	"io/ioutil"
 	"log"
+	"net"
+	"os"
 	"testing"
 	"time"
+
+	"github.com/bmizerany/assert"
+
+	. "github.com/cmars/conflux"
+	. "github.com/cmars/conflux/recon"
 )
 
 type PeerManager interface {
@@ -36,272 +42,256 @@ type PeerManager interface {
 	DestroyPeer(*Peer, string)
 }
 
+func runSockRecon(t *testing.T, peer1, peer2 *Peer, sock string) chan error {
+	errChan := make(chan error, 2)
+	l, err := net.Listen("unix", sock)
+	assert.Equal(t, nil, err)
+	go func() {
+		defer l.Close()
+		c1, err := l.Accept()
+		assert.Equal(t, nil, err)
+		err = peer1.Accept(c1)
+		errChan <- err
+	}()
+	go func() {
+		c2, err := net.Dial("unix", sock)
+		assert.Equal(t, nil, err)
+		err = peer2.InitiateRecon(c2)
+		errChan <- err
+	}()
+	return errChan
+}
+
+func pollRootConvergence(t *testing.T, peer1, peer2 *Peer) chan error {
+	errChan := make(chan error)
+	go func() {
+		timer := time.NewTimer(time.Duration(10) * time.Second)
+		var zs1 *ZSet = NewZSet()
+		var zs2 *ZSet = NewZSet()
+	POLLING:
+		for {
+			select {
+			case r1, ok := <-peer1.RecoverChan:
+				if !ok {
+					break POLLING
+				}
+				t.Logf("Peer1 recover: %v", r1)
+				log.Println("Peer1 recover:", r1)
+				for _, zp := range r1.RemoteElements {
+					assert.T(t, zp != nil)
+					peer1.Insert(zp)
+				}
+				peer1.ExecCmd(func() error {
+					root1, err := peer1.Root()
+					assert.Equal(t, err, nil)
+					zs1 = NewZSet(root1.Elements()...)
+					return err
+				})
+			case r2, ok := <-peer2.RecoverChan:
+				if !ok {
+					break POLLING
+				}
+				t.Logf("Peer2 recover: %v", r2)
+				log.Println("Peer2 recover:", r2)
+				for _, zp := range r2.RemoteElements {
+					assert.T(t, zp != nil)
+					peer2.Insert(zp)
+				}
+				peer2.ExecCmd(func() error {
+					root2, err := peer2.Root()
+					assert.Equal(t, err, nil)
+					zs2 = NewZSet(root2.Elements()...)
+					return err
+				})
+			case _ = <-timer.C:
+				t.FailNow()
+			}
+			if zs1.Equal(zs2) {
+				errChan <- nil
+				return
+			}
+		}
+		errChan <- fmt.Errorf("Set reconciliation did not converge")
+	}()
+	return errChan
+}
+
+func pollConvergence(t *testing.T, peer1, peer2 *Peer, peer1Needs, peer2Needs *ZSet) chan error {
+	errChan := make(chan error)
+	go func() {
+		timer := time.NewTimer(time.Duration(10) * time.Second)
+	POLLING:
+		for {
+			select {
+			case r1, ok := <-peer1.RecoverChan:
+				if !ok {
+					break POLLING
+				}
+				t.Logf("Peer1 recover: %v", r1)
+				log.Println("Peer1 recover:", r1)
+				for _, zp := range r1.RemoteElements {
+					assert.T(t, zp != nil)
+					peer1.Insert(zp)
+					peer1Needs.Remove(zp)
+				}
+			case r2, ok := <-peer2.RecoverChan:
+				if !ok {
+					break POLLING
+				}
+				t.Logf("Peer2 recover: %v", r2)
+				log.Println("Peer2 recover:", r2)
+				for _, zp := range r2.RemoteElements {
+					assert.T(t, zp != nil)
+					peer2.Insert(zp)
+					peer2Needs.Remove(zp)
+				}
+			case _ = <-timer.C:
+				t.FailNow()
+			}
+			if peer1Needs.Len() == 0 && peer2Needs.Len() == 0 {
+				errChan <- nil
+				return
+			}
+		}
+		errChan <- fmt.Errorf("Set reconciliation did not converge")
+	}()
+	return errChan
+}
+
+func mksock(t *testing.T) string {
+	var sock string
+	{
+		f, err := ioutil.TempFile("", "sock")
+		assert.Equal(t, nil, err)
+		defer f.Close()
+		sock = f.Name()
+	}
+	assert.T(t, sock != "")
+	err := os.Remove(sock)
+	assert.Equal(t, nil, err)
+	return sock
+}
+
 // Test full node sync.
 func RunFullSync(t *testing.T, peerMgr PeerManager) {
-	peer1ReconAddr := "localhost:22743"
-	peer2ReconAddr := "localhost:22745"
+	sock := mksock(t)
+	defer os.Remove(sock)
+
 	peer1, peer1Path := peerMgr.CreatePeer()
 	defer peerMgr.DestroyPeer(peer1, peer1Path)
-	peer1.Settings.Set("conflux.recon.logname", "peer1")
-	peer1.Settings.Set("conflux.recon.httpPort", 22742)
-	peer1.Settings.Set("conflux.recon.reconPort", 22743)
-	peer1.Settings.Set("conflux.recon.gossipIntervalSecs", 30)
-	peer1.Settings.Set("conflux.recon.partners", []interface{}{peer2ReconAddr})
-	peer1.Settings.Set("conflux.recon.readTimeout", 10)
-	peer1.Settings.Set("conflux.recon.connTimeout", 3)
+	peer2, peer2Path := peerMgr.CreatePeer()
+	defer peerMgr.DestroyPeer(peer2, peer2Path)
+
 	peer1.PrefixTree.Insert(Zi(P_SKS, 65537))
 	peer1.PrefixTree.Insert(Zi(P_SKS, 65539))
 	root, _ := peer1.PrefixTree.Root()
-	log.Println(root.Elements())
-	peer2, peer2Path := peerMgr.CreatePeer()
-	defer peerMgr.DestroyPeer(peer2, peer2Path)
-	peer2.Settings.Set("conflux.recon.logname", "peer2")
-	peer2.Settings.Set("conflux.recon.httpPort", 22744)
-	peer2.Settings.Set("conflux.recon.reconPort", 22745)
-	peer2.Settings.Set("conflux.recon.gossipIntervalSecs", 30)
-	peer2.Settings.Set("conflux.recon.partners", []interface{}{peer1ReconAddr})
-	peer2.Settings.Set("conflux.recon.readTimeout", 10)
-	peer2.Settings.Set("conflux.recon.connTimeout", 3)
+	log.Println("Peer1:", root.Elements())
+
 	peer2.PrefixTree.Insert(Zi(P_SKS, 65537))
 	peer2.PrefixTree.Insert(Zi(P_SKS, 65541))
 	root, _ = peer2.PrefixTree.Root()
-	log.Println(root.Elements())
-	peer1.Start()
-	peer2.Start()
-	timer := time.NewTimer(time.Duration(120) * time.Second)
-	var zs1 *ZSet = NewZSet()
-	var zs2 *ZSet = NewZSet()
-POLLING:
-	for {
-		select {
-		case r1, ok := <-peer1.RecoverChan:
-			if !ok {
-				break POLLING
-			}
-			t.Logf("Peer1 recover: %v", r1)
-			log.Println("Peer1 recover:", r1)
-			for _, zp := range r1.RemoteElements {
-				assert.T(t, zp != nil)
-				peer1.Insert(zp)
-			}
-			peer1.ExecCmd(func() error {
-				root1, err := peer1.Root()
-				assert.Equal(t, err, nil)
-				zs1 = NewZSet(root1.Elements()...)
-				return err
-			})
-		case r2, ok := <-peer2.RecoverChan:
-			if !ok {
-				break POLLING
-			}
-			t.Logf("Peer2 recover: %v", r2)
-			log.Println("Peer2 recover:", r2)
-			for _, zp := range r2.RemoteElements {
-				assert.T(t, zp != nil)
-				peer2.Insert(zp)
-			}
-			peer2.ExecCmd(func() error {
-				root2, err := peer2.Root()
-				assert.Equal(t, err, nil)
-				zs2 = NewZSet(root2.Elements()...)
-				return err
-			})
-		case _ = <-timer.C:
-			t.FailNow()
-		}
-		if zs1.Equal(zs2) {
-			return
-		}
-	}
+	log.Println("Peer2:", root.Elements())
+
+	reconErrChan := runSockRecon(t, peer1, peer2, sock)
+	convergeErrChan := pollRootConvergence(t, peer1, peer2)
+	err := <-convergeErrChan
+	assert.Equal(t, nil, err)
+	err = <-reconErrChan
+	assert.Equal(t, nil, err)
+	err = <-reconErrChan
+	assert.Equal(t, nil, err)
 }
 
 // Test sync with polynomial interpolation.
 func RunPolySyncMBar(t *testing.T, peerMgr PeerManager) {
-	//peer1ReconAddr := "localhost:22743"
-	peer2ReconAddr := "localhost:22745"
+	sock := mksock(t)
+	defer os.Remove(sock)
+
 	peer1, peer1Path := peerMgr.CreatePeer()
 	defer peerMgr.DestroyPeer(peer1, peer1Path)
-	peer1.Settings.Set("conflux.recon.logname", "peer1")
-	peer1.Settings.Set("conflux.recon.httpPort", 22742)
-	peer1.Settings.Set("conflux.recon.reconPort", 22743)
-	peer1.Settings.Set("conflux.recon.gossipIntervalSecs", 30)
-	peer1.Settings.Set("conflux.recon.partners", []interface{}{peer2ReconAddr})
-	peer1.Settings.Set("conflux.recon.readTimeout", 10)
-	peer1.Settings.Set("conflux.recon.connTimeout", 3)
+	peer2, peer2Path := peerMgr.CreatePeer()
+	defer peerMgr.DestroyPeer(peer2, peer2Path)
+
+	onlyInPeer1 := NewZSet()
+	// Load up peer 1 with items
 	for i := 1; i < 100; i++ {
 		peer1.PrefixTree.Insert(Zi(P_SKS, 65537*i))
 	}
 	// Four extra samples
 	for i := 1; i < 5; i++ {
-		peer1.PrefixTree.Insert(Zi(P_SKS, 68111*i))
+		z := Zi(P_SKS, 68111*i)
+		peer1.PrefixTree.Insert(z)
+		onlyInPeer1.Add(z)
 	}
 	root, _ := peer1.PrefixTree.Root()
-	log.Println(root.Elements())
-	peer2, peer2Path := peerMgr.CreatePeer()
-	defer peerMgr.DestroyPeer(peer2, peer2Path)
-	peer2.Settings.Set("conflux.recon.logname", "peer2")
-	peer2.Settings.Set("conflux.recon.httpPort", 22744)
-	peer2.Settings.Set("conflux.recon.reconPort", 22745)
-	peer2.Settings.Set("conflux.recon.gossipIntervalSecs", 30)
-	peer2.Settings.Set("conflux.recon.partners", []interface{}{ /*peer2ReconAddr*/})
-	peer2.Settings.Set("conflux.recon.readTimeout", 10)
-	peer2.Settings.Set("conflux.recon.connTimeout", 3)
+	log.Println("Peer1:", root.Elements())
+
+	onlyInPeer2 := NewZSet()
+	// Load up peer 2 with items
 	for i := 1; i < 100; i++ {
 		peer2.PrefixTree.Insert(Zi(P_SKS, 65537*i))
 	}
 	// One extra sample
 	for i := 1; i < 2; i++ {
-		peer2.PrefixTree.Insert(Zi(P_SKS, 70001*i))
+		z := Zi(P_SKS, 70001*i)
+		peer2.PrefixTree.Insert(z)
+		onlyInPeer2.Add(z)
 	}
 	root, _ = peer2.PrefixTree.Root()
-	log.Println(root.Elements())
-	peer2.Start()
-	peer1.Start()
-	timer := time.NewTimer(time.Duration(120) * time.Second)
-	var zs1 *ZSet = NewZSet()
-	var zs2 *ZSet = NewZSet()
-POLLING:
-	for {
-		select {
-		case r1, ok := <-peer1.RecoverChan:
-			t.Logf("Peer1 recover: %v", r1)
-			log.Println("Peer1 recover:", r1)
-			for _, zp := range r1.RemoteElements {
-				assert.T(t, zp != nil)
-				peer1.Insert(zp)
-			}
-			if !ok {
-				break POLLING
-			}
-			peer1.ExecCmd(func() error {
-				root1, err := peer1.Root()
-				assert.Equal(t, err, nil)
-				zs1 = NewZSet(root1.Elements()...)
-				return err
-			})
-		case r2, ok := <-peer2.RecoverChan:
-			t.Logf("Peer2 recover: %v", r2)
-			log.Println("Peer2 recover:", r2)
-			for _, zp := range r2.RemoteElements {
-				assert.T(t, zp != nil)
-				peer2.Insert(zp)
-			}
-			if !ok {
-				break POLLING
-			}
-			peer2.ExecCmd(func() error {
-				root2, err := peer2.Root()
-				assert.Equal(t, err, nil)
-				zs2 = NewZSet(root2.Elements()...)
-				return err
-			})
-		case _ = <-timer.C:
-			t.FailNow()
-		}
-		if zs1.Equal(zs2) {
-			return
-		}
-	}
+	log.Println("Peer2:", root.Elements())
+
+	reconErrChan := runSockRecon(t, peer1, peer2, sock)
+	convergeErrChan := pollConvergence(t, peer1, peer2, onlyInPeer2, onlyInPeer1)
+	err := <-convergeErrChan
+	assert.Equal(t, nil, err)
+	err = <-reconErrChan
+	assert.Equal(t, nil, err)
+	err = <-reconErrChan
+	assert.Equal(t, nil, err)
 }
 
 // Test sync with polynomial interpolation.
 func RunPolySyncLowMBar(t *testing.T, peerMgr PeerManager) {
-	peer2ReconAddr := "localhost:22745"
+	sock := mksock(t)
+	defer os.Remove(sock)
+
 	peer1, peer1Path := peerMgr.CreatePeer()
 	defer peerMgr.DestroyPeer(peer1, peer1Path)
-	peer1.Settings.Set("conflux.recon.logname", "peer1")
-	peer1.Settings.Set("conflux.recon.httpPort", 22742)
-	peer1.Settings.Set("conflux.recon.reconPort", 22743)
-	peer1.Settings.Set("conflux.recon.gossipIntervalSecs", 30)
-	peer1.Settings.Set("conflux.recon.partners", []interface{}{peer2ReconAddr})
-	peer1.Settings.Set("conflux.recon.readTimeout", 10)
-	peer1.Settings.Set("conflux.recon.connTimeout", 3)
+	peer2, peer2Path := peerMgr.CreatePeer()
+	defer peerMgr.DestroyPeer(peer2, peer2Path)
+
+	onlyInPeer1 := NewZSet()
 	for i := 1; i < 100; i++ {
 		peer1.PrefixTree.Insert(Zi(P_SKS, 65537*i))
 	}
-	// Four extra samples
+	// extra samples
 	for i := 1; i < 50; i++ {
-		peer1.PrefixTree.Insert(Zi(P_SKS, 68111*i))
+		z := Zi(P_SKS, 68111*i)
+		onlyInPeer1.Add(z)
+		peer1.PrefixTree.Insert(z)
 	}
 	root1, _ := peer1.PrefixTree.Root()
-	log.Println(root1.Elements())
-	peer2, peer2Path := peerMgr.CreatePeer()
-	defer peerMgr.DestroyPeer(peer2, peer2Path)
-	peer2.Settings.Set("conflux.recon.logname", "peer2")
-	peer2.Settings.Set("conflux.recon.httpPort", 22744)
-	peer2.Settings.Set("conflux.recon.reconPort", 22745)
-	peer2.Settings.Set("conflux.recon.gossipIntervalSecs", 30)
-	peer2.Settings.Set("conflux.recon.partners", []interface{}{ /*peer2ReconAddr*/})
-	peer2.Settings.Set("conflux.recon.readTimeout", 10)
-	peer2.Settings.Set("conflux.recon.connTimeout", 3)
+	log.Println("Peer1:", root1.Elements())
+
+	onlyInPeer2 := NewZSet()
 	for i := 1; i < 100; i++ {
 		peer2.PrefixTree.Insert(Zi(P_SKS, 65537*i))
 	}
-	// One extra sample
+	// extra samples
 	for i := 1; i < 20; i++ {
-		peer2.PrefixTree.Insert(Zi(P_SKS, 70001*i))
+		z := Zi(P_SKS, 70001*i)
+		onlyInPeer2.Add(z)
+		peer2.PrefixTree.Insert(z)
 	}
 	root2, _ := peer2.PrefixTree.Root()
-	log.Println(root2.Elements())
-	peer2.Start()
-	peer1.Start()
-	timer := time.NewTimer(time.Duration(120) * time.Second)
-	var zs1 *ZSet = NewZSet()
-	var zs2 *ZSet = NewZSet()
-POLLING:
-	for {
-		select {
-		case r1, ok := <-peer1.RecoverChan:
-			if !ok {
-				break POLLING
-			}
-			peer1.ExecCmd(func() error {
-				root1, err := peer1.Root()
-				assert.Equal(t, err, nil)
-				log.Println("Peer1 has", len(root1.Elements()))
-				return nil
-			})
-			items := r1.RemoteElements
-			log.Println("Peer1 recover:", items)
-			for _, zp := range items {
-				assert.T(t, zp != nil)
-				log.Println("Peer1 insert:", zp)
-				peer1.Insert(zp)
-			}
-			peer1.ExecCmd(func() error {
-				root1, err := peer1.Root()
-				assert.Equal(t, err, nil)
-				zs1 = NewZSet(root1.Elements()...)
-				return err
-			})
-		case r2, ok := <-peer2.RecoverChan:
-			if !ok {
-				break POLLING
-			}
-			peer2.ExecCmd(func() error {
-				root2, err := peer2.Root()
-				assert.Equal(t, err, nil)
-				log.Println("Peer2 has", len(root2.Elements()))
-				return nil
-			})
-			items := r2.RemoteElements
-			log.Println("Peer2 recover:", items)
-			for _, zp := range items {
-				assert.T(t, zp != nil)
-				log.Println("Peer2 insert:", zp)
-				peer2.Insert(zp)
-			}
-			peer2.ExecCmd(func() error {
-				root2, err := peer2.Root()
-				assert.Equal(t, err, nil)
-				zs2 = NewZSet(root2.Elements()...)
-				return err
-			})
-		case _ = <-timer.C:
-			t.FailNow()
-		}
-		if zs1.Equal(zs2) {
-			return
-		}
-	}
+	log.Println("Peer2:", root2.Elements())
+
+	reconErrChan := runSockRecon(t, peer1, peer2, sock)
+	convergeErrChan := pollConvergence(t, peer1, peer2, onlyInPeer2, onlyInPeer1)
+	err := <-convergeErrChan
+	assert.Equal(t, nil, err)
+	err = <-reconErrChan
+	assert.Equal(t, nil, err)
+	err = <-reconErrChan
+	assert.Equal(t, nil, err)
 }

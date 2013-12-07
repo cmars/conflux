@@ -30,7 +30,9 @@ import (
 type memPeerManager struct{}
 
 func (mpm *memPeerManager) CreatePeer() (peer *Peer, path string) {
-	return NewMemPeer(), ""
+	peer = NewMemPeer()
+	go peer.HandleCmds()
+	return peer, ""
 }
 
 func (mpm *memPeerManager) DestroyPeer(peer *Peer, path string) {

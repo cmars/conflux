@@ -22,11 +22,14 @@
 package leveldb
 
 import (
+	"io/ioutil"
+	"os"
+	"testing"
+
 	"github.com/bmizerany/assert"
+
 	. "github.com/cmars/conflux"
 	"github.com/cmars/conflux/recon"
-	"io/ioutil"
-	"testing"
 )
 
 const TEST_DB = "recon_test"
@@ -42,12 +45,12 @@ func createTestPeer(t *testing.T) *recon.Peer {
 	err = ptree.Create()
 	assert.Equal(t, err, nil)
 	peer := recon.NewPeer(settings.Settings, ptree)
-	assert.Equal(t, err, nil)
+	go peer.HandleCmds()
 	return peer
 }
 
 func destroyTestPeer(peer *recon.Peer) {
-	//os.RemoveAll(peer.Settings.GetString("conflux.recon.leveldb.path", ""))
+	os.RemoveAll(peer.Settings.GetString("conflux.recon.leveldb.path", ""))
 }
 
 func TestInsertNodesNoSplit(t *testing.T) {
@@ -148,7 +151,7 @@ func TestInsertRemoveProtection(t *testing.T) {
 func TestInsertDups(t *testing.T) {
 	var err error
 	peer := createTestPeer(t)
-	//defer destroyTestPeer(peer)
+	defer destroyTestPeer(peer)
 	tree := peer.PrefixTree
 	tree.Init()
 	items := []*Zp{}
@@ -176,9 +179,14 @@ func TestInsertDups(t *testing.T) {
 
 func TestInsertNodeSplit(t *testing.T) {
 	peer := createTestPeer(t)
-	//defer destroyTestPeer(peer)
+	defer destroyTestPeer(peer)
 	tree := peer.PrefixTree
 	tree.Init()
+	root, err := tree.Root()
+	for _, sv := range root.SValues() {
+		t.Log("SV:", sv)
+		assert.Equal(t, 0, sv.Cmp(Zi(P_SKS, 1)))
+	}
 	// Add a bunch of nodes, enough to cause splits
 	for i := 0; i < tree.SplitThreshold()*4; i++ {
 		z := Zi(P_SKS, i+65536)
@@ -188,16 +196,16 @@ func TestInsertNodeSplit(t *testing.T) {
 	// Remove a bunch of nodes, enough to cause joins
 	for i := 0; i < tree.SplitThreshold()*4; i++ {
 		z := Zi(P_SKS, i+65536)
-		//t.Log("Remove:", z)
+		t.Log("Remove:", z)
 		tree.Remove(z)
 	}
-	root, err := tree.Root()
+	root, err = tree.Root()
 	assert.Equal(t, err, nil)
 	// Insert/Remove reversible after splitting & joining?
 	for _, sv := range root.SValues() {
+		t.Log("SV:", sv)
 		assert.Equal(t, 0, sv.Cmp(Zi(P_SKS, 1)))
 	}
 	assert.Equal(t, 0, len(root.Children()))
 	assert.Equal(t, 0, len(root.Elements()))
-	//destroyTestPeer(peer)
 }

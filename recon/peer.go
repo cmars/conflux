@@ -99,7 +99,7 @@ func (p *Peer) Start() {
 	p.serverStop = make(chan stopNotify)
 	go p.Serve()
 	go p.Gossip()
-	go p.handleCmds()
+	go p.HandleCmds()
 }
 
 type stopNotify chan interface{}
@@ -128,10 +128,10 @@ func (p *Peer) Resume() {
 	p.paused = false
 }
 
-// handleCmds executes recon cmds in a single goroutine.
+// HandleCmds executes recon cmds in a single goroutine.
 // This forces sequential reads and writes to the prefix
 // tree.
-func (p *Peer) handleCmds() {
+func (p *Peer) HandleCmds() {
 	for {
 		select {
 		case cmd, ok := <-p.reconCmdReq:
@@ -193,7 +193,7 @@ func (p *Peer) Serve() {
 			conn.SetReadDeadline(time.Now().Add(time.Second * time.Duration(p.ReadTimeout())))
 		}
 		go func() {
-			err = p.accept(conn)
+			err = p.Accept(conn)
 			if err != nil {
 				log.Println(SERVE, err)
 			}
@@ -203,11 +203,13 @@ func (p *Peer) Serve() {
 
 func (p *Peer) handleConfig(conn net.Conn, role string) (remoteConfig *Config, err error) {
 	// Send config to server on connect
-	log.Println(role, "writing config:", p.Config())
-	err = WriteMsg(conn, p.Config())
-	if err != nil {
-		return
-	}
+	go func() {
+		log.Println(role, "writing config:", p.Config())
+		err = WriteMsg(conn, p.Config())
+		if err != nil {
+			return
+		}
+	}()
 	// Receive remote peer's config
 	log.Println(role, "reading remote config:", conn.RemoteAddr())
 	var msg ReconMsg
@@ -243,15 +245,17 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (remoteConfig *Config, e
 		err = IncompatiblePeerError
 		return
 	}
-	bufw := bufio.NewWriter(conn)
-	err = WriteString(bufw, RemoteConfigPassed)
-	if err != nil {
-		return
-	}
-	err = bufw.Flush()
-	if err != nil {
-		return
-	}
+	go func() {
+		bufw := bufio.NewWriter(conn)
+		err = WriteString(bufw, RemoteConfigPassed)
+		if err != nil {
+			return
+		}
+		err = bufw.Flush()
+		if err != nil {
+			return
+		}
+	}()
 	remoteConfigStatus, err := ReadString(conn)
 	if remoteConfigStatus != RemoteConfigPassed {
 		var reason string
@@ -264,7 +268,7 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (remoteConfig *Config, e
 	return
 }
 
-func (p *Peer) accept(conn net.Conn) error {
+func (p *Peer) Accept(conn net.Conn) error {
 	log.Println(SERVE, "connection from:", conn.RemoteAddr())
 	remoteConfig, err := p.handleConfig(conn, SERVE)
 	if err != nil {
@@ -461,13 +465,13 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 			var hasMsg bool
 			// Set a small read timeout to simulate non-blocking I/O
 			if err = conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
-				return
+				log.Println(SERVE, "Warning:", err)
 			}
 			msg, err = ReadMsg(conn)
 			hasMsg = (err == nil)
 			// Restore blocking I/O
 			if err = conn.SetReadDeadline(time.Unix(int64(0), int64(0))); err != nil {
-				return
+				log.Println(SERVE, "Warning:", err)
 			}
 			if hasMsg {
 				recon.popBottom()
