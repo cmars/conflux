@@ -277,7 +277,10 @@ func (ch *changeElement) split() (err error) {
 		if err != nil {
 			return err
 		}
-		ch.cur.updateSvalues(z, marray)
+		// The child's sample values need to be updated with the split element.
+		// Note that the parent's sample values do not need to be updated --
+		// they already have this element as a factor.
+		child.updateSvalues(z, marray)
 	}
 	for _, child := range children {
 		err = child.upsertNode()
