@@ -170,15 +170,15 @@ func reversed(b []byte) []byte {
 
 func (zp *Zp) Bytes() []byte {
 	return reversed(zp.Int.Bytes())
-/*
-	b := zp.Int.Bytes()
-	l := len(b)
-	result := make([]byte, len(b)) //zp.P.Bytes()))
-	for i := 0; i < l; i++ {
-		result[i] = b[l-i-1]
-	}
-	return result
-*/
+	/*
+		b := zp.Int.Bytes()
+		l := len(b)
+		result := make([]byte, len(b)) //zp.P.Bytes()))
+		for i := 0; i < l; i++ {
+			result[i] = b[l-i-1]
+		}
+		return result
+	*/
 }
 
 func (zp *Zp) SetBytes(b []byte) {

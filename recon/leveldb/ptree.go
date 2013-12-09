@@ -154,11 +154,21 @@ func (t *prefixTree) getNode(key []byte) (node *prefixNode, err error) {
 	return
 }
 
-func (t *prefixTree) Node(bs *Bitstring) (recon.PrefixNode, error) {
+func (t *prefixTree) Node(bs *Bitstring) (node recon.PrefixNode, err error) {
 	nodeKey := mustEncodeBitstring(bs)
-	node, err := t.getNode(nodeKey)
-	if err != nil {
-		return nil, err
+	for {
+		node, err = t.getNode(nodeKey)
+		if err == recon.PNodeNotFound {
+			if bs.BitLen() == 0 {
+				return nil, err
+			}
+			parent := NewBitstring(bs.BitLen() - t.BitQuantum())
+			parent.SetBytes(bs.Bytes())
+			bs = parent
+			nodeKey = mustEncodeBitstring(bs)
+		} else {
+			break
+		}
 	}
 	return node, err
 }

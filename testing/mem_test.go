@@ -60,3 +60,18 @@ func TestPolySyncMBar(t *testing.T) {
 func TestPolySyncLowMBar(t *testing.T) {
 	RunPolySyncLowMBar(t, memPeerMgr)
 }
+
+func TestOneSidedMedium(t *testing.T) {
+	RunOneSided(t, memPeerMgr, false, 250, 30)
+	RunOneSided(t, memPeerMgr, true, 250, 30)
+}
+
+func TestOneSidedLarge(t *testing.T) {
+	RunOneSided(t, memPeerMgr, false, 15000, 30)
+	RunOneSided(t, memPeerMgr, true, 15000, 30)
+}
+
+func TestOneSidedRidiculous(t *testing.T) {
+	RunOneSided(t, memPeerMgr, false, 150000, 120)
+	RunOneSided(t, memPeerMgr, true, 150000, 120)
+}

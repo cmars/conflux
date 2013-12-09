@@ -104,7 +104,8 @@ func pollRootConvergence(t *testing.T, peer1, peer2 *Peer) chan error {
 					return err
 				})
 			case _ = <-timer.C:
-				t.FailNow()
+				errChan <- fmt.Errorf("Timeout waiting for convergence")
+				return
 			}
 			if zs1.Equal(zs2) {
 				errChan <- nil
@@ -116,10 +117,10 @@ func pollRootConvergence(t *testing.T, peer1, peer2 *Peer) chan error {
 	return errChan
 }
 
-func pollConvergence(t *testing.T, peer1, peer2 *Peer, peer1Needs, peer2Needs *ZSet) chan error {
+func pollConvergence(t *testing.T, peer1, peer2 *Peer, peer1Needs, peer2Needs *ZSet, nsecs int) chan error {
 	errChan := make(chan error)
 	go func() {
-		timer := time.NewTimer(time.Duration(10) * time.Second)
+		timer := time.NewTimer(time.Duration(nsecs) * time.Second)
 	POLLING:
 		for {
 			select {
@@ -146,7 +147,11 @@ func pollConvergence(t *testing.T, peer1, peer2 *Peer, peer1Needs, peer2Needs *Z
 					peer2Needs.Remove(zp)
 				}
 			case _ = <-timer.C:
-				t.FailNow()
+				t.Log("TIMEOUT")
+				t.Log("Peer1 still needs ", peer1Needs.Len(), ":", peer1Needs)
+				t.Log("Peer2 still needs ", peer2Needs.Len(), ":", peer2Needs)
+				errChan <- fmt.Errorf("Timeout waiting for convergence")
+				return
 			}
 			if peer1Needs.Len() == 0 && peer2Needs.Len() == 0 {
 				errChan <- nil
@@ -241,7 +246,7 @@ func RunPolySyncMBar(t *testing.T, peerMgr PeerManager) {
 	log.Println("Peer2:", root.Elements())
 
 	reconErrChan := runSockRecon(t, peer1, peer2, sock)
-	convergeErrChan := pollConvergence(t, peer1, peer2, onlyInPeer2, onlyInPeer1)
+	convergeErrChan := pollConvergence(t, peer1, peer2, onlyInPeer2, onlyInPeer1, 10)
 	err := <-convergeErrChan
 	assert.Equal(t, nil, err)
 	err = <-reconErrChan
@@ -287,11 +292,52 @@ func RunPolySyncLowMBar(t *testing.T, peerMgr PeerManager) {
 	log.Println("Peer2:", root2.Elements())
 
 	reconErrChan := runSockRecon(t, peer1, peer2, sock)
-	convergeErrChan := pollConvergence(t, peer1, peer2, onlyInPeer2, onlyInPeer1)
+	convergeErrChan := pollConvergence(t, peer1, peer2, onlyInPeer2, onlyInPeer1, 10)
 	err := <-convergeErrChan
 	assert.Equal(t, nil, err)
 	err = <-reconErrChan
 	assert.Equal(t, nil, err)
 	err = <-reconErrChan
 	assert.Equal(t, nil, err)
+}
+
+// Test a one-sided sync
+func RunOneSided(t *testing.T, peerMgr PeerManager, clientHas bool, n int, nsecs int) {
+	sock := mksock(t)
+	defer os.Remove(sock)
+
+	peer1, peer1Path := peerMgr.CreatePeer()
+	defer peerMgr.DestroyPeer(peer1, peer1Path)
+	peer2, peer2Path := peerMgr.CreatePeer()
+	defer peerMgr.DestroyPeer(peer2, peer2Path)
+
+	expected := NewZSet()
+	var peer *Peer
+	if clientHas {
+		peer = peer2
+	} else {
+		peer = peer1
+	}
+
+	for i := 1; i < n; i++ {
+		z := Zi(P_SKS, 65537*i)
+		peer.PrefixTree.Insert(z)
+		expected.Add(z)
+	}
+
+	var reconErrChan chan error
+	reconErrChan = runSockRecon(t, peer1, peer2, sock)
+	var convergeErrChan chan error
+	if clientHas {
+		convergeErrChan = pollConvergence(t, peer1, peer2, expected, NewZSet(), nsecs)
+	} else {
+		convergeErrChan = pollConvergence(t, peer1, peer2, NewZSet(), expected, nsecs)
+	}
+	err := <-convergeErrChan
+	assert.Equal(t, nil, err)
+	err = <-reconErrChan
+	assert.Equal(t, nil, err)
+	err = <-reconErrChan
+	assert.Equal(t, nil, err)
+	assert.Equal(t, 0, expected.Len())
 }

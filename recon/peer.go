@@ -464,7 +464,7 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 			var msg ReconMsg
 			var hasMsg bool
 			// Set a small read timeout to simulate non-blocking I/O
-			if err = conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+			if err = conn.SetReadDeadline(time.Now().Add(time.Millisecond)); err != nil {
 				log.Println(SERVE, "Warning:", err)
 			}
 			msg, err = ReadMsg(conn)
