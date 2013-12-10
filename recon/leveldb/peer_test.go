@@ -58,19 +58,10 @@ func TestOneSidedMediumLeft(t *testing.T) {
 	RunOneSided(t, &peerManager{t}, false, 250, 10)
 }
 
-/*
-// TODO: Why does this require multiple rounds for leveldb?
 func TestOneSidedMediumRight(t *testing.T) {
 	RunOneSided(t, &peerManager{t}, true, 250, 10)
 }
-*/
 
 func TestOneSidedLargeLeft(t *testing.T) {
 	RunOneSided(t, &peerManager{t}, false, 15000, 180)
 }
-
-/*
-func TestOneSidedRidiculous(t *testing.T) {
-	RunOneSided(t, &peerManager{t}, 150000, 120)
-}
-*/

@@ -143,7 +143,7 @@ func (p *Peer) clientRecon(conn net.Conn, remoteConfig *Config) error {
 	}
 	items := respSet.Items()
 	if len(items) > 0 {
-		log.Println(GOSSIP, "Sending recover:", items)
+		log.Println(GOSSIP, "Sending recover:", len(items), "items")
 		p.RecoverChan <- &Recover{
 			RemoteAddr:     conn.RemoteAddr(),
 			RemoteConfig:   remoteConfig,

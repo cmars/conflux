@@ -459,8 +459,15 @@ func (n *prefixNode) Children() (result []recon.PrefixNode) {
 }
 
 func (n *prefixNode) Elements() (result []*Zp) {
-	for _, element := range n.NodeElements {
-		result = append(result, Zb(P_SKS, element))
+	if n.IsLeaf() {
+		for _, element := range n.NodeElements {
+			result = append(result, Zb(P_SKS, element))
+		}
+	} else {
+		// TODO: Eliminate recursion
+		for _, child := range n.Children() {
+			result = append(result, child.Elements()...)
+		}
 	}
 	return
 }

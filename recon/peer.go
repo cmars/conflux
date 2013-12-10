@@ -40,7 +40,7 @@ type Recover struct {
 }
 
 func (r *Recover) String() string {
-	return fmt.Sprintf("%v: %v", r.RemoteAddr, r.RemoteElements)
+	return fmt.Sprintf("%v: %d elements", r.RemoteAddr, len(r.RemoteElements))
 }
 
 func (r *Recover) HkpAddr() (string, error) {
@@ -341,10 +341,6 @@ func (rwc *reconWithClient) pushBottom(bottom *bottomEntry) {
 }
 
 func (rwc *reconWithClient) pushRequest(req *requestEntry) {
-	rwc.requestQ = append([]*requestEntry{req}, rwc.requestQ...)
-}
-
-func (rwc *reconWithClient) appendRequest(req *requestEntry) {
 	rwc.requestQ = append(rwc.requestQ, req)
 }
 
@@ -402,13 +398,9 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 			return errors.New("Syncfail received at leaf node")
 		}
 		log.Println(SERVE, "SyncFail: pushing children")
-		for i, childNode := range req.node.Children() {
+		for _, childNode := range req.node.Children() {
 			log.Println(SERVE, "push:", childNode.Key())
-			if i == 0 {
-				rwc.pushRequest(&requestEntry{key: childNode.Key(), node: childNode})
-			} else {
-				rwc.appendRequest(&requestEntry{key: childNode.Key(), node: childNode})
-			}
+			rwc.pushRequest(&requestEntry{key: childNode.Key(), node: childNode})
 		}
 	case *Elements:
 		rwc.rcvrSet.AddAll(m.ZSet)
