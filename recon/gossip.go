@@ -232,6 +232,6 @@ func (p *Peer) handleReconRqstFull(rf *ReconRqstFull) *msgProgress {
 	log.Println(GOSSIP, "localset=", localset)
 	localdiff := ZSetDiff(localset, rf.Elements)
 	remotediff := ZSetDiff(rf.Elements, localset)
-	log.Println(GOSSIP, "localdiff=", localdiff, "remotediff=", remotediff)
+	log.Println(GOSSIP, "localdiff=(", localdiff.Len(), ") remotediff=(", remotediff.Len(), ")")
 	return &msgProgress{elements: remotediff, messages: []ReconMsg{&Elements{ZSet: localdiff}}}
 }

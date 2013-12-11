@@ -62,6 +62,7 @@ func TestOneSidedMediumRight(t *testing.T) {
 	RunOneSided(t, &peerManager{t}, true, 250, 10)
 }
 
-func TestOneSidedLargeLeft(t *testing.T) {
+func TestOneSidedLarge(t *testing.T) {
 	RunOneSided(t, &peerManager{t}, false, 15000, 180)
+	RunOneSided(t, &peerManager{t}, true, 15000, 180)
 }
