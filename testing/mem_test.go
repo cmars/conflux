@@ -67,11 +67,15 @@ func TestOneSidedMedium(t *testing.T) {
 }
 
 func TestOneSidedLarge(t *testing.T) {
-	RunOneSided(t, memPeerMgr, false, 15000, 30)
-	RunOneSided(t, memPeerMgr, true, 15000, 30)
+	RunOneSided(t, memPeerMgr, false, 15000, 60)
+	RunOneSided(t, memPeerMgr, true, 15000, 60)
 }
 
 func TestOneSidedRidiculous(t *testing.T) {
-	RunOneSided(t, memPeerMgr, false, 150000, 120)
-	RunOneSided(t, memPeerMgr, true, 150000, 120)
+	RunOneSided(t, memPeerMgr, false, 150000, 180)
+	RunOneSided(t, memPeerMgr, true, 150000, 180)
+}
+
+func TestSplits15k(t *testing.T) {
+	RunSplits15k(t, memPeerMgr)
 }

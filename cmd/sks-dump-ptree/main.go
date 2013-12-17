@@ -28,6 +28,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	. "github.com/cmars/conflux"
@@ -48,9 +49,13 @@ func main() {
 	state := HeaderState
 	//var key []byte
 	//var value []byte
+	first := true
+	fmt.Println("[")
 	for {
 		line, err := r.ReadString('\n')
-		if err != nil {
+		if err == io.EOF {
+			break
+		} else if err != nil {
 			panic(err)
 		}
 		line = strings.TrimSpace(line)
@@ -62,30 +67,40 @@ func main() {
 			//fmt.Printf("header: %s\n", line)
 			continue
 		case line == "DATA=END":
-			return
+			break
 		case state == DataKeyState:
 			parseKey(line)
 			state = DataValueState
 		case state == DataValueState:
-			parseValue(line)
+			text := parseValue(line)
+			if len(text) > 0 {
+				if first {
+					first = false
+				} else {
+					fmt.Println(",")
+				}
+				fmt.Print(text)
+			}
 			//printNode(key, value)
 			state = DataKeyState
 		}
 	}
+	fmt.Println("]")
 }
 
-func parseValue(line string) []byte {
+func parseValue(line string) string {
 	buf, err := hex.DecodeString(line)
 	if err != nil {
 		panic(err)
 	}
+	var out bytes.Buffer
 	node, err := unmarshalNode(buf, 2, 6)
 	if err != nil {
 		//fmt.Printf("value err: %v\n", err)
-		return nil
+		return ""
 	}
-	fmt.Printf("value: %v\n", node)
-	return buf
+	fmt.Fprintf(&out, "%v\n", node)
+	return out.String()
 }
 
 func parseKey(line string) []byte {
@@ -93,38 +108,46 @@ func parseKey(line string) []byte {
 	if err != nil {
 		return nil
 	}
-	fmt.Printf("key: %x\n", buf)
+	//fmt.Printf("key: %x\n", buf)
 	return buf
 }
 
 type Node struct {
 	SValues      []*Zp
 	NumElements  int
-	Key          *Bitstring
+	Key          string
 	Leaf         bool
 	Fingerprints []*Zp
-	Children     []*Bitstring
+	Children     []string
 }
 
 func (n *Node) String() string {
-	b := bytes.NewBuffer(nil)
-	fmt.Fprintf(b, "Svalues:")
-	for _, sv := range n.SValues {
-		fmt.Fprintf(b, " %s", sv.String())
+	var buf bytes.Buffer
+	out, err := json.MarshalIndent(n, "", "\t")
+	if err != nil {
+		panic(err)
 	}
-	fmt.Fprintf(b, "\n")
-	fmt.Fprintf(b, "Key: %v\n", n.Key)
-	fmt.Fprintf(b, "Fingerprints:")
-	for _, fp := range n.Fingerprints {
-		fmt.Fprintf(b, " %s", fp.String())
-	}
-	fmt.Fprintf(b, "\n")
-	fmt.Fprintf(b, "Children:")
-	for _, child := range n.Children {
-		fmt.Fprintf(b, " %v", child)
-	}
-	fmt.Fprintf(b, "\n\n")
-	return b.String()
+	buf.Write(out)
+	return buf.String()
+	/*
+		fmt.Fprintf(b, "Svalues:")
+		for _, sv := range n.SValues {
+			fmt.Fprintf(b, " %s", sv.String())
+		}
+		fmt.Fprintf(b, "\n")
+		fmt.Fprintf(b, "Key: %v\n", n.Key)
+		fmt.Fprintf(b, "Fingerprints:")
+		for _, fp := range n.Fingerprints {
+			fmt.Fprintf(b, " %s", fp.String())
+		}
+		fmt.Fprintf(b, "\n")
+		fmt.Fprintf(b, "Children:")
+		for _, child := range n.Children {
+			fmt.Fprintf(b, " %v", child)
+		}
+		fmt.Fprintf(b, "\n\n")
+		return b.String()
+	*/
 }
 
 func printHex(w io.Writer, buf []byte) {
@@ -168,14 +191,14 @@ func unmarshalNode(buf []byte, bitQuantum int, numSamples int) (node *Node, err 
 	}
 	b := make([]byte, 1)
 	_, err = r.Read(b)
-	fmt.Printf("isleaf = %v\n", b)
+	//fmt.Printf("isleaf = %v\n", b)
 	if err != nil {
 		return
 	}
 	node = &Node{
 		SValues:     svalues,
 		NumElements: numElements,
-		Key:         key,
+		Key:         key.String(),
 		Leaf:        b[0] == 1}
 	if node.Leaf {
 		var size int
@@ -198,7 +221,7 @@ func unmarshalNode(buf []byte, bitQuantum int, numSamples int) (node *Node, err 
 					child.Unset(key.BitLen() + j)
 				}
 			}
-			node.Children = append(node.Children, child)
+			node.Children = append(node.Children, child.String())
 		}
 	}
 	return
