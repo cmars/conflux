@@ -67,6 +67,10 @@ func TestOneSidedLarge(t *testing.T) {
 	RunOneSided(t, &peerManager{t}, true, 15000, 180)
 }
 
+func TestSplits85(t *testing.T) {
+	RunSplits85(t, &peerManager{t})
+}
+
 func TestSplits15k(t *testing.T) {
 	RunSplits15k(t, &peerManager{t})
 }

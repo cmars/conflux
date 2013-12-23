@@ -76,6 +76,10 @@ func TestOneSidedRidiculous(t *testing.T) {
 	RunOneSided(t, memPeerMgr, true, 150000, 180)
 }
 
+func TestSplits85(t *testing.T) {
+	RunSplits85(t, memPeerMgr)
+}
+
 func TestSplits15k(t *testing.T) {
 	RunSplits15k(t, memPeerMgr)
 }
