@@ -23,6 +23,7 @@ package recon
 
 import (
 	"errors"
+
 	. "github.com/cmars/conflux"
 )
 
@@ -156,9 +157,6 @@ func (t *MemPrefixTree) Node(bs *Bitstring) (PrefixNode, error) {
 			if bs.Get(i+j) == 1 {
 				childIndex |= mask
 			}
-		}
-		if node.IsLeaf() {
-			return nil, ErrUnexpectedLeafNode
 		}
 		node = node.children[childIndex]
 	}

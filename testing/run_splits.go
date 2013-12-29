@@ -24,7 +24,7 @@ func LookupNode(key string, start PrefixNode) (PrefixNode, error) {
 		if key[1] == '1' {
 			childIndex |= 0x2
 		}
-		fmt.Println("childIndex:", childIndex)
+		//fmt.Println("childIndex:", childIndex)
 		node = node.Children()[childIndex]
 		key = key[2:]
 	}

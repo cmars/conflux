@@ -46,7 +46,7 @@ func NewBitstring(bits int) *Bitstring {
 
 func NewZpBitstring(zp *Zp) *Bitstring {
 	bs := NewBitstring(zp.P.BitLen())
-	bs.SetBytes(reverseBytes(zp.Bytes()))
+	bs.SetBytes(zp.Bytes())
 	return bs
 }
 
@@ -127,20 +127,4 @@ func (bs *Bitstring) Bytes() []byte {
 	w := bytes.NewBuffer(nil)
 	w.Write(bs.buf)
 	return w.Bytes()
-}
-
-func reverseBytes(buf []byte) (result []byte) {
-	l := len(buf)
-	result = make([]byte, l)
-	for i := 0; i < l; i++ {
-		result[i] = reverseByte(buf[i])
-	}
-	return
-}
-
-func reverseByte(b byte) (r byte) {
-	for i := uint(0); i < 8; i++ {
-		r |= ((b >> (7 - i)) & 1) << i
-	}
-	return
 }
