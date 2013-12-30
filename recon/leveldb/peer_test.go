@@ -22,10 +22,25 @@
 package leveldb
 
 import (
+	"testing"
+
+/*
+	"net/http"
+	"log"
+	_ "net/http/pprof"
+*/
+
 	"github.com/cmars/conflux/recon"
 	. "github.com/cmars/conflux/testing"
-	"testing"
 )
+
+/*
+func init() {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+}
+*/
 
 type peerManager struct {
 	t *testing.T

@@ -46,7 +46,7 @@ type prefixNode struct {
 	NodeKey      []byte
 	NodeSValues  []byte
 	NumElements  int
-	ChildKeys    []int
+	Leaf         bool
 	NodeElements [][]byte
 }
 
@@ -155,74 +155,48 @@ func (t *prefixTree) getNode(key []byte) (node *prefixNode, err error) {
 }
 
 func (t *prefixTree) Node(bs *Bitstring) (node recon.PrefixNode, err error) {
-	nodeKey := mustEncodeBitstring(bs)
+	nbq := t.BitQuantum()
+	key := bs
+	nodeKey := mustEncodeBitstring(key)
 	for {
 		node, err = t.getNode(nodeKey)
-		if err == recon.PNodeNotFound {
-			if bs.BitLen() == 0 {
-				return nil, err
-			}
-			parent := NewBitstring(bs.BitLen() - t.BitQuantum())
-			parent.SetBytes(bs.Bytes())
-			bs = parent
-			nodeKey = mustEncodeBitstring(bs)
-		} else {
+		if err != recon.PNodeNotFound || key.BitLen() == 0 {
 			break
 		}
+		key = NewBitstring(key.BitLen() - nbq)
+		key.SetBytes(bs.Bytes())
+		nodeKey = mustEncodeBitstring(key)
 	}
 	return node, err
 }
 
-type elementOperation func() (bool, error)
-
-type changeElement struct {
-	// Current node in prefix tree descent
-	cur *prefixNode
-	// Element to be changed (added or removed)
-	element *Zp
-	// Mask used to update sample values
-	marray []*Zp
-	// Target prefix tree key to shoot for
-	target *Bitstring
-	// Current depth in descent
-	depth int
-}
-
-func (ch *changeElement) descend(op elementOperation) error {
+func (n *prefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) error {
 	for {
-		ch.cur.updateSvalues(ch.element, ch.marray)
-		done, err := op()
+		n.updateSvalues(z, marray)
+		n.NumElements++
+		var err error
+		if n.IsLeaf() {
+			if len(n.NodeElements) > n.SplitThreshold() {
+				err = n.split(depth)
+				if err != nil {
+					return err
+				}
+			} else {
+				err = n.insertElement(z)
+				if err != nil {
+					return err
+				}
+				return n.upsertNode()
+			}
+		}
+		err = n.upsertNode()
 		if err != nil {
 			return err
 		}
-		if done {
-			return nil
-		}
+		childIndex := recon.NextChild(n, bs, depth)
+		n = n.Children()[childIndex].(*prefixNode)
+		depth++
 	}
-}
-
-func (ch *changeElement) insert() (done bool, err error) {
-	ch.cur.NumElements++
-	if ch.cur.IsLeaf() {
-		if len(ch.cur.NodeElements)+1 > ch.cur.SplitThreshold() {
-			err = ch.split()
-			if err != nil {
-				return
-			}
-		} else {
-			err = ch.cur.upsertNode()
-			if err != nil {
-				return true, err
-			}
-			err = ch.cur.insertElement(ch.element)
-			return true, err
-		}
-	}
-	err = ch.cur.upsertNode()
-	childIndex := recon.NextChild(ch.cur, ch.target, ch.depth)
-	ch.cur = ch.cur.Children()[childIndex].(*prefixNode)
-	ch.depth++
-	return false, err
 }
 
 func (n *prefixNode) deleteNode() (err error) {
@@ -258,86 +232,87 @@ func (n *prefixNode) insertElement(element *Zp) error {
 	return n.upsertNode()
 }
 
-func (ch *changeElement) split() (err error) {
+func (n *prefixNode) split(depth int) (err error) {
+	splitElements := n.NodeElements
+	n.Leaf = false
+	n.NodeElements = nil
+	err = n.upsertNode()
+	if err != nil {
+		return err
+	}
 	// Create child nodes
-	numChildren := 1 << uint(ch.cur.BitQuantum())
+	numChildren := 1 << uint(n.BitQuantum())
 	var children []*prefixNode
 	for i := 0; i < numChildren; i++ {
 		// Create new empty child node
-		child := ch.cur.newChildNode(ch.cur, i)
+		child := n.newChildNode(n, i)
 		err = child.upsertNode()
 		if err != nil {
 			return err
 		}
-		ch.cur.ChildKeys = append(ch.cur.ChildKeys, i)
 		children = append(children, child)
 	}
-	err = ch.cur.upsertNode()
-	if err != nil {
-		return err
-	}
 	// Move elements into child nodes
-	for _, element := range ch.cur.NodeElements {
+	for _, element := range splitElements {
 		z := Zb(P_SKS, element)
 		bs := NewZpBitstring(z)
-		childIndex := recon.NextChild(ch.cur, bs, ch.depth)
+		childIndex := recon.NextChild(n, bs, depth)
 		child := children[childIndex]
-		child.NodeElements = append(child.NodeElements, element)
 		marray, err := recon.AddElementArray(child, z)
 		if err != nil {
 			return err
 		}
-		// The child's sample values need to be updated with the split element.
-		// Note that the parent's sample values do not need to be updated --
-		// they already have this element as a factor.
-		child.updateSvalues(z, marray)
-	}
-	for _, child := range children {
-		err = child.upsertNode()
+		err = child.insert(z, marray, bs, depth+1)
 		if err != nil {
 			return err
 		}
 	}
-	return
+	return nil
 }
 
-func (ch *changeElement) remove() (done bool, err error) {
-	ch.cur.NumElements--
-	if !ch.cur.IsLeaf() {
-		if ch.cur.NumElements-1 <= ch.cur.JoinThreshold() {
-			err = ch.join()
-			if err != nil {
-				return
-			}
+func (n *prefixNode) remove(z *Zp, marray []*Zp, bs *Bitstring, depth int) error {
+	var err error
+	for {
+		n.updateSvalues(z, marray)
+		n.NumElements--
+		if n.IsLeaf() {
+			break
 		} else {
-			err = ch.cur.upsertNode()
-			if err != nil {
-				return
+			if n.NumElements <= n.JoinThreshold() {
+				err = n.join()
+				if err != nil {
+					return err
+				}
+				break
+			} else {
+				err = n.upsertNode()
+				if err != nil {
+					return err
+				}
+				childIndex := recon.NextChild(n, bs, depth)
+				n = n.Children()[childIndex].(*prefixNode)
+				depth++
 			}
-			childIndex := recon.NextChild(ch.cur, ch.target, ch.depth)
-			ch.cur = ch.cur.Children()[childIndex].(*prefixNode)
-			ch.depth++
-			return false, err
 		}
 	}
-	if err = ch.cur.upsertNode(); err != nil {
-		return
+	err = n.deleteElement(z)
+	if err != nil {
+		return err
 	}
-	err = ch.cur.deleteElement(ch.element)
-	return true, err
+	return n.upsertNode()
 }
 
-func (ch *changeElement) join() error {
+func (n *prefixNode) join() error {
 	var elements [][]byte
-	for _, child := range ch.cur.Children() {
+	for _, child := range n.Children() {
 		elements = append(elements, child.(*prefixNode).NodeElements...)
 		if err := child.(*prefixNode).deleteNode(); err != nil {
 			return err
 		}
 	}
-	ch.cur.NodeElements = elements
-	ch.cur.ChildKeys = nil
-	return ch.cur.upsertNode()
+	n.NodeElements = elements
+	n.Leaf = true
+	return n.upsertNode()
 }
 
 func ErrDuplicateElement(z *Zp) error {
@@ -364,12 +339,7 @@ func (t *prefixTree) Insert(z *Zp) error {
 	if err != nil {
 		return err
 	}
-	ch := &changeElement{
-		cur:     root.(*prefixNode),
-		element: z,
-		marray:  marray,
-		target:  bs}
-	err = ch.descend(ch.insert)
+	err = root.(*prefixNode).insert(z, marray, bs, 0)
 	if err != nil {
 		return err
 	}
@@ -386,12 +356,8 @@ func (t *prefixTree) Remove(z *Zp) error {
 	if err != nil {
 		return err
 	}
-	ch := &changeElement{
-		cur:     root.(*prefixNode),
-		element: z,
-		marray:  recon.DelElementArray(t, z),
-		target:  bs}
-	err = ch.descend(ch.remove)
+	marray := recon.DelElementArray(t, z)
+	err = root.(*prefixNode).remove(z, marray, bs, 0)
 	if err != nil {
 		return err
 	}
@@ -399,17 +365,17 @@ func (t *prefixTree) Remove(z *Zp) error {
 }
 
 func (t *prefixTree) newChildNode(parent *prefixNode, childIndex int) *prefixNode {
-	n := &prefixNode{prefixTree: t}
+	n := &prefixNode{prefixTree: t, Leaf: true}
 	var key *Bitstring
 	if parent != nil {
 		parentKey := parent.Key()
 		key = NewBitstring(parentKey.BitLen() + t.BitQuantum())
 		key.SetBytes(parentKey.Bytes())
 		for j := 0; j < parent.BitQuantum(); j++ {
-			if (childIndex>>uint(j))&0x1 == 1 {
-				key.Set(parentKey.BitLen() + j)
-			} else {
+			if (1<<uint(j))&childIndex == 0 {
 				key.Unset(parentKey.BitLen() + j)
+			} else {
+				key.Set(parentKey.BitLen() + j)
 			}
 		}
 	} else {
@@ -434,19 +400,23 @@ func (n *prefixNode) upsertNode() (err error) {
 }
 
 func (n *prefixNode) IsLeaf() bool {
-	return len(n.ChildKeys) == 0
+	return n.Leaf
 }
 
 func (n *prefixNode) Children() (result []recon.PrefixNode) {
+	if n.IsLeaf() {
+		return nil
+	}
 	key := n.Key()
-	for _, i := range n.ChildKeys {
+	numChildren := 1 << uint(n.BitQuantum())
+	for i := 0; i < numChildren; i++ {
 		childKey := NewBitstring(key.BitLen() + n.BitQuantum())
 		childKey.SetBytes(key.Bytes())
 		for j := 0; j < n.BitQuantum(); j++ {
-			if (i>>uint(j))&0x1 == 1 {
-				childKey.Set(key.BitLen() + j)
-			} else {
+			if (1<<uint(j))&i == 0 {
 				childKey.Unset(key.BitLen() + j)
+			} else {
+				childKey.Set(key.BitLen() + j)
 			}
 		}
 		child, err := n.Node(childKey)
@@ -454,6 +424,7 @@ func (n *prefixNode) Children() (result []recon.PrefixNode) {
 			panic(fmt.Sprintf("Children failed on child#%v, key=%v: %v", i, childKey, err))
 		}
 		result = append(result, child)
+		//fmt.Println("Node", n.Key(), "Child:", child.Key())
 	}
 	return
 }

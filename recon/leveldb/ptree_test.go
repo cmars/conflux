@@ -209,3 +209,21 @@ func TestInsertNodeSplit(t *testing.T) {
 	assert.Equal(t, 0, len(root.Children()))
 	assert.Equal(t, 0, len(root.Elements()))
 }
+
+func TestNewChildIndex(t *testing.T) {
+	peer := createTestPeer(t)
+	defer destroyTestPeer(peer)
+	tree := peer.PrefixTree
+	tree.Init()
+	root, err := tree.Root()
+	assert.Equal(t, nil, err)
+	rootNode := root.(*prefixNode)
+	child00 := rootNode.newChildNode(rootNode, 0)
+	assert.Equal(t, 0, child00.Key().Get(0))
+	assert.Equal(t, 0, child00.Key().Get(1))
+	child00.upsertNode()
+	child11 := rootNode.newChildNode(rootNode, 3)
+	child11.upsertNode()
+	assert.Equal(t, 1, child11.Key().Get(0))
+	assert.Equal(t, 1, child11.Key().Get(1))
+}
