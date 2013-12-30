@@ -32,12 +32,12 @@ import (
 	//"testing/iotest"
 )
 
-var sksZpNbytes int
+var SksZpNbytes int
 
 func init() {
-	sksZpNbytes = P_SKS.BitLen() / 8
+	SksZpNbytes = P_SKS.BitLen() / 8
 	if P_SKS.BitLen()%8 != 0 {
-		sksZpNbytes++
+		SksZpNbytes++
 	}
 }
 
@@ -228,7 +228,7 @@ func WriteZSet(w io.Writer, zset *ZSet) error {
 }
 
 func ReadZp(r io.Reader) (*Zp, error) {
-	buf := make([]byte, sksZpNbytes)
+	buf := make([]byte, SksZpNbytes)
 	_, err := io.ReadFull(r, buf)
 	if err != nil {
 		return nil, err
@@ -244,8 +244,8 @@ func WriteZp(w io.Writer, z *Zp) (err error) {
 	if err != nil {
 		return
 	}
-	if len(num) < sksZpNbytes {
-		pad := make([]byte, sksZpNbytes-len(num))
+	if len(num) < SksZpNbytes {
+		pad := make([]byte, SksZpNbytes-len(num))
 		_, err = w.Write(pad)
 	}
 	return
