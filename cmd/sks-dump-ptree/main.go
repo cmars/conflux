@@ -117,7 +117,7 @@ type Node struct {
 	NumElements  int
 	Key          string
 	Leaf         bool
-	Fingerprints []*Zp
+	Fingerprints []string
 	Children     []string
 }
 
@@ -206,9 +206,14 @@ func unmarshalNode(buf []byte, bitQuantum int, numSamples int) (node *Node, err 
 		if err != nil {
 			return
 		}
-		node.Fingerprints = make([]*Zp, size)
+		node.Fingerprints = make([]string, size)
 		for i := 0; i < size; i++ {
-			node.Fingerprints[i], _ = recon.ReadZp(r)
+			buf := make([]byte, recon.SksZpNbytes)
+			_, err = io.ReadFull(r, buf)
+			if err != nil {
+				return
+			}
+			node.Fingerprints[i] = fmt.Sprintf("%x", buf)
 		}
 	} else {
 		for i := 0; i < 1<<uint(bitQuantum); i++ {

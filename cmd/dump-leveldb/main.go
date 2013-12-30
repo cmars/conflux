@@ -45,18 +45,20 @@ func visit(node PrefixNode) {
 		NumElements  int
 		Key          string
 		Leaf         bool
-		Fingerprints []*Zp
+		Fingerprints []string
 		Children     []string
 	}{
 		node.SValues(),
 		node.Size(),
 		node.Key().String(),
 		node.IsLeaf(),
-		[]*Zp{},
+		[]string{},
 		[]string{},
 	}
 	if node.IsLeaf() {
-		render.Fingerprints = node.Elements()
+		for _, element := range node.Elements() {
+			render.Fingerprints = append(render.Fingerprints, fmt.Sprintf("%x", element.Bytes()))
+		}
 	}
 	for _, child := range node.Children() {
 		render.Children = append(render.Children, child.Key().String())
