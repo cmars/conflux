@@ -41,6 +41,13 @@ func init() {
 	}
 }
 
+func PadSksElement(zb []byte) []byte {
+	for len(zb) < SksZpNbytes {
+		zb = append(zb, byte(0))
+	}
+	return zb
+}
+
 type MsgType uint8
 
 const (
