@@ -28,6 +28,7 @@ import (
 	. "github.com/cmars/conflux"
 	"log"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -72,7 +73,9 @@ type Peer struct {
 	reconCmdResp reconCmdResp
 	serverStop   chan stopNotify
 	gossipStop   chan stopNotify
-	paused       bool
+
+	enable     bool
+	enableLock *sync.Mutex
 }
 
 func NewPeer(settings *Settings, tree PrefixTree) *Peer {
@@ -81,7 +84,9 @@ func NewPeer(settings *Settings, tree PrefixTree) *Peer {
 		Settings:     settings,
 		PrefixTree:   tree,
 		reconCmdReq:  make(reconCmdReq),
-		reconCmdResp: make(reconCmdResp)}
+		reconCmdResp: make(reconCmdResp),
+		enableLock:   new(sync.Mutex),
+	}
 }
 
 func NewMemPeer() *Peer {
@@ -120,12 +125,22 @@ func (p *Peer) Stop() {
 	p.gossipStop = nil
 }
 
-func (p *Peer) Pause() {
-	p.paused = true
+func (p *Peer) Enabled() bool {
+	p.enableLock.Lock()
+	defer p.enableLock.Unlock()
+	return p.enable
 }
 
-func (p *Peer) Resume() {
-	p.paused = false
+func (p *Peer) Enable() {
+	p.enableLock.Lock()
+	defer p.enableLock.Unlock()
+	p.enable = true
+}
+
+func (p *Peer) Disable() {
+	p.enableLock.Lock()
+	defer p.enableLock.Unlock()
+	p.enable = false
 }
 
 // HandleCmds executes recon cmds in a single goroutine.
@@ -275,8 +290,10 @@ func (p *Peer) Accept(conn net.Conn) error {
 		return err
 	}
 	return p.ExecCmd(func() (err error) {
-		if !p.paused {
+		if p.Enabled() {
 			err = p.interactWithClient(conn, remoteConfig, NewBitstring(0))
+		} else {
+			log.Println("Peer is currently disabled, ignoring connection.")
 		}
 		defer conn.Close()
 		return err

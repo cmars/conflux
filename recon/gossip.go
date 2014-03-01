@@ -48,7 +48,8 @@ func (p *Peer) Gossip() {
 			var peer net.Addr
 			var err error
 			var conn net.Conn
-			if p.paused {
+			if !p.Enabled() {
+				log.Println("Peer currently disabled.")
 				goto DELAY
 			}
 			peer, err = p.choosePartner()
