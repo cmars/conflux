@@ -104,12 +104,14 @@ func (p *Peer) Start() {
 	p.serverStop = make(chan stopNotify)
 	go p.Serve()
 	go p.Gossip()
+	p.Enable()
 	go p.HandleCmds()
 }
 
 type stopNotify chan interface{}
 
 func (p *Peer) Stop() {
+	p.Disable()
 	if p.serverStop == nil {
 		return
 	}
