@@ -24,11 +24,11 @@ package leveldb
 import (
 	"testing"
 
-/*
-	"net/http"
-	"log"
-	_ "net/http/pprof"
-*/
+	/*
+		"net/http"
+		"log"
+		_ "net/http/pprof"
+	*/
 
 	"github.com/cmars/conflux/recon"
 	. "github.com/cmars/conflux/testing"
@@ -51,7 +51,10 @@ func (lpm *peerManager) CreatePeer() (peer *recon.Peer, path string) {
 }
 
 func (lpm *peerManager) DestroyPeer(peer *recon.Peer, path string) {
-	destroyTestPeer(peer)
+	if peer != nil {
+		peer.Stop()
+		destroyTestPeer(peer)
+	}
 }
 
 // Test full node sync.

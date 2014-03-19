@@ -31,6 +31,7 @@ type memPeerManager struct{}
 
 func (mpm *memPeerManager) CreatePeer() (peer *Peer, path string) {
 	peer = NewMemPeer()
+	peer.Enable()
 	go peer.HandleCmds()
 	return peer, ""
 }
@@ -72,8 +73,8 @@ func TestOneSidedLarge(t *testing.T) {
 }
 
 func TestOneSidedRidiculous(t *testing.T) {
-	RunOneSided(t, memPeerMgr, false, 150000, 180)
-	RunOneSided(t, memPeerMgr, true, 150000, 180)
+	RunOneSided(t, memPeerMgr, false, 150000, 300)
+	RunOneSided(t, memPeerMgr, true, 150000, 300)
 }
 
 func TestSplits85(t *testing.T) {

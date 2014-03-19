@@ -45,6 +45,7 @@ func createTestPeer(t *testing.T) *recon.Peer {
 	err = ptree.Create()
 	assert.Equal(t, err, nil)
 	peer := recon.NewPeer(settings.Settings, ptree)
+	peer.Enable()
 	go peer.HandleCmds()
 	return peer
 }
