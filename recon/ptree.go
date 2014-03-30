@@ -23,6 +23,7 @@ package recon
 
 import (
 	"errors"
+	"fmt"
 
 	. "github.com/cmars/conflux"
 )
@@ -75,6 +76,8 @@ type MemPrefixTree struct {
 	points []*Zp
 	// Tree's root node
 	root *MemPrefixNode
+
+	allElements *ZSet
 }
 
 func (t *MemPrefixTree) SplitThreshold() int       { return t.splitThreshold }
@@ -103,6 +106,7 @@ func (t *MemPrefixTree) Init() {
 		t.numSamples = DefaultNumSamples
 	}
 	t.points = Zpoints(P_SKS, t.numSamples)
+	t.allElements = NewZSet()
 	t.Create()
 }
 
@@ -165,18 +169,31 @@ func (t *MemPrefixTree) Node(bs *Bitstring) (PrefixNode, error) {
 
 // Insert a Z/Zp integer into the prefix tree
 func (t *MemPrefixTree) Insert(z *Zp) error {
+	if t.allElements.Has(z) {
+		return fmt.Errorf("duplicate: %q", z.String())
+	}
 	bs := NewZpBitstring(z)
 	marray, err := AddElementArray(t, z)
 	if err != nil {
 		return err
 	}
-	return t.root.insert(z, marray, bs, 0)
+	err = t.root.insert(z, marray, bs, 0)
+	if err != nil {
+		return err
+	}
+	t.allElements.Add(z)
+	return nil
 }
 
 // Remove a Z/Zp integer from the prefix tree
 func (t *MemPrefixTree) Remove(z *Zp) error {
 	bs := NewZpBitstring(z)
-	return t.root.remove(z, DelElementArray(t, z), bs, 0)
+	err := t.root.remove(z, DelElementArray(t, z), bs, 0)
+	if err != nil {
+		return err
+	}
+	t.allElements.Remove(z)
+	return nil
 }
 
 type MemPrefixNode struct {
@@ -262,7 +279,7 @@ func (n *MemPrefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) er
 		} else {
 			for _, nz := range n.elements {
 				if nz.Cmp(z) == 0 {
-					panic("Duplicate: " + z.String())
+					return fmt.Errorf("duplicate: " + z.String())
 				}
 			}
 			n.elements = append(n.elements, z)
