@@ -279,7 +279,7 @@ func (n *MemPrefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) er
 		} else {
 			for _, nz := range n.elements {
 				if nz.Cmp(z) == 0 {
-					return fmt.Errorf("duplicate: " + z.String())
+					return fmt.Errorf("duplicate: %q", z.String())
 				}
 			}
 			n.elements = append(n.elements, z)
