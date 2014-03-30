@@ -225,13 +225,17 @@ func (p *Peer) solve(remoteSamples, localSamples []*Zp, remoteSize, localSize in
 }
 
 func (p *Peer) handleReconRqstFull(rf *ReconRqstFull) *msgProgress {
+	var localset *ZSet
 	node, err := p.Node(rf.Prefix)
 	if err == PNodeNotFound {
-		return &msgProgress{err: ReconRqstPolyNotFound}
+		localset = NewZSet()
+	} else if err != nil {
+		return &msgProgress{err: err}
+	} else {
+		localset = NewZSet(node.Elements()...)
 	}
-	localset := NewZSet(node.Elements()...)
-	localdiff := ZSetDiff(localset, rf.Elements)
-	remotediff := ZSetDiff(rf.Elements, localset)
-	log.Println(GOSSIP, "localdiff=(", localdiff.Len(), ") remotediff=(", remotediff.Len(), ")")
-	return &msgProgress{elements: remotediff, messages: []ReconMsg{&Elements{ZSet: localdiff}}}
+	localNeeds := ZSetDiff(rf.Elements, localset)
+	remoteNeeds := ZSetDiff(localset, rf.Elements)
+	log.Println(GOSSIP, "localNeeds=(", localNeeds.Len(), ") remoteNeeds=(", remoteNeeds.Len(), ")")
+	return &msgProgress{elements: localNeeds, messages: []ReconMsg{&Elements{ZSet: remoteNeeds}}}
 }
