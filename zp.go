@@ -388,6 +388,8 @@ func (zp ZpSlice) String() string {
 	return string(buf.Bytes())
 }
 
+// ZSetDiff returns the set difference between two ZSets:
+// the set of all Z(p) in a that are not in b.
 func ZSetDiff(a *ZSet, b *ZSet) *ZSet {
 	result := NewZSet()
 	if a.p != nil {
