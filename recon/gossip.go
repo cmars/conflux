@@ -24,17 +24,19 @@ package recon
 import (
 	"errors"
 	"fmt"
-	. "github.com/cmars/conflux"
 	"log"
 	"math/rand"
 	"net"
 	"time"
+
+	. "github.com/cmars/conflux"
 )
 
 const GOSSIP = "gossip:"
 
 // Gossip with remote servers, acting as a client.
 func (p *Peer) Gossip() {
+	rand.Seed(time.Now().UnixNano())
 	timer := time.NewTimer(time.Duration(0))
 	defer timer.Stop()
 	for {
