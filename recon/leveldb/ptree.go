@@ -28,10 +28,10 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	"os"
 	. "github.com/cmars/conflux"
 	"github.com/cmars/conflux/recon"
 	"github.com/syndtr/goleveldb/leveldb"
-	"os"
 )
 
 type prefixTree struct {
@@ -424,7 +424,6 @@ func (n *prefixNode) Children() (result []recon.PrefixNode) {
 			panic(fmt.Sprintf("Children failed on child#%v, key=%v: %v", i, childKey, err))
 		}
 		result = append(result, child)
-		//fmt.Println("Node", n.Key(), "Child:", child.Key())
 	}
 	return
 }
@@ -435,7 +434,6 @@ func (n *prefixNode) Elements() (result []*Zp) {
 			result = append(result, Zb(P_SKS, element))
 		}
 	} else {
-		// TODO: Eliminate recursion
 		for _, child := range n.Children() {
 			result = append(result, child.Elements()...)
 		}

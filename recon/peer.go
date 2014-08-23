@@ -25,11 +25,12 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	. "github.com/cmars/conflux"
 	"log"
 	"net"
 	"sync"
 	"time"
+
+	. "github.com/cmars/conflux"
 )
 
 const SERVE = "serve:"

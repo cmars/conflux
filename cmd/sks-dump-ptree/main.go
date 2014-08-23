@@ -31,11 +31,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	. "github.com/cmars/conflux"
-	"github.com/cmars/conflux/recon"
 	"io"
 	"os"
 	"strings"
+
+	. "github.com/cmars/conflux"
+	"github.com/cmars/conflux/recon"
 )
 
 const (
@@ -47,8 +48,6 @@ const (
 func main() {
 	r := bufio.NewReader(os.Stdin)
 	state := HeaderState
-	//var key []byte
-	//var value []byte
 	first := true
 	fmt.Println("[")
 	for {
@@ -81,7 +80,6 @@ func main() {
 				}
 				fmt.Print(text)
 			}
-			//printNode(key, value)
 			state = DataKeyState
 		}
 	}
@@ -96,7 +94,6 @@ func parseValue(line string) string {
 	var out bytes.Buffer
 	node, err := unmarshalNode(buf, 2, 6)
 	if err != nil {
-		//fmt.Printf("value err: %v\n", err)
 		return ""
 	}
 	fmt.Fprintf(&out, "%v\n", node)
@@ -108,7 +105,6 @@ func parseKey(line string) []byte {
 	if err != nil {
 		return nil
 	}
-	//fmt.Printf("key: %x\n", buf)
 	return buf
 }
 
@@ -129,25 +125,6 @@ func (n *Node) String() string {
 	}
 	buf.Write(out)
 	return buf.String()
-	/*
-		fmt.Fprintf(b, "Svalues:")
-		for _, sv := range n.SValues {
-			fmt.Fprintf(b, " %s", sv.String())
-		}
-		fmt.Fprintf(b, "\n")
-		fmt.Fprintf(b, "Key: %v\n", n.Key)
-		fmt.Fprintf(b, "Fingerprints:")
-		for _, fp := range n.Fingerprints {
-			fmt.Fprintf(b, " %s", fp.String())
-		}
-		fmt.Fprintf(b, "\n")
-		fmt.Fprintf(b, "Children:")
-		for _, child := range n.Children {
-			fmt.Fprintf(b, " %v", child)
-		}
-		fmt.Fprintf(b, "\n\n")
-		return b.String()
-	*/
 }
 
 func printHex(w io.Writer, buf []byte) {
@@ -191,7 +168,6 @@ func unmarshalNode(buf []byte, bitQuantum int, numSamples int) (node *Node, err 
 	}
 	b := make([]byte, 1)
 	_, err = r.Read(b)
-	//fmt.Printf("isleaf = %v\n", b)
 	if err != nil {
 		return
 	}

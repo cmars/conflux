@@ -27,9 +27,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	. "github.com/cmars/conflux"
 	"io"
-	//"testing/iotest"
+	. "github.com/cmars/conflux"
 )
 
 var SksZpNbytes int
@@ -578,7 +577,6 @@ func (msg *Config) unmarshal(r io.Reader) (err error) {
 }
 
 func ReadMsg(r io.Reader) (msg ReconMsg, err error) {
-	//r = iotest.NewReadLogger("ReadMsg", r)
 	var msgSize int
 	msgSize, err = ReadInt(r)
 	if err != nil {
@@ -627,7 +625,6 @@ func ReadMsg(r io.Reader) (msg ReconMsg, err error) {
 }
 
 func WriteMsgDirect(w io.Writer, msg ReconMsg) (err error) {
-	//w = iotest.NewWriteLogger("WriteMsgDirect", w)
 	data := bytes.NewBuffer(nil)
 	buf := make([]byte, 1)
 	buf[0] = byte(msg.MsgType())
@@ -648,7 +645,6 @@ func WriteMsgDirect(w io.Writer, msg ReconMsg) (err error) {
 }
 
 func WriteMsg(w io.Writer, msgs ...ReconMsg) (err error) {
-	//bufw := bufio.NewWriter(iotest.NewWriteLogger("WriteMsg", w))
 	bufw := bufio.NewWriter(w)
 	for _, msg := range msgs {
 		err = WriteMsgDirect(bufw, msg)
