@@ -150,15 +150,6 @@ func Zarray(p *big.Int, n int, v *Zp) []*Zp {
 	return result
 }
 
-// reverse reverses the byte slice order in-place, returning the slice
-func reverse(b []byte) []byte {
-	l := len(b)
-	for i := 0; i < l; i++ {
-		b[i], b[l-i-1] = b[l-i-1], b[i]
-	}
-	return b
-}
-
 func reversed(b []byte) []byte {
 	l := len(b)
 	result := make([]byte, l)
@@ -170,27 +161,12 @@ func reversed(b []byte) []byte {
 
 func (zp *Zp) Bytes() []byte {
 	return reversed(zp.Int.Bytes())
-	/*
-		b := zp.Int.Bytes()
-		l := len(b)
-		result := make([]byte, len(b)) //zp.P.Bytes()))
-		for i := 0; i < l; i++ {
-			result[i] = b[l-i-1]
-		}
-		return result
-	*/
 }
 
 func (zp *Zp) SetBytes(b []byte) {
 	zp.Int.SetBytes(reversed(b))
 	zp.Norm()
 }
-
-/*
-func (zp *Zp) String() string {
-	return fmt.Sprintf("%x", zp.Bytes())
-}
-*/
 
 // Copy the integer, since operations are mutable.
 func (zp *Zp) Copy() *Zp {

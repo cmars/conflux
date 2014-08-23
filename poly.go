@@ -234,7 +234,6 @@ func PolyTerm(degree int, c *Zp) *Poly {
 }
 
 func PolyDivmod(x, y *Poly) (q *Poly, r *Poly, err error) {
-	//fmt.Printf("PolyDivmod x=(%v) y=(%v)\n", x, y)
 	x.assertP(y.p)
 	if x.IsConstant(Zi(x.p, 0)) {
 		return NewPoly(Z(x.p)), NewPoly(Z(y.p)), nil
@@ -248,11 +247,8 @@ func PolyDivmod(x, y *Poly) (q *Poly, r *Poly, err error) {
 	}
 	c := Z(x.p).Div(x.coeff[x.degree], y.coeff[y.degree])
 	m := PolyTerm(degDiff, c)
-	//fmt.Printf("m=(%v)\n", m)
 	my := NewPoly().Mul(m, y)
-	//fmt.Printf("my=(%v)\n", my)
 	newX := NewPoly().Sub(x, my)
-	//fmt.Printf("newX=(%v)[%v] x=(%v)\n", newX, newX.degree, x)
 	if newX.degree < x.degree || x.degree == 0 {
 		// TODO: eliminate recursion
 		q, r, err = PolyDivmod(newX, y)
@@ -274,9 +270,7 @@ func PolyMod(x, y *Poly) (r *Poly, err error) {
 }
 
 func polyGcd(x, y *Poly) (*Poly, error) {
-	//fmt.Printf("polyGcd x=(%v) y=(%v)\n", x, y)
 	if y.IsConstant(Zi(x.p, 0)) {
-		//fmt.Printf("y is zero\n")
 		return x, nil
 	}
 	_, r, err := PolyDivmod(x, y)
@@ -288,7 +282,6 @@ func polyGcd(x, y *Poly) (*Poly, error) {
 
 func PolyGcd(x, y *Poly) (result *Poly, err error) {
 	result, err = polyGcd(x, y)
-	//fmt.Printf("result = (%v)\n", result)
 	if err != nil {
 		return nil, err
 	}
