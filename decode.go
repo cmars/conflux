@@ -37,6 +37,9 @@ func abs(x int) int {
 	return x
 }
 
+// Interpolate returns the ratio of two polynomials RationalFn, given a set of
+// sample points and output values. The coefficients of the resulting numerator
+// and denominator represent the disjoint members in two sets being reconciled.
 func Interpolate(values []*Zp, points []*Zp, degDiff int) (rfn *RationalFn, err error) {
 	if abs(degDiff) > len(values) {
 		err = InterpolationFailure
@@ -99,31 +102,32 @@ func Interpolate(values []*Zp, points []*Zp, degDiff int) (rfn *RationalFn, err 
 	return
 }
 
-var LowMBar error = errors.New("Low MBar")
+var ErrLowMBar error = errors.New("Low MBar")
 
-var powModSmallN = errors.New("PowMod not implemented for small values of N")
+var ErrPowModSmallN = errors.New("PowMod not implemented for small values of N")
 
 // polyPowMod computes ``f**n`` in ``GF(p)[x]/(g)`` using repeated squaring.
 // Given polynomials ``f`` and ``g`` in ``GF(p)[x]`` and a non-negative
 // integer ``n``, efficiently computes ``f**n (mod g)`` i.e. the remainder
 // of ``f**n`` from division by ``g``, using the repeated squaring algorithm.
 // This function was ported from sympy.polys.galoistools.
-func polyPowMod(f *Poly, n *big.Int, g *Poly) (h *Poly, err error) {
+func polyPowMod(f *Poly, n *big.Int, g *Poly) (*Poly, error) {
 	zero := big.NewInt(int64(0))
 	one := big.NewInt(int64(1))
 	n = big.NewInt(int64(0)).Set(n)
 	if n.BitLen() < 3 {
 		// Small values of n not useful for recon
-		err = powModSmallN
-		return
+		return nil, ErrPowModSmallN
 	}
-	h = NewPoly(Zi(f.p, 1))
+
+	var err error
+	h := NewPoly(Zi(f.p, 1))
 	for {
 		if n.Bit(0) > 0 {
 			h = NewPoly().Mul(h, f)
 			h, err = PolyMod(h, g)
 			if err != nil {
-				return
+				return nil, err
 			}
 			n.Sub(n, one)
 		}
@@ -134,14 +138,14 @@ func polyPowMod(f *Poly, n *big.Int, g *Poly) (h *Poly, err error) {
 		f = NewPoly().Mul(f, f)
 		f, err = PolyMod(f, g)
 		if err != nil {
-			return
+			return nil, err
 		}
 	}
-	return
+	return h, nil
 }
 
-// PolyRand generates a random polynomial of degree n.
-// This is useful for probabilistic polynomial factoring.
+// PolyRand generates a random polynomial of degree n. This is useful for
+// probabilistic polynomial factoring.
 func PolyRand(p *big.Int, degree int) *Poly {
 	var terms []*Zp
 	for i := 0; i <= degree; i++ {
@@ -154,16 +158,16 @@ func PolyRand(p *big.Int, degree int) *Poly {
 	return NewPoly(terms...)
 }
 
-// Factor reduces a polynomial to irreducible linear components.
-// If the polynomial is not reducible to a product of linears,
-// the polynomial is useless for reconciliation, resulting in an error.
-// Returns a ZSet of all the constants in each linear factor.
-func (p *Poly) Factor() (roots *ZSet, err error) {
+// Factor reduces a polynomial to irreducible linear components. If the
+// polynomial is not reducible to a product of linears, the polynomial is
+// useless for reconciliation, resulting in an error. Returns a ZSet of all the
+// constants in each linear factor.
+func (p *Poly) Factor() (*ZSet, error) {
 	factors, err := p.factor()
 	if err != nil {
-		return
+		return nil, err
 	}
-	roots = NewZSet()
+	roots := NewZSet()
 	one := Zi(p.p, 1)
 	for _, f := range factors {
 		if f.degree == 0 && f.coeff[0].Cmp(one) == 0 {
@@ -174,28 +178,26 @@ func (p *Poly) Factor() (roots *ZSet, err error) {
 		}
 		roots.Add(f.coeff[0].Copy().Neg())
 	}
-	return
+	return roots, nil
 }
 
 // factor performs Cantor-Zassenhaus: Probabilistic Equal Degree Factorization
 // on a complex polynomial into linear factors.
+//
 // Adapted from sympy.polys.galoistools.gf_edf_zassenhaus, specialized for
 // the reconciliation cases of GF(p) and factor degree.
-func (p *Poly) factor() (factors []*Poly, err error) {
-	factors = append(factors, p)
+func (p *Poly) factor() ([]*Poly, error) {
+	factors := []*Poly{p}
 	q := big.NewInt(int64(0)).Set(p.p)
 	if p.degree <= 1 {
-		return
+		return factors, nil
 	}
 	for len(factors) < p.degree {
-		//r := Zrand(p.p).Mod(Zi(p.p, (2*p.degree) - 1))
 		r := PolyRand(p.p, 2*p.degree-1)
 		qh := big.NewInt(int64(0))
 		qh.Sub(q, qh)
 		qh.Div(qh, big.NewInt(int64(2)))
-		if err != nil {
-			return nil, err
-		}
+
 		h, err := polyPowMod(r, qh, p)
 		if err != nil {
 			return nil, err
@@ -220,7 +222,7 @@ func (p *Poly) factor() (factors []*Poly, err error) {
 			factors = append(factors, qfgFactors...)
 		}
 	}
-	return
+	return factors, nil
 }
 
 func factorCheck(p *Poly) bool {
@@ -257,6 +259,8 @@ func Zpoints(p *big.Int, n int) []*Zp {
 	return points
 }
 
+// Reconcile performs rational function interpolation on the given output
+// values at sample points, to return the disjoint values between two sets.
 func Reconcile(values []*Zp, points []*Zp, degDiff int) (*ZSet, *ZSet, error) {
 	rfn, err := Interpolate(
 		values[:len(values)-1], points[:len(points)-1], degDiff)
@@ -269,7 +273,7 @@ func Reconcile(values []*Zp, points []*Zp, degDiff int) (*ZSet, *ZSet, error) {
 	lastValue := values[len(values)-1]
 	if valFromPoly.Cmp(lastValue) != 0 ||
 		!factorCheck(rfn.Num) || !factorCheck(rfn.Denom) {
-		return nil, nil, LowMBar
+		return nil, nil, ErrLowMBar
 	}
 	numF, err := rfn.Num.Factor()
 	if err != nil {

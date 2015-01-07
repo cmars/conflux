@@ -28,10 +28,10 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	"os"
 	. "github.com/cmars/conflux"
 	"github.com/cmars/conflux/recon"
 	"github.com/syndtr/goleveldb/leveldb"
+	"os"
 )
 
 type prefixTree struct {
@@ -373,7 +373,7 @@ func (t *prefixTree) newChildNode(parent *prefixNode, childIndex int) *prefixNod
 		key.SetBytes(parentKey.Bytes())
 		for j := 0; j < parent.BitQuantum(); j++ {
 			if (1<<uint(j))&childIndex == 0 {
-				key.Unset(parentKey.BitLen() + j)
+				key.Clear(parentKey.BitLen() + j)
 			} else {
 				key.Set(parentKey.BitLen() + j)
 			}
@@ -414,7 +414,7 @@ func (n *prefixNode) Children() (result []recon.PrefixNode) {
 		childKey.SetBytes(key.Bytes())
 		for j := 0; j < n.BitQuantum(); j++ {
 			if (1<<uint(j))&i == 0 {
-				childKey.Unset(key.BitLen() + j)
+				childKey.Clear(key.BitLen() + j)
 			} else {
 				childKey.Set(key.BitLen() + j)
 			}

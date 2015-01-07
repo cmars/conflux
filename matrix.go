@@ -28,11 +28,13 @@ import (
 	"fmt"
 )
 
+// Matrix represents a rectangular array of numbers over a finite field Z(p).
 type Matrix struct {
 	columns, rows int
 	cells         []*Zp
 }
 
+// NewMatrix returns a new Matrix of the given dimensions and finite field p.
 func NewMatrix(columns, rows int, x *Zp) *Matrix {
 	matrix := &Matrix{
 		rows:    rows,
@@ -44,19 +46,22 @@ func NewMatrix(columns, rows int, x *Zp) *Matrix {
 	return matrix
 }
 
+// Get returns the value at the given (row, column) location.
 func (m *Matrix) Get(i, j int) *Zp {
 	return m.cells[i+(j*m.columns)]
 }
 
+// Set sets the value at the given (row, column) location.
 func (m *Matrix) Set(i, j int, x *Zp) {
 	m.cells[i+(j*m.columns)] = x.Copy()
 }
 
-var MatrixTooNarrow = errors.New("Matrix is too narrow to reduce")
+var ErrMatrixTooNarrow = errors.New("Matrix is too narrow to reduce")
 
+// Reduce performs Gaussian elimination on a matrix of coefficients, in-place.
 func (m *Matrix) Reduce() (err error) {
 	if m.columns < m.rows {
-		return MatrixTooNarrow
+		return ErrMatrixTooNarrow
 	}
 	for j := 0; j < m.rows; j++ {
 		err = m.processRowForward(j)
@@ -80,8 +85,6 @@ func (m *Matrix) backSubstitute(j int) {
 		}
 	}
 }
-
-var SwapRowNotFound = errors.New("Swap row not found")
 
 func (m *Matrix) processRowForward(j int) error {
 	v := m.Get(j, j)
@@ -138,6 +141,7 @@ func (m *Matrix) rowsub(scol, src, dst int, scmult *Zp) {
 	}
 }
 
+// String returns a string representation of the matrix.
 func (m *Matrix) String() string {
 	buf := bytes.NewBuffer(nil)
 	for row := 0; row < m.rows; row++ {

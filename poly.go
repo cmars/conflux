@@ -31,18 +31,22 @@ import (
 
 // Poly represents a polynomial in a finite field.
 type Poly struct {
-	// A list of the polynomial coefficients,
-	// ordered by ascending degree.
+
+	// coeff is a list of the polynomial coefficients, ordered by ascending
+	// degree.
 	coeff []*Zp
-	// Highest degree of the polynomial
+
+	// degree is the highest degree of the polynomial.
 	degree int
-	// Finite field P
+
+	// p defines the finite field of all coefficients.
 	p *big.Int
 }
 
 // NewPoly creates a polynomial with the given coefficients, in ascending
-// degree order. For example, NewPoly(1,-2,3) represents the polynomial
-// 3x^2 - 2x + 1.
+// degree order.
+//
+// For example, NewPoly(1,-2,3) represents the polynomial 3x^2 - 2x + 1.
 func NewPoly(coeff ...*Zp) *Poly {
 	p := &Poly{}
 	for i := 0; i < len(coeff); i++ {
@@ -74,8 +78,8 @@ func NewPoly(coeff ...*Zp) *Poly {
 	return p
 }
 
-// String represents a polynomial in a readable form,
-// such as (z^2 + 2z^1 + 1).
+// String represents a polynomial in a more readable form,
+// such as "z^2 + 2z^1 + 1".
 func (p *Poly) String() string {
 	result := bytes.NewBuffer(nil)
 	first := true
@@ -103,21 +107,19 @@ func (p *Poly) Degree() int {
 	return p.degree
 }
 
-// Coeff returns the coefficients for each term
-// of the polynomial. Coefficients are represented as
-// integers in a finite field Zp.
+// Coeff returns the coefficients for each term of the polynomial. Coefficients
+// are represented as integers in a finite field Zp.
 func (p *Poly) Coeff() []*Zp {
 	return p.coeff
 }
 
-// P returns the integer P defining the finite field
-// of the polynomial's coefficients.
+// P returns the integer P defining the finite field of the polynomial's
+// coefficients.
 func (p *Poly) P() *big.Int {
 	return p.p
 }
 
-// Copy returns a deep copy of the polynomial and its
-// term coefficients.
+// Copy returns a deep copy of the polynomial and its term coefficients.
 func (p *Poly) Copy() *Poly {
 	newP := &Poly{degree: p.degree, p: p.p}
 	for i := 0; i <= p.degree; i++ {
@@ -126,8 +128,8 @@ func (p *Poly) Copy() *Poly {
 	return newP
 }
 
-// assertP asserts that the polynomial's integer coefficients are
-// in the finite field Z(fp).
+// assertP asserts that the polynomial's integer coefficients are in the finite
+// field Z(fp).
 func (p *Poly) assertP(fp *big.Int) {
 	if p.p.Cmp(fp) != 0 {
 		panic(fmt.Sprintf("expected finite field Z(%v), was Z(%v)", fp, p.p))
@@ -151,6 +153,7 @@ func (p *Poly) Equal(q *Poly) bool {
 	return true
 }
 
+// Add sets the Poly instance to the sum of two Polys, returning the result.
 func (p *Poly) Add(x, y *Poly) *Poly {
 	x.assertP(y.p)
 	p.p = x.p
@@ -178,6 +181,7 @@ func (p *Poly) trim() {
 	}
 }
 
+// Neg negates the Poly, returning the result.
 func (p *Poly) Neg() *Poly {
 	for i := 0; i <= p.degree; i++ {
 		p.coeff[i].Neg()
@@ -185,10 +189,12 @@ func (p *Poly) Neg() *Poly {
 	return p
 }
 
+// Sub sets the Poly to the difference of two Polys, returning the result.
 func (p *Poly) Sub(x, y *Poly) *Poly {
 	return p.Add(x, y.Copy().Neg())
 }
 
+// Mul sets the Poly to the product of two Polys, returning the result.
 func (p *Poly) Mul(x, y *Poly) *Poly {
 	x.assertP(y.p)
 	p.p = x.p
@@ -208,10 +214,12 @@ func (p *Poly) Mul(x, y *Poly) *Poly {
 	return p
 }
 
+// IsConstant returns whether the Poly is just a constant value.
 func (p *Poly) IsConstant(c *Zp) bool {
 	return p.degree == 0 && p.coeff[0].Cmp(c) == 0
 }
 
+// Eval returns the output value of the Poly at the given sample point z.
 func (p *Poly) Eval(z *Zp) *Zp {
 	sum := Zi(p.p, 0)
 	for d := 0; d <= p.degree; d++ {
@@ -220,6 +228,7 @@ func (p *Poly) Eval(z *Zp) *Zp {
 	return sum
 }
 
+// PolyTerm creates a new Poly with a single non-zero coefficient.
 func PolyTerm(degree int, c *Zp) *Poly {
 	p := &Poly{p: c.P, degree: degree,
 		coeff: make([]*Zp, degree+1)}
@@ -233,6 +242,7 @@ func PolyTerm(degree int, c *Zp) *Poly {
 	return p
 }
 
+// PolyDivmod returns the quotient and remainder between two Polys.
 func PolyDivmod(x, y *Poly) (q *Poly, r *Poly, err error) {
 	x.assertP(y.p)
 	if x.IsConstant(Zi(x.p, 0)) {
@@ -242,28 +252,33 @@ func PolyDivmod(x, y *Poly) (q *Poly, r *Poly, err error) {
 	}
 	degDiff := x.degree - y.degree
 	if degDiff < 0 {
-		err = errors.New(fmt.Sprintf("Quotient degree %d < dividend %d", x.degree, y.degree))
-		return
+		return nil, nil, fmt.Errorf("Quotient degree %d < dividend %d", x.degree, y.degree)
 	}
 	c := Z(x.p).Div(x.coeff[x.degree], y.coeff[y.degree])
 	m := PolyTerm(degDiff, c)
 	my := NewPoly().Mul(m, y)
 	newX := NewPoly().Sub(x, my)
+
 	if newX.degree < x.degree || x.degree == 0 {
 		// TODO: eliminate recursion
-		q, r, err = PolyDivmod(newX, y)
+		q, r, err := PolyDivmod(newX, y)
+		if err != nil {
+			return nil, nil, err
+		}
+
 		q = NewPoly().Add(q, m)
-	} else {
-		err = errors.New("Divmod error")
+		return q, r, nil
 	}
-	return
+	return nil, nil, errors.New("divmod error")
 }
 
+// PolyDiv returns the quotient between two Polys.
 func PolyDiv(x, y *Poly) (q *Poly, err error) {
 	q, _, err = PolyDivmod(x, y)
 	return
 }
 
+// PolyDiv returns the mod function between two Polys.
 func PolyMod(x, y *Poly) (r *Poly, err error) {
 	_, r, err = PolyDivmod(x, y)
 	return
@@ -280,6 +295,7 @@ func polyGcd(x, y *Poly) (*Poly, error) {
 	return polyGcd(y, r)
 }
 
+// PolyGcd returns the greatest common divisor between two Polys.
 func PolyGcd(x, y *Poly) (result *Poly, err error) {
 	result, err = polyGcd(x, y)
 	if err != nil {
@@ -290,6 +306,7 @@ func PolyGcd(x, y *Poly) (result *Poly, err error) {
 	return result, nil
 }
 
+// RationalFn describes a function that is the ratio between two polynomials.
 type RationalFn struct {
 	Num   *Poly
 	Denom *Poly

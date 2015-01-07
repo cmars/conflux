@@ -199,7 +199,7 @@ func unmarshalNode(buf []byte, bitQuantum int, numSamples int) (node *Node, err 
 				if i&(1<<uint(j)) != 0 {
 					child.Set(key.BitLen() + j)
 				} else {
-					child.Unset(key.BitLen() + j)
+					child.Clear(key.BitLen() + j)
 				}
 			}
 			node.Children = append(node.Children, child.String())

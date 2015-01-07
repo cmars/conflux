@@ -227,7 +227,7 @@ func (n *MemPrefixNode) Key() *Bitstring {
 			if ((keys[i] >> uint(j)) & 0x01) == 1 {
 				bs.Set(i*n.BitQuantum() + j)
 			} else {
-				bs.Unset(i*n.BitQuantum() + j)
+				bs.Clear(i*n.BitQuantum() + j)
 			}
 		}
 	}
