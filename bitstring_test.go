@@ -23,54 +23,61 @@
 package conflux
 
 import (
-	"github.com/bmizerany/assert"
 	"testing"
+
+	gc "gopkg.in/check.v1"
 )
 
-func TestBitstringSet(t *testing.T) {
+func Test(t *testing.T) { gc.TestingT(t) }
+
+type BitstringSuite struct{}
+
+var _ = gc.Suite(&BitstringSuite{})
+
+func (s *BitstringSuite) TestSet(c *gc.C) {
 	var bs *Bitstring
 	// bitstring len=1
 	bs = NewBitstring(1)
-	assert.Equal(t, bs.String(), "0")
+	c.Assert(bs.String(), gc.Equals, "0")
 	bs.Flip(0)
-	assert.Equal(t, bs.String(), "1")
-	assert.Equal(t, bs.Bytes()[0], byte(0x80))
+	c.Assert(bs.String(), gc.Equals, "1")
+	c.Assert(bs.Bytes()[0], gc.Equals, byte(0x80))
 	// bitstring len=2
 	bs = NewBitstring(2)
-	assert.Equal(t, bs.String(), "00")
+	c.Assert(bs.String(), gc.Equals, "00")
 	bs.Flip(0)
-	assert.Equal(t, bs.String(), "10")
-	assert.Equal(t, bs.Bytes()[0], byte(0x80))
+	c.Assert(bs.String(), gc.Equals, "10")
+	c.Assert(bs.Bytes()[0], gc.Equals, byte(0x80))
 	bs.Flip(1)
-	assert.Equal(t, bs.String(), "11")
-	assert.Equal(t, bs.Bytes()[0], byte(0xc0))
+	c.Assert(bs.String(), gc.Equals, "11")
+	c.Assert(bs.Bytes()[0], gc.Equals, byte(0xc0))
 	bs.Flip(0)
-	assert.Equal(t, bs.String(), "01")
-	assert.Equal(t, bs.Bytes()[0], byte(0x40))
+	c.Assert(bs.String(), gc.Equals, "01")
+	c.Assert(bs.Bytes()[0], gc.Equals, byte(0x40))
 	// bitstring len=16
 	bs = NewBitstring(16)
-	assert.Equal(t, bs.String(), "0000000000000000")
+	c.Assert(bs.String(), gc.Equals, "0000000000000000")
 	bs.Set(0)
 	bs.Set(15)
-	assert.Equal(t, bs.String(), "1000000000000001")
-	assert.Equal(t, bs.Bytes()[0], byte(0x80))
-	assert.Equal(t, bs.Bytes()[1], byte(0x01))
+	c.Assert(bs.String(), gc.Equals, "1000000000000001")
+	c.Assert(bs.Bytes()[0], gc.Equals, byte(0x80))
+	c.Assert(bs.Bytes()[1], gc.Equals, byte(0x01))
 }
 
-func TestBsBytes(t *testing.T) {
+func (s *BitstringSuite) TestBsBytes(c *gc.C) {
 	bs := NewBitstring(16)
 	bs.SetBytes([]byte{0x80, 0x00})
 	for i := 0; i < bs.BitLen(); i++ {
 		switch i {
 		case 0:
-			assert.Equal(t, 1, bs.Get(i))
+			c.Assert(1, gc.Equals, bs.Get(i))
 		default:
-			assert.Equal(t, 0, bs.Get(i))
+			c.Assert(0, gc.Equals, bs.Get(i))
 		}
 	}
 }
 
-func TestZpToBitstring(t *testing.T) {
+func (s *BitstringSuite) TestZpToBitstring(c *gc.C) {
 	// 00's
 	zs := []*Zp{
 		Zs(P_SKS, "54945054303302140323349777569652159744"),
@@ -92,8 +99,8 @@ func TestZpToBitstring(t *testing.T) {
 		Zs(P_SKS, "236652262168326400305360829310456888110")}
 	for _, z := range zs {
 		bs := NewZpBitstring(z)
-		assert.Equal(t, bs.Get(0), 0)
-		assert.Equal(t, bs.Get(1), 0)
+		c.Assert(bs.Get(0), gc.Equals, 0)
+		c.Assert(bs.Get(1), gc.Equals, 0)
 	}
 	// 01's
 	zs = []*Zp{
@@ -118,8 +125,8 @@ func TestZpToBitstring(t *testing.T) {
 		Zs(P_SKS, "311101531782501702629491213596113502586")}
 	for _, z := range zs {
 		bs := NewZpBitstring(z)
-		assert.Equal(t, bs.Get(0), 0)
-		assert.Equal(t, bs.Get(1), 1)
+		c.Assert(bs.Get(0), gc.Equals, 0)
+		c.Assert(bs.Get(1), gc.Equals, 1)
 	}
 	zs = []*Zp{
 		Zs(P_SKS, "188716858420292079269415903308294938757"),
@@ -145,7 +152,7 @@ func TestZpToBitstring(t *testing.T) {
 		Zs(P_SKS, "20018245473587526137270198427261386422")}
 	for _, z := range zs {
 		bs := NewZpBitstring(z)
-		assert.Equal(t, bs.Get(0), 1)
-		assert.Equal(t, bs.Get(1), 0)
+		c.Assert(bs.Get(0), gc.Equals, 1)
+		c.Assert(bs.Get(1), gc.Equals, 0)
 	}
 }

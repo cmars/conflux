@@ -24,10 +24,14 @@ package conflux
 
 import (
 	"crypto/rand"
-	"github.com/bmizerany/assert"
 	"math/big"
-	"testing"
+
+	gc "gopkg.in/check.v1"
 )
+
+type DecodeSuite struct{}
+
+var _ = gc.Suite(&DecodeSuite{})
 
 func randInt(max int) int {
 	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
@@ -50,26 +54,27 @@ func randLinearProd(p *big.Int, n int) (*Poly, *ZSet) {
 	return result, roots
 }
 
-func factorTest(t *testing.T) {
+func factorTest(c *gc.C) {
 	deg := randInt(10) + 1
 	p := big.NewInt(int64(97))
 	// Create a factor-able, polynomial product of linears
 	poly, roots := randLinearProd(p, deg)
-	t.Logf("factor poly: (%v)", poly)
+	c.Logf("factor poly: (%v)", poly)
 	factoredRoots, err := poly.Factor()
-	assert.Equal(t, err, nil)
-	t.Logf("factoredRoots=%v ?== roots=%v", factoredRoots, roots)
-	assert.Tf(t, roots.Equal(factoredRoots), "%v !== %v", roots, factoredRoots)
+	c.Assert(err, gc.IsNil)
+	c.Logf("factoredRoots=%v ?== roots=%v", factoredRoots, roots)
+	c.Assert(roots.Equal(factoredRoots), gc.Equals, true,
+		gc.Commentf("%v !== %v", roots, factoredRoots))
 }
 
-func TestFactorization(t *testing.T) {
+func (s *DecodeSuite) TestFactorization(c *gc.C) {
 	for i := 0; i < 100; i++ {
-		t.Logf("Factorization #%d", i)
-		factorTest(t)
+		c.Logf("Factorization #%d", i)
+		factorTest(c)
 	}
 }
 
-func TestCannedInterpolation(t *testing.T) {
+func (s *DecodeSuite) TestCannedInterpolation(c *gc.C) {
 	/*
 		interpolate
 		values=[50209572917763804813893169477404135246 523915264287429384599917983489241637041 193879208340335596473327301694891073112 336257832174512052845041381684545224326 525220581565510310465258018589146771167 369646301408454767673033771110855434260 371821946850459872311187739000814476019 144426966457292640051271632674756114101 379207879747256731229136438792149285186 46108152160169587744128314614996604924 227801899428306415871207999262631174702 207497927707680176901864453717256663645 190227327194805171829784109272423912872 ]
@@ -83,8 +88,8 @@ func TestCannedInterpolation(t *testing.T) {
 	points := []*Zp{Zi(p, 0), Zi(p, -1), Zi(p, 1), Zi(p, -2), Zi(p, 2), Zi(p, -3), Zi(p, 3), Zi(p, -4), Zi(p, 4), Zi(p, -5), Zi(p, 5), Zi(p, -6), Zi(p, 6)}
 	d := -11
 	rfn, err := Interpolate(values, points, d)
-	assert.Equal(t, err, nil)
-	t.Logf("num=%v denom=%v", rfn.Num, rfn.Denom)
+	c.Assert(err, gc.IsNil)
+	c.Logf("num=%v denom=%v", rfn.Num, rfn.Denom)
 	numExpect := []*Zp{Zs(p, "201510631159794911579036209221877731351"), Zi(p, 1)}
 	denomExpect := []*Zp{
 		Zs(p, "471406228141421561633415986254867829648"),
@@ -101,21 +106,21 @@ func TestCannedInterpolation(t *testing.T) {
 		Zs(p, "129168611341530605578585909520009112853"),
 		Zi(p, 1)}
 	for i, z := range numExpect {
-		assert.Equal(t, z.String(), rfn.Num.coeff[i].String())
+		c.Assert(z.String(), gc.Equals, rfn.Num.coeff[i].String())
 	}
 	for i, z := range denomExpect {
-		assert.Equal(t, z.String(), rfn.Denom.coeff[i].String())
+		c.Assert(z.String(), gc.Equals, rfn.Denom.coeff[i].String())
 	}
 }
 
-func TestInterpolation(t *testing.T) {
+func (s *DecodeSuite) TestInterpolation(c *gc.C) {
 	for i := 0; i < 100; i++ {
-		t.Logf("Interpolation #%d", i)
-		interpTest(t)
+		c.Logf("Interpolation #%d", i)
+		interpTest(c)
 	}
 }
 
-func interpTest(t *testing.T) {
+func interpTest(c *gc.C) {
 	var err error
 	p := P_SKS
 	deg := randInt(10) + 1
@@ -123,9 +128,9 @@ func interpTest(t *testing.T) {
 	denomDeg := deg - numDeg
 	num, _ := randLinearProd(p, numDeg)
 	denom, _ := randLinearProd(p, denomDeg)
-	assert.Equal(t, num.degree, numDeg)
-	assert.Equal(t, denom.degree, denomDeg)
-	t.Logf("num: (%v) denom: (%v)", num, denom)
+	c.Assert(num.degree, gc.Equals, numDeg)
+	c.Assert(denom.degree, gc.Equals, denomDeg)
+	c.Logf("num: (%v) denom: (%v)", num, denom)
 	mbar := randInt(9) + 1
 	n := mbar + 1
 	toobig := deg+1 > mbar
@@ -141,16 +146,16 @@ func interpTest(t *testing.T) {
 		points[i] = Zi(p, pi)
 		values[i] = Z(p).Div(num.Eval(points[i]), denom.Eval(points[i]))
 	}
-	t.Logf("values=(%v) points=(%v) degDiff=(%v)", values, points, abs(numDeg-denomDeg))
+	c.Logf("values=(%v) points=(%v) degDiff=(%v)", values, points, abs(numDeg-denomDeg))
 	rfn, err := Interpolate(values, points, numDeg-denomDeg)
 	if toobig {
 		return
 	} else {
-		assert.Equal(t, err, nil)
+		c.Assert(err, gc.IsNil)
 	}
-	//t.Logf("mbar: %d, num_deg: %d, denom_deg: %d", mbar, numDeg, denomDeg)
-	assert.Tf(t, num.Equal(rfn.Num), "num: (%v) != (%v)", num, rfn.Num)
-	assert.Tf(t, denom.Equal(rfn.Denom), "denom: (%v) != (%v)", denom, rfn.Denom)
+	c.Logf("mbar: %d, num_deg: %d, denom_deg: %d", mbar, numDeg, denomDeg)
+	c.Assert(num.Equal(rfn.Num), gc.Equals, true, gc.Commentf("num: (%v) != (%v)", num, rfn.Num))
+	c.Assert(denom.Equal(rfn.Denom), gc.Equals, true, gc.Commentf("denom: (%v) != (%v)", denom, rfn.Denom))
 }
 
 type zGenF func() *Zp
@@ -163,7 +168,7 @@ func setInit(n int, f zGenF) *ZSet {
 	return zs
 }
 
-func TestCannedReconcile(t *testing.T) {
+func (s *DecodeSuite) TestCannedReconcile(c *gc.C) {
 	p := P_SKS
 	set1 := NewZSet()
 	s1items := []*Zp{Zs(p, "8952777669297728851091848378379377617"), Zs(p, "162085839528403560100929159811161460293"), Zs(p, "181484969924633124558171484324504401075"), Zs(p, "229305846979453177871691812413112208676"), Zs(p, "284001389401364703525738874626145923778"), Zs(p, "333026889954813771673937036618957938545"), Zs(p, "401537002901186069501925598757914356337"), Zs(p, "408597178507212301417184698839771487762"), Zs(p, "419504520512224794235831228788173561599"), Zs(p, "454233583376105592897174699470827876606")}
@@ -176,21 +181,23 @@ func TestCannedReconcile(t *testing.T) {
 	m1 := len(s1items)
 	m2 := len(s2items)
 	diff1, diff2, err := Reconcile(values, points, m1-m2)
-	assert.Equal(t, err, nil)
-	t.Logf("recon compare: %v ==? %v", diff1, set1)
-	t.Logf("recon compare: %v ==? %v", diff2, set2)
-	assert.T(t, diff1.Equal(set1))
-	assert.T(t, diff2.Equal(set2))
+	c.Assert(err, gc.IsNil)
+	c.Logf("recon compare: %v ==? %v", diff1, set1)
+	c.Logf("recon compare: %v ==? %v", diff2, set2)
+	c.Assert(diff1, gc.DeepEquals, set1)
+	c.Assert(diff2, gc.DeepEquals, set2)
+	c.Assert(diff1.Equal(set1), gc.Equals, true)
+	c.Assert(diff2.Equal(set2), gc.Equals, true)
 }
 
-func TestReconcile(t *testing.T) {
+func (s *DecodeSuite) TestReconcile(c *gc.C) {
 	for i := 0; i < 100; i++ {
-		t.Logf("Reconcile #%d", i)
-		reconcileTest(t)
+		c.Logf("Reconcile #%d", i)
+		reconcileTest(c)
 	}
 }
 
-func reconcileTest(t *testing.T) {
+func reconcileTest(c *gc.C) {
 	p := P_SKS
 	mbar := randInt(20) + 1
 	n := mbar + 1
@@ -203,7 +210,7 @@ func reconcileTest(t *testing.T) {
 	m2 := m - m1
 	set1 := setInit(m1, func() *Zp { return Zrand(p) })
 	set2 := setInit(m2, func() *Zp { return Zrand(p) })
-	t.Logf("mbar: %d, n: %d, m: %d, m1: %d, m2: %d", mbar, n, m, m1, m2)
+	c.Logf("mbar: %d, n: %d, m: %d, m1: %d, m2: %d", mbar, n, m, m1, m2)
 	for _, s1i := range set1.Items() {
 		for i := 0; i < n; i++ {
 			svalues1[i].Mul(svalues1[i].Copy(), Z(p).Sub(points[i], s1i))
@@ -218,38 +225,40 @@ func reconcileTest(t *testing.T) {
 	for i := 0; i < len(values); i++ {
 		values[i] = Z(p).Div(svalues1[i], svalues2[i])
 	}
-	t.Logf("values=%v\npoints=%v\nd=%v", values, points, m1-m2)
+	c.Logf("values=%v\npoints=%v\nd=%v", values, points, m1-m2)
 	diff1, diff2, err := Reconcile(values, points, m1-m2)
 	if err != nil {
-		t.Logf("Low MBar")
-		assert.Tf(t, m > mbar, "m %d > mbar %d", m, mbar)
+		c.Logf("Low MBar")
+		c.Assert(m > mbar, gc.Equals, true, gc.Commentf("m %d > mbar %d", m, mbar))
 		return
 	}
-	assert.Equal(t, err, nil)
-	t.Logf("recon compare: %v ==? %v", diff1, set1)
-	t.Logf("recon compare: %v ==? %v", diff2, set2)
-	assert.T(t, diff1.Equal(set1))
-	assert.T(t, diff2.Equal(set2))
+	c.Assert(err, gc.IsNil)
+	c.Logf("recon compare: %v ==? %v", diff1, set1)
+	c.Logf("recon compare: %v ==? %v", diff2, set2)
+	c.Assert(diff1, gc.DeepEquals, set1)
+	c.Assert(diff2, gc.DeepEquals, set2)
+	c.Assert(diff1.Equal(set1), gc.Equals, true)
+	c.Assert(diff2.Equal(set2), gc.Equals, true)
 }
 
-func TestLowMBar(t *testing.T) {
+func (s *DecodeSuite) TestLowMBar(c *gc.C) {
 	p := P_SKS
 	values := []*Zp{Zs(p, "260405721246918987273155339614020972656"), Zs(p, "243393001638573476362665007855413044937"), Zs(p, "505905314437392989818278468923779137359"), Zs(p, "105358332430258313066486664282953088018"), Zs(p, "2560440886574256298562818527295701964"), Zs(p, "118746265689993312951910051444187575775"), Zs(p, "529698088600031242289045200206930982765"), Zs(p, "441488592726201746187835041000728091281")}
 	points := Zpoints(p, len(values))
 	_, _, err := Reconcile(values, points, 3)
-	assert.Equal(t, err, ErrLowMBar)
+	c.Assert(err, gc.Equals, ErrLowMBar)
 }
 
-func TestFactorCheck(t *testing.T) {
+func (s *DecodeSuite) TestFactorCheck(c *gc.C) {
 	//factor_check x=1 z^2 + 117479252320778380699969369242473163812 z^1 + 23910866165498202015403350789738609658 zq=1 z^1 + 0 mz=530512889551602322505127520352579437338 z^1 + 0 zqmz=0
 	p := P_SKS
 	x := NewPoly(Zs(p, "23910866165498202015403350789738609658"),
 		Zs(p, "117479252320778380699969369242473163812"),
 		Zs(p, "1"))
-	assert.Tf(t, factorCheck(x), "%v", x)
+	c.Assert(factorCheck(x), gc.Equals, true, gc.Commentf("%v", x))
 }
 
-func TestPolyNomNomNom(t *testing.T) {
+func (s *DecodeSuite) TestPolyNomNomNom(c *gc.C) {
 	// Values obtained from dumping an SKS unit test run.
 	p := P_SKS
 	num := NewPoly(Zs(p, "201510631159794911579036209221877731351"), Zi(p, 1))
@@ -268,9 +277,9 @@ func TestPolyNomNomNom(t *testing.T) {
 		Zi(p, 1))
 	point := Zi(p, -7)
 	numAt := num.Eval(point)
-	assert.Equal(t, numAt.String(), "201510631159794911579036209221877731344")
+	c.Assert(numAt.String(), gc.Equals, "201510631159794911579036209221877731344")
 	denomAt := denom.Eval(point)
-	assert.Equal(t, denomAt.String(), "77151748131754717019960190430023395826")
+	c.Assert(denomAt.String(), gc.Equals, "77151748131754717019960190430023395826")
 	rational := Z(p).Div(numAt, denomAt)
-	assert.Equal(t, rational.String(), "372597725470208235965358485960825765733")
+	c.Assert(rational.String(), gc.Equals, "372597725470208235965358485960825765733")
 }

@@ -23,14 +23,18 @@
 package conflux
 
 import (
-	"github.com/bmizerany/assert"
 	"math/big"
-	"testing"
+
+	gc "gopkg.in/check.v1"
 )
+
+type MatrixSuite struct{}
+
+var _ = gc.Suite(&MatrixSuite{})
 
 const TEST_MATRIX_SIZE = 5
 
-func TestMatrixPutGet(t *testing.T) {
+func (s *MatrixSuite) TestMatrixPutGet(c *gc.C) {
 	p := big.NewInt(int64(65537))
 	m := NewMatrix(TEST_MATRIX_SIZE, TEST_MATRIX_SIZE, Zi(p, 23))
 	m.Set(2, 2, Zi(p, 24))
@@ -39,47 +43,47 @@ func TestMatrixPutGet(t *testing.T) {
 		for j := 0; j < TEST_MATRIX_SIZE; j++ {
 			n++
 			if i == 2 && j == 2 {
-				assert.Equal(t, int64(24), m.Get(i, j).Int64())
+				c.Assert(int64(24), gc.Equals, m.Get(i, j).Int64())
 			} else {
-				assert.Equal(t, int64(23), m.Get(i, j).Int64())
+				c.Assert(int64(23), gc.Equals, m.Get(i, j).Int64())
 			}
 		}
 	}
-	assert.Equal(t, 25, n)
+	c.Assert(25, gc.Equals, n)
 }
 
-func TestSwapRows(t *testing.T) {
+func (s *MatrixSuite) TestSwapRows(c *gc.C) {
 	p := big.NewInt(int64(13))
 	m := NewMatrix(3, 3, Zi(p, 0))
 	for i := 0; i < len(m.cells); i++ {
 		m.cells[i] = Zi(p, i)
 	}
 	m.swapRows(0, 1)
-	assert.Equal(t, int64(0), m.Get(0, 1).Int64())
-	assert.Equal(t, int64(3), m.Get(0, 0).Int64())
+	c.Assert(int64(0), gc.Equals, m.Get(0, 1).Int64())
+	c.Assert(int64(3), gc.Equals, m.Get(0, 0).Int64())
 }
 
-func TestScalarMult(t *testing.T) {
+func (s *MatrixSuite) TestScalarMult(c *gc.C) {
 	p := big.NewInt(int64(13))
 	m := NewMatrix(3, 3, Zi(p, 0))
 	for col := 0; col < m.columns; col++ {
 		m.Set(col, 0, Zi(p, col))
 	}
 	m.scmultRow(0, 0, Zi(p, 2))
-	assert.Equal(t, int64(0), m.Get(0, 0).Int64())
-	assert.Equal(t, int64(2), m.Get(1, 0).Int64())
-	assert.Equal(t, int64(4), m.Get(2, 0).Int64())
+	c.Assert(int64(0), gc.Equals, m.Get(0, 0).Int64())
+	c.Assert(int64(2), gc.Equals, m.Get(1, 0).Int64())
+	c.Assert(int64(4), gc.Equals, m.Get(2, 0).Int64())
 }
 
-func assertEqualMatrix(t *testing.T, m0 *Matrix, m1 *Matrix) {
-	assert.Equal(t, m0.rows, m1.rows)
-	assert.Equal(t, m0.columns, m1.columns)
+func assertEqualMatrix(c *gc.C, m0 *Matrix, m1 *Matrix) {
+	c.Assert(m0.rows, gc.Equals, m1.rows)
+	c.Assert(m0.columns, gc.Equals, m1.columns)
 	for i, cell := range m0.cells {
-		assert.Equal(t, cell.String(), m1.cells[i].String())
+		c.Assert(cell.String(), gc.Equals, m1.cells[i].String())
 	}
 }
 
-func TestRowSub(t *testing.T) {
+func (s *MatrixSuite) TestRowSub(c *gc.C) {
 	//rowsub scol=2 src=2 dst=1 scmult=414193719442635090920821340202167292308
 	p := P_SKS
 	m0 := NewMatrix(4, 3, Zi(p, 0))
@@ -91,10 +95,10 @@ func TestRowSub(t *testing.T) {
 		Zs(p, "0"), Zs(p, "1"), Zs(p, "0"), Zs(p, "111558354046471781906126890183463223733"),
 		Zs(p, "0"), Zs(p, "0"), Zs(p, "1"), Zs(p, "392754565503219928741794743746565516193")}
 	m0.rowsub(2, 2, 1, Zs(p, "414193719442635090920821340202167292308"))
-	assertEqualMatrix(t, m0, m1)
+	assertEqualMatrix(c, m0, m1)
 }
 
-func TestScmult(t *testing.T) {
+func (s *MatrixSuite) TestScmult(c *gc.C) {
 	//scmult_row scol=1 j=1 sc=224783190696206154659406780575841590745
 	p := P_SKS
 	m0 := NewMatrix(4, 3, Zi(p, 0))
@@ -108,10 +112,10 @@ func TestScmult(t *testing.T) {
 		Zs(p, "1"), Zs(p, "1"), Zs(p, "530512889551602322505127520352579437338"), Zs(p, "224783190696206154659406780575841590744"),
 		Zs(p, "1"), Zs(p, "263058945883592178217015800993817029663"), Zs(p, "263058945883592178217015800993817029663"), Zs(p, "267453943668010144288111719358762407675")}
 	m0.scmultRow(1, 1, Zs(p, "224783190696206154659406780575841590745"))
-	assertEqualMatrix(t, m0, m1)
+	assertEqualMatrix(c, m0, m1)
 }
 
-func TestProcessRowForward(t *testing.T) {
+func (s *MatrixSuite) TestProcessRowForward(c *gc.C) {
 	p := P_SKS
 	m0 := NewMatrix(4, 3, Zi(p, 0))
 	m1 := NewMatrix(4, 3, Zi(p, 0))
@@ -125,5 +129,5 @@ func TestProcessRowForward(t *testing.T) {
 		Zs(p, "0"), Zs(p, "111062613482003786967793432151264958139"), Zs(p, "56378935912848241334616952212204693693"), Zs(p, "56378935912848241334616952212204693694"),
 		Zs(p, "0"), Zs(p, "430500495278444206519426185357286681495"), Zs(p, "263058945883592178217015800993817029663"), Zs(p, "267453943668010144288111719358762407675")}
 	m0.processRowForward(0)
-	assertEqualMatrix(t, m0, m1)
+	assertEqualMatrix(c, m0, m1)
 }

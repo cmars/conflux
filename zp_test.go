@@ -23,10 +23,14 @@
 package conflux
 
 import (
-	"github.com/bmizerany/assert"
 	"math/big"
-	"testing"
+
+	gc "gopkg.in/check.v1"
 )
+
+type ZpSuite struct{}
+
+var _ = gc.Suite(&ZpSuite{})
 
 func p(n int) *big.Int {
 	return big.NewInt(int64(n))
@@ -40,155 +44,155 @@ func zp7(n int) *Zp {
 	return Zi(p(7), n)
 }
 
-func TestAdd(t *testing.T) {
+func (s *ZpSuite) TestAdd(c *gc.C) {
 	a := zp5(1)
 	b := zp5(3)
-	assert.Equal(t, 0, zp5(4).Cmp(a.Add(a, b)))
+	c.Assert(0, gc.Equals, zp5(4).Cmp(a.Add(a, b)))
 }
 
-func TestAddWrap(t *testing.T) {
+func (s *ZpSuite) TestAddWrap(c *gc.C) {
 	a := zp5(1)
 	b := zp5(9)
-	assert.Equal(t, 0, zp5(0).Cmp(a.Add(a, b)))
+	c.Assert(0, gc.Equals, zp5(0).Cmp(a.Add(a, b)))
 }
 
-func TestMinusOne(t *testing.T) {
+func (s *ZpSuite) TestMinusOne(c *gc.C) {
 	a := Zi(p(65537), -1)
-	assert.Equal(t, int64(65536), a.Int64())
+	c.Assert(int64(65536), gc.Equals, a.Int64())
 }
 
-func TestMul(t *testing.T) {
+func (s *ZpSuite) TestMul(c *gc.C) {
 	// 4x3
 	a := zp5(4)
 	b := zp5(3)
 	a.Mul(a, b)
-	assert.Equal(t, int64(2), a.Int64())
+	c.Assert(int64(2), gc.Equals, a.Int64())
 	// 4x4x3
 	a = zp5(4)
 	b = zp5(3)
 	a.Mul(a, a)
 	a.Mul(a, b)
-	assert.Equal(t, int64(3), a.Int64())
+	c.Assert(int64(3), gc.Equals, a.Int64())
 	// 16x16
 	a = zp5(4)
 	a.Mul(a, a) // 4x4
 	a.Mul(a, a) // 16x16
-	assert.Equal(t, int64(1), a.Int64())
+	c.Assert(int64(1), gc.Equals, a.Int64())
 }
 
-func TestDiv(t *testing.T) {
+func (s *ZpSuite) TestDiv(c *gc.C) {
 	// in Z(5), 1 / 2 = 3 because 3 * 2 = 1.
 	a := zp5(1)
 	b := zp5(2)
 	q := Z(p(5)).Div(a, b)
-	assert.Equal(t, int64(3), q.Int64())
+	c.Assert(int64(3), gc.Equals, q.Int64())
 	// in Z(5), 1 / 3 = 2 because 3 * 2 = 1.
 	a = zp5(1)
 	b = zp5(3)
 	q = Z(p(5)).Div(a, b)
-	assert.Equal(t, int64(2), q.Int64())
+	c.Assert(int64(2), gc.Equals, q.Int64())
 }
 
-func TestMismatchedP(t *testing.T) {
+func (s *ZpSuite) TestMismatchedP(c *gc.C) {
 	defer func() {
 		r := recover()
-		assert.T(t, r != nil)
+		c.Assert(r, gc.NotNil)
 	}()
 	a := zp5(1)
 	b := Zi(p(65537), 9)
 	a.Add(a, b)
-	t.Fail()
+	c.Fail()
 }
 
-func TestNeg(t *testing.T) {
+func (s *ZpSuite) TestNeg(c *gc.C) {
 	a := zp5(2)
 	a.Neg()
-	assert.Equal(t, int64(3), a.Int64())
+	c.Assert(int64(3), gc.Equals, a.Int64())
 	a = zp5(0)
 	a.Neg()
-	assert.Equal(t, int64(0), a.Int64())
+	c.Assert(int64(0), gc.Equals, a.Int64())
 }
 
-func TestSub(t *testing.T) {
-	a := zp5(4)
-	b := zp5(3)
-	c := a.Copy().Sub(a, b)
-	assert.Equal(t, int64(4), a.Int64())
-	assert.Equal(t, int64(3), b.Int64())
-	assert.Equal(t, int64(1), c.Int64())
+func (s *ZpSuite) TestSub(c *gc.C) {
+	az := zp5(4)
+	bz := zp5(3)
+	cz := az.Copy().Sub(az, bz)
+	c.Assert(int64(4), gc.Equals, az.Int64())
+	c.Assert(int64(3), gc.Equals, bz.Int64())
+	c.Assert(int64(1), gc.Equals, cz.Int64())
 }
 
-func TestSubRoll(t *testing.T) {
-	a := zp5(1)
-	b := zp5(3)
-	c := a.Copy().Sub(a, b)
-	assert.Equal(t, int64(1), a.Int64())
-	assert.Equal(t, int64(3), b.Int64())
-	assert.Equal(t, int64(3), c.Int64()) // -2 == 3
-	a = zp5(1)
-	b = zp5(4)
-	c = a.Copy().Sub(a, b)
-	assert.Equal(t, int64(1), a.Int64())
-	assert.Equal(t, int64(4), b.Int64())
-	assert.Equal(t, int64(2), c.Int64()) // -3 == 2
+func (s *ZpSuite) TestSubRoll(c *gc.C) {
+	az := zp5(1)
+	bz := zp5(3)
+	cz := az.Copy().Sub(az, bz)
+	c.Assert(int64(1), gc.Equals, az.Int64())
+	c.Assert(int64(3), gc.Equals, bz.Int64())
+	c.Assert(int64(3), gc.Equals, cz.Int64()) // -2 == 3
+	az = zp5(1)
+	bz = zp5(4)
+	cz = az.Copy().Sub(az, bz)
+	c.Assert(int64(1), gc.Equals, az.Int64())
+	c.Assert(int64(4), gc.Equals, bz.Int64())
+	c.Assert(int64(2), gc.Equals, cz.Int64()) // -3 == 2
 }
 
-func TestZSet(t *testing.T) {
+func (s *ZpSuite) TestZSet(c *gc.C) {
 	a := NewZSet()
 	a.Add(zp5(1))
 	a.Add(zp5(1))
 	a.Add(zp5(2))
 	a.Add(zp5(3))
 	items := a.Items()
-	assert.Equal(t, 3, len(items))
-	assert.T(t, a.Has(zp5(1)))
-	assert.T(t, a.Has(zp5(2)))
-	assert.T(t, a.Has(zp5(3)))
+	c.Assert(items, gc.HasLen, 3)
+	c.Assert(a.Has(zp5(1)), gc.Equals, true)
+	c.Assert(a.Has(zp5(2)), gc.Equals, true)
+	c.Assert(a.Has(zp5(3)), gc.Equals, true)
 }
 
-func TestZsetDisjoint(t *testing.T) {
+func (s *ZpSuite) TestZsetDisjoint(c *gc.C) {
 	zs1 := NewZSet(Zi(P_SKS, 65537), Zi(P_SKS, 65539))
 	zs2 := NewZSet(Zi(P_SKS, 65537), Zi(P_SKS, 65541))
-	assert.T(t, zs1.Has(Zi(P_SKS, 65537)))
-	assert.T(t, zs2.Has(Zi(P_SKS, 65537)))
-	assert.T(t, zs1.Has(Zi(P_SKS, 65539)))
-	assert.T(t, zs2.Has(Zi(P_SKS, 65541)))
-	assert.T(t, !zs2.Has(Zi(P_SKS, 65539)))
-	assert.T(t, !zs1.Has(Zi(P_SKS, 65541)))
+	c.Assert(zs1.Has(Zi(P_SKS, 65537)), gc.Equals, true)
+	c.Assert(zs2.Has(Zi(P_SKS, 65537)), gc.Equals, true)
+	c.Assert(zs1.Has(Zi(P_SKS, 65539)), gc.Equals, true)
+	c.Assert(zs2.Has(Zi(P_SKS, 65541)), gc.Equals, true)
+	c.Assert(!zs2.Has(Zi(P_SKS, 65539)), gc.Equals, true)
+	c.Assert(!zs1.Has(Zi(P_SKS, 65541)), gc.Equals, true)
 }
 
-func TestZSetDiff(t *testing.T) {
+func (s *ZpSuite) TestZSetDiff(c *gc.C) {
 	zs1 := NewZSet(Zi(P_SKS, 65537), Zi(P_SKS, 65539))
 	zs2 := NewZSet(Zi(P_SKS, 65537), Zi(P_SKS, 65541))
 	zs3 := ZSetDiff(zs1, zs2)
 	zs4 := ZSetDiff(zs2, zs1)
-	assert.T(t, zs3.Has(Zi(P_SKS, 65539)))
-	assert.Equal(t, 1, len(zs3.Items()))
-	assert.T(t, zs4.Has(Zi(P_SKS, 65541)))
-	assert.Equal(t, 1, len(zs4.Items()))
+	c.Assert(zs3.Has(Zi(P_SKS, 65539)), gc.Equals, true)
+	c.Assert(zs3.Items(), gc.HasLen, 1)
+	c.Assert(zs4.Has(Zi(P_SKS, 65541)), gc.Equals, true)
+	c.Assert(zs4.Items(), gc.HasLen, 1)
 }
 
-func TestZSetDiffEmpty(t *testing.T) {
+func (s *ZpSuite) TestZSetDiffEmpty(c *gc.C) {
 	zs1 := NewZSet(Zi(P_SKS, 65537), Zi(P_SKS, 65539))
 	zs2 := NewZSet()
 	zs3 := ZSetDiff(zs1, zs2)
 	zs4 := ZSetDiff(zs2, zs1)
-	assert.T(t, zs3.Has(Zi(P_SKS, 65537)))
-	assert.T(t, zs3.Has(Zi(P_SKS, 65539)))
-	assert.Equal(t, 2, len(zs3.Items()))
-	assert.Equal(t, 0, len(zs4.Items()))
+	c.Assert(zs3.Has(Zi(P_SKS, 65537)), gc.Equals, true)
+	c.Assert(zs3.Has(Zi(P_SKS, 65539)), gc.Equals, true)
+	c.Assert(zs3.Items(), gc.HasLen, 2)
+	c.Assert(zs4.Items(), gc.HasLen, 0)
 }
 
-func TestByteOrder(t *testing.T) {
+func (s *ZpSuite) TestByteOrder(c *gc.C) {
 	z := Zi(P_SKS, 65536)
-	t.Logf("%x", z.Bytes())
-	assert.Equal(t, byte(0), z.Bytes()[0])
-	assert.Equal(t, byte(0), z.Bytes()[1])
-	assert.Equal(t, byte(1), z.Bytes()[2])
+	c.Logf("%x", z.Bytes())
+	c.Assert(byte(0), gc.Equals, z.Bytes()[0])
+	c.Assert(byte(0), gc.Equals, z.Bytes()[1])
+	c.Assert(byte(1), gc.Equals, z.Bytes()[2])
 }
 
-func TestByteRtt(t *testing.T) {
+func (s *ZpSuite) TestByteRtt(c *gc.C) {
 	z := Zi(P_SKS, 65536)
 	z2 := Zb(P_SKS, z.Bytes())
-	assert.Equal(t, z.Bytes(), z2.Bytes())
+	c.Assert(z.Bytes(), gc.DeepEquals, z2.Bytes())
 }
