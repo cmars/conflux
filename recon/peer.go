@@ -52,7 +52,7 @@ func (r *Recover) HkpAddr() (string, error) {
 		log.Println("Cannot parse HKP remote address from", r.RemoteAddr, ":", err)
 		return "", err
 	}
-	return fmt.Sprintf("%s:%d", host, r.RemoteConfig.HttpPort), nil
+	return fmt.Sprintf("%s:%d", host, r.RemoteConfig.HTTPPort), nil
 }
 
 type RecoverChan chan *Recover
@@ -67,26 +67,27 @@ type reconCmdReq chan reconCmd
 type reconCmdResp chan error
 
 type Peer struct {
-	*Settings
-	PrefixTree
+	settings *Settings
+	ptree    PrefixTree
+
 	RecoverChan  RecoverChan
 	reconCmdReq  reconCmdReq
 	reconCmdResp reconCmdResp
-	serverStop   chan stopNotify
-	gossipStop   chan stopNotify
 
+	gossipStop chan stopNotify
+	serverStop chan stopNotify
+
+	enableLock sync.Mutex
 	enable     bool
-	enableLock *sync.Mutex
 }
 
 func NewPeer(settings *Settings, tree PrefixTree) *Peer {
 	return &Peer{
 		RecoverChan:  make(RecoverChan),
-		Settings:     settings,
-		PrefixTree:   tree,
+		settings:     settings,
+		ptree:        tree,
 		reconCmdReq:  make(reconCmdReq),
 		reconCmdResp: make(reconCmdResp),
-		enableLock:   new(sync.Mutex),
 	}
 }
 
@@ -172,21 +173,24 @@ func (p *Peer) ExecCmd(cmd reconCmd) (err error) {
 
 func (p *Peer) Insert(z *Zp) (err error) {
 	return p.ExecCmd(func() error {
-		return p.PrefixTree.Insert(z)
+		return p.ptree.Insert(z)
 	})
 }
 
 func (p *Peer) Remove(z *Zp) (err error) {
 	return p.ExecCmd(func() error {
-		return p.PrefixTree.Remove(z)
+		return p.ptree.Remove(z)
 	})
 }
 
-func (p *Peer) Serve() {
-	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", p.ReconPort()))
+func (p *Peer) Serve() error {
+	addr, err := p.settings.ReconNet.Resolve(p.settings.ReconAddr)
 	if err != nil {
-		log.Print(err)
-		return
+		return err
+	}
+	ln, err := net.Listen(addr.Network(), addr.String())
+	if err != nil {
+		return err
 	}
 	defer ln.Close()
 	for {
@@ -194,21 +198,23 @@ func (p *Peer) Serve() {
 		case stop, _ := <-p.serverStop:
 			if stop != nil {
 				stop <- new(interface{})
-				return
+				return nil
 			}
-			return
+			return nil
 		default:
 		}
-		if p.ConnTimeout() > 0 {
-			ln.(*net.TCPListener).SetDeadline(time.Now().Add(time.Second * time.Duration(p.ConnTimeout())))
+		if p.settings.ConnTimeout > 0 {
+			ln.(*net.TCPListener).SetDeadline(time.Now().Add(
+				time.Second * time.Duration(p.settings.ConnTimeout)))
 		}
 		conn, err := ln.Accept()
 		if err != nil {
 			log.Println(SERVE, err)
 			continue
 		}
-		if p.ReadTimeout() > 0 {
-			conn.SetReadDeadline(time.Now().Add(time.Second * time.Duration(p.ReadTimeout())))
+		if p.settings.ReadTimeout > 0 {
+			conn.SetReadDeadline(time.Now().Add(
+				time.Second * time.Duration(p.settings.ReadTimeout)))
 		}
 		go func() {
 			err = p.Accept(conn)
@@ -220,14 +226,22 @@ func (p *Peer) Serve() {
 }
 
 func (p *Peer) handleConfig(conn net.Conn, role string) (remoteConfig *Config, err error) {
+	config, err := p.settings.Config()
+	if err != nil {
+		return nil, err
+	}
+
 	// Send config to server on connect
 	go func() {
-		log.Println(role, "writing config:", p.Config())
-		err = WriteMsg(conn, p.Config())
+		log.Println(role, "writing config:", config)
+		err := WriteMsg(conn, config)
 		if err != nil {
+			//return err
+			log.Println(role, err)
 			return
 		}
 	}()
+
 	// Receive remote peer's config
 	log.Println(role, "reading remote config:", conn.RemoteAddr())
 	var msg ReconMsg
@@ -243,23 +257,23 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (remoteConfig *Config, e
 		return
 	}
 	log.Println(role, "remote config:", remoteConfig)
-	if remoteConfig.BitQuantum != p.Config().BitQuantum {
+	if remoteConfig.BitQuantum != config.BitQuantum {
 		bufw := bufio.NewWriter(conn)
 		WriteString(bufw, RemoteConfigFailed)
 		WriteString(bufw, "mismatched bitquantum")
 		bufw.Flush()
 		log.Println(role, "Cannot peer: BitQuantum remote=", remoteConfig.BitQuantum,
-			"!=", p.Config().BitQuantum)
+			"!=", config.BitQuantum)
 		err = IncompatiblePeerError
 		return
 	}
-	if remoteConfig.MBar != p.Config().MBar {
+	if remoteConfig.MBar != config.MBar {
 		bufw := bufio.NewWriter(conn)
 		WriteString(bufw, RemoteConfigFailed)
 		WriteString(bufw, "mismatched mbar")
 		bufw.Flush()
 		log.Println(role, "Cannot peer: MBar remote=", remoteConfig.MBar,
-			"!=", p.Config().MBar)
+			"!=", config.MBar)
 		err = IncompatiblePeerError
 		return
 	}
@@ -395,7 +409,7 @@ func (rwc *reconWithClient) isDone() bool {
 
 func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) {
 	var msg ReconMsg
-	if req.node.IsLeaf() || (req.node.Size() < p.MBar()) {
+	if req.node.IsLeaf() || (req.node.Size() < p.settings.MBar) {
 		msg = &ReconRqstFull{
 			Prefix:   req.key,
 			Elements: NewZSet(req.node.Elements()...)}
@@ -454,7 +468,7 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 	log.Println(SERVE, "interacting with client")
 	recon := reconWithClient{Peer: p, conn: conn, rcvrSet: NewZSet()}
 	var root PrefixNode
-	root, err = p.Root()
+	root, err = p.ptree.Root()
 	if err != nil {
 		return
 	}
@@ -488,7 +502,7 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 			if hasMsg {
 				recon.popBottom()
 				err = recon.handleReply(p, msg, bottom.requestEntry)
-			} else if len(recon.bottomQ) > p.MaxOutstandingReconRequests() ||
+			} else if len(recon.bottomQ) > p.settings.MaxOutstandingReconRequests ||
 				len(recon.requestQ) == 0 {
 				if !recon.flushing {
 					recon.flushQueue()

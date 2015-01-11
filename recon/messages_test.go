@@ -30,7 +30,7 @@ import (
 func TestConfigRoundTrip(t *testing.T) {
 	c := &Config{
 		Version:    "3.1415",
-		HttpPort:   11371,
+		HTTPPort:   11371,
 		BitQuantum: 2,
 		MBar:       5}
 	buf := bytes.NewBuffer(nil)
@@ -41,7 +41,7 @@ func TestConfigRoundTrip(t *testing.T) {
 	err = c2.unmarshal(bytes.NewBuffer(buf.Bytes()))
 	assert.Equal(t, nil, err)
 	assert.Equal(t, c.Version, c2.Version)
-	assert.Equal(t, c.HttpPort, c2.HttpPort)
+	assert.Equal(t, c.HTTPPort, c2.HTTPPort)
 	assert.Equal(t, c.BitQuantum, c2.BitQuantum)
 	assert.Equal(t, c.MBar, c2.MBar)
 }
@@ -49,7 +49,7 @@ func TestConfigRoundTrip(t *testing.T) {
 func TestConfigMsgRoundTrip(t *testing.T) {
 	c := &Config{
 		Version:    "3.1415",
-		HttpPort:   11371,
+		HTTPPort:   11371,
 		BitQuantum: 2,
 		MBar:       5}
 	buf := bytes.NewBuffer(nil)
@@ -59,7 +59,7 @@ func TestConfigMsgRoundTrip(t *testing.T) {
 	assert.Equal(t, nil, err)
 	c2 := msg.(*Config)
 	assert.Equal(t, c.Version, c2.Version)
-	assert.Equal(t, c.HttpPort, c2.HttpPort)
+	assert.Equal(t, c.HTTPPort, c2.HTTPPort)
 	assert.Equal(t, c.BitQuantum, c2.BitQuantum)
 	assert.Equal(t, c.MBar, c2.MBar)
 }

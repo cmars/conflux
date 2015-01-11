@@ -27,8 +27,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	. "github.com/cmars/conflux"
+	"io"
 )
 
 var SksZpNbytes int
@@ -451,7 +451,7 @@ var RemoteConfigFailed string = "failed"
 
 type Config struct {
 	Version    string
-	HttpPort   int
+	HTTPPort   int
 	BitQuantum int
 	MBar       int
 	Filters    string
@@ -459,8 +459,8 @@ type Config struct {
 }
 
 func (msg *Config) String() string {
-	return fmt.Sprintf("%v: Version=%v HttpPort=%v BitQuantum=%v MBar=%v Filters=%s", msg.MsgType(),
-		msg.Version, msg.HttpPort, msg.BitQuantum, msg.MBar, msg.Filters)
+	return fmt.Sprintf("%v: Version=%v HTTPPort=%v BitQuantum=%v MBar=%v Filters=%s", msg.MsgType(),
+		msg.Version, msg.HTTPPort, msg.BitQuantum, msg.MBar, msg.Filters)
 }
 
 func (msg *Config) MsgType() MsgType {
@@ -483,7 +483,7 @@ func (msg *Config) marshal(w io.Writer) (err error) {
 	if err = WriteInt(w, 4); err != nil {
 		return
 	}
-	if err = WriteInt(w, msg.HttpPort); err != nil {
+	if err = WriteInt(w, msg.HTTPPort); err != nil {
 		return
 	}
 	if err = WriteString(w, "bitquantum"); err != nil {
@@ -562,7 +562,7 @@ func (msg *Config) unmarshal(r io.Reader) (err error) {
 		case "version":
 			msg.Version = v
 		case "http port":
-			msg.HttpPort = ival
+			msg.HTTPPort = ival
 		case "bitquantum":
 			msg.BitQuantum = ival
 		case "mbar":

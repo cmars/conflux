@@ -73,7 +73,7 @@ func (p *Peer) Gossip() {
 			}
 		DELAY:
 			// jitter the delay
-			timer.Reset(time.Duration(p.GossipIntervalSecs()) * time.Second)
+			timer.Reset(time.Duration(p.settings.GossipIntervalSecs) * time.Second)
 		}
 	}
 }
@@ -82,7 +82,7 @@ var NoPartnersError error = errors.New("No recon partners configured")
 var IncompatiblePeerError error = errors.New("Remote peer configuration is not compatible")
 
 func (p *Peer) choosePartner() (net.Addr, error) {
-	partners, err := p.PartnerAddrs()
+	partners, err := p.settings.PartnerAddrs()
 	if err != nil {
 		return nil, err
 	}
@@ -94,8 +94,9 @@ func (p *Peer) choosePartner() (net.Addr, error) {
 
 func (p *Peer) InitiateRecon(conn net.Conn) error {
 	defer conn.Close()
-	if p.ReadTimeout() > 0 {
-		conn.SetReadDeadline(time.Now().Add(time.Second * time.Duration(p.ReadTimeout())))
+	if p.settings.ReadTimeout > 0 {
+		conn.SetReadDeadline(
+			time.Now().Add(time.Second * time.Duration(p.settings.ReadTimeout)))
 	}
 	remoteConfig, err := p.handleConfig(conn, GOSSIP)
 	if err != nil {
@@ -192,9 +193,9 @@ var ReconRqstPolyNotFound = errors.New("Peer should not receive a request for a 
 
 func (p *Peer) handleReconRqstPoly(rp *ReconRqstPoly) *msgProgress {
 	remoteSize := rp.Size
-	points := p.Points()
+	points := p.ptree.Points()
 	remoteSamples := rp.Samples
-	node, err := p.Node(rp.Prefix)
+	node, err := p.ptree.Node(rp.Prefix)
 	if err == PNodeNotFound {
 		return &msgProgress{err: ReconRqstPolyNotFound}
 	}
@@ -204,9 +205,10 @@ func (p *Peer) handleReconRqstPoly(rp *ReconRqstPoly) *msgProgress {
 		remoteSamples, localSamples, remoteSize, localSize, points)
 	if err == ErrLowMBar {
 		log.Println(GOSSIP, "Low MBar")
-		if node.IsLeaf() || node.Size() < (p.ThreshMult()*p.MBar()) {
+		if node.IsLeaf() || node.Size() < (p.settings.ThreshMult*p.settings.MBar) {
 			log.Println(GOSSIP, "Sending full elements for node:", node.Key())
-			return &msgProgress{elements: NewZSet(), messages: []ReconMsg{&FullElements{ZSet: NewZSet(node.Elements()...)}}}
+			return &msgProgress{elements: NewZSet(), messages: []ReconMsg{
+				&FullElements{ZSet: NewZSet(node.Elements()...)}}}
 		}
 	}
 	if err != nil {
@@ -228,7 +230,7 @@ func (p *Peer) solve(remoteSamples, localSamples []*Zp, remoteSize, localSize in
 
 func (p *Peer) handleReconRqstFull(rf *ReconRqstFull) *msgProgress {
 	var localset *ZSet
-	node, err := p.Node(rf.Prefix)
+	node, err := p.ptree.Node(rf.Prefix)
 	if err == PNodeNotFound {
 		localset = NewZSet()
 	} else if err != nil {

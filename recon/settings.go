@@ -24,170 +24,211 @@
 package recon
 
 import (
-	"bytes"
 	"fmt"
-	"github.com/pelletier/go-toml"
 	"net"
-	"strconv"
 	"strings"
+
+	"github.com/BurntSushi/toml"
+	"gopkg.in/errgo.v1"
 )
 
+// Settings holds the configuration settings for the local reconciliation peer.
 type Settings struct {
-	*toml.TomlTree
-	splitThreshold int
-	joinThreshold  int
-	numSamples     int
+	Version   string             `toml:"version"`
+	LogName   string             `toml:"logname"`
+	HTTPAddr  string             `toml:"httpAddr"`
+	HTTPNet   network            `toml:"httpNet"`
+	ReconAddr string             `toml:"reconAddr"`
+	ReconNet  network            `toml:"reconNet"`
+	Partners  map[string]Partner `toml:"partner"`
+	Filters   []string           `toml:"filters"`
+
+	// Backwards-compatible keys
+	CompatHTTPPort     int      `toml:"httpPort"`
+	CompatReconPort    int      `toml:"reconPort"`
+	CompatPartnerAddrs []string `toml:"partners"`
+
+	ThreshMult int `toml:"threshMult"`
+	BitQuantum int `toml:"bitQuantum"`
+	MBar       int `toml:"mBar"`
+
+	GossipIntervalSecs          int `toml:"gossipIntervalSecs"`
+	MaxOutstandingReconRequests int `toml:"maxOutstandingReconRequests"`
+	ConnTimeout                 int `toml:"connTimeout"`
+	ReadTimeout                 int `toml:"readTimeout"`
 }
 
-func (s *Settings) GetString(key string, defaultValue string) string {
-	if s, is := s.GetDefault(key, defaultValue).(string); is {
-		return s
+type Partner struct {
+	HTTPAddr  string  `toml:"httpAddr"`
+	HTTPNet   network `toml:"httpNet"`
+	ReconAddr string  `toml:"reconAddr"`
+	ReconNet  network `toml:"reconNet"`
+}
+
+type network string
+
+const (
+	networkDefault = network("")
+	networkTCP     = network("tcp")
+	networkUnix    = network("unix")
+)
+
+// String implements the fmt.Stringer interface.
+func (n network) String() string {
+	if n == "" {
+		return string(networkTCP)
 	}
-	return defaultValue
+	return string(n)
 }
 
-func (s *Settings) GetStrings(key string) (value []string) {
-	if strs, is := s.Get(key).([]interface{}); is {
-		for _, v := range strs {
-			if str, is := v.(string); is {
-				value = append(value, str)
-			}
-		}
+func (n network) Resolve(addr string) (net.Addr, error) {
+	switch n {
+	case networkDefault, networkTCP:
+		return net.ResolveTCPAddr("tcp", addr)
+	case networkUnix:
+		return net.ResolveUnixAddr("unix", addr)
 	}
-	return
+	return nil, fmt.Errorf("don't know how to resolve network %q address %q", n, addr)
 }
 
-func (s *Settings) GetInt(key string, defaultValue int) int {
-	switch v := s.GetDefault(key, defaultValue).(type) {
-	case int:
-		return v
-	case int64:
-		return int(v)
-	default:
-		i, err := strconv.Atoi(fmt.Sprintf("%v", v))
-		if err != nil {
-			panic(err)
-		}
-		s.Set(key, i)
-		return i
+const (
+	DefaultVersion                     = "1.1.3"
+	DefaultLogName                     = "conflux.recon"
+	DefaultHTTPAddr                    = ":11371"
+	DefaultReconAddr                   = ":11370"
+	DefaultGossipIntervalSecs          = 60
+	DefaultMaxOutstandingReconRequests = 100
+)
+
+var defaultSettings = Settings{
+	Version:   DefaultVersion,
+	LogName:   DefaultLogName,
+	HTTPAddr:  DefaultHTTPAddr,
+	ReconAddr: DefaultReconAddr,
+
+	ThreshMult: DefaultThreshMult,
+	BitQuantum: DefaultBitQuantum,
+	MBar:       DefaultMBar,
+
+	GossipIntervalSecs:          DefaultGossipIntervalSecs,
+	MaxOutstandingReconRequests: DefaultMaxOutstandingReconRequests,
+}
+
+// ParseSettings parses a TOML-formatted string representation into Settings.
+func ParseSettings(data string) (*Settings, error) {
+	var doc struct {
+		Conflux struct {
+			Recon Settings `toml:"recon"`
+		} `toml:"conflux"`
 	}
-	return defaultValue
-}
-
-func (s *Settings) Version() string {
-	return s.GetString("conflux.recon.version", "1.1.3")
-}
-
-func (s *Settings) LogName() string {
-	return s.GetString("conflux.recon.logname", "conflux.recon")
-}
-
-func (s *Settings) HttpPort() int {
-	return s.GetInt("conflux.recon.httpPort", 11371)
-}
-
-func (s *Settings) ReconPort() int {
-	return s.GetInt("conflux.recon.reconPort", 11370)
-}
-
-func (s *Settings) Partners() []string {
-	return s.GetStrings("conflux.recon.partners")
-}
-
-func (s *Settings) Filters() []string {
-	return s.GetStrings("conflux.recon.filters")
-}
-
-func (s *Settings) ThreshMult() int {
-	return s.GetInt("conflux.recon.threshMult", DefaultThreshMult)
-}
-
-func (s *Settings) BitQuantum() int {
-	return s.GetInt("conflux.recon.bitQuantum", DefaultBitQuantum)
-}
-
-func (s *Settings) MBar() int {
-	return s.GetInt("conflux.recon.mBar", DefaultMBar)
-}
-
-func (s *Settings) SplitThreshold() int {
-	return s.splitThreshold
-}
-
-func (s *Settings) JoinThreshold() int {
-	return s.joinThreshold
-}
-
-func (s *Settings) NumSamples() int {
-	return s.numSamples
-}
-
-func (s *Settings) GossipIntervalSecs() int {
-	return s.GetInt("conflux.recon.gossipIntervalSecs", 60)
-}
-
-func (s *Settings) MaxOutstandingReconRequests() int {
-	return s.GetInt("conflux.recon.maxOutstandingReconRequests", 100)
-}
-
-func (s *Settings) ConnTimeout() int {
-	return s.GetInt("conflux.recon.connTimeout", 0)
-}
-
-func (s *Settings) ReadTimeout() int {
-	return s.GetInt("conflux.recon.readTimeout", 0)
-}
-
-func DefaultSettings() (settings *Settings) {
-	buf := bytes.NewBuffer(nil)
-	var tree *toml.TomlTree
-	var err error
-	if tree, err = toml.Load(buf.String()); err != nil {
-		panic(err) // unlikely
-	}
-	return NewSettings(tree)
-}
-
-func NewSettings(tree *toml.TomlTree) (settings *Settings) {
-	settings = &Settings{tree, DefaultSplitThreshold, DefaultJoinThreshold, DefaultNumSamples}
-	settings.UpdateDerived()
-	return
-}
-
-func (s *Settings) Config() *Config {
-	return &Config{
-		Version:    s.Version(),
-		HttpPort:   s.HttpPort(),
-		BitQuantum: s.BitQuantum(),
-		MBar:       s.MBar(),
-		Filters:    strings.Join(s.Filters(), ",")}
-}
-
-func (s *Settings) UpdateDerived() {
-	s.splitThreshold = s.ThreshMult() * s.MBar()
-	s.joinThreshold = s.splitThreshold / 2
-	s.numSamples = s.MBar() + 1
-}
-
-func LoadSettings(path string) (*Settings, error) {
-	var tree *toml.TomlTree
-	var err error
-	if tree, err = toml.LoadFile(path); err != nil {
+	doc.Conflux.Recon = defaultSettings
+	_, err := toml.Decode(data, &doc)
+	if err != nil {
 		return nil, err
 	}
-	return NewSettings(tree), nil
+
+	settings := &doc.Conflux.Recon
+	if settings.CompatHTTPPort != 0 {
+		settings.HTTPAddr = fmt.Sprintf(":%d", settings.CompatHTTPPort)
+	}
+	if settings.CompatReconPort != 0 {
+		settings.ReconAddr = fmt.Sprintf(":%d", settings.CompatReconPort)
+	}
+	if len(settings.CompatPartnerAddrs) > 0 {
+		settings.Partners = map[string]Partner{}
+		for _, partnerAddr := range settings.CompatPartnerAddrs {
+			host, _, err := net.SplitHostPort(partnerAddr)
+			if err != nil {
+				return nil, errgo.Notef(err, "invalid 'partners' address %q", partnerAddr)
+			}
+			p := Partner{
+				HTTPAddr:  fmt.Sprintf("%s:11371", host),
+				ReconAddr: partnerAddr,
+			}
+			settings.Partners[host] = p
+		}
+	}
+
+	_, err = settings.HTTPNet.Resolve(settings.HTTPAddr)
+	if err != nil {
+		return nil, errgo.Notef(err, "invalid httpNet %q httpAddr %q", settings.HTTPNet, settings.HTTPAddr)
+	}
+	_, err = settings.ReconNet.Resolve(settings.ReconAddr)
+	if err != nil {
+		return nil, errgo.Notef(err, "invalid reconNet %q reconAddr %q", settings.ReconNet, settings.ReconAddr)
+	}
+
+	return settings, nil
 }
 
-func (s *Settings) PartnerAddrs() (addrs []net.Addr, err error) {
-	for _, partner := range s.Partners() {
-		if partner == "" {
-			continue
-		}
-		addr, err := net.ResolveTCPAddr("tcp", partner)
+// DefaultSettings returns default peer configuration settings.
+func DefaultSettings() *Settings {
+	settings := defaultSettings
+	return &settings
+}
+
+func resolveHTTPPortTCP(addr net.Addr) (int, bool) {
+	tcpAddr, ok := addr.(*net.TCPAddr)
+	if !ok {
+		return 0, false
+	}
+	return tcpAddr.Port, true
+}
+
+var resolveHTTPPort = resolveHTTPPortTCP
+
+// Config returns a recon protocol config message that described this
+// peer's configuration settings.
+func (s *Settings) Config() (*Config, error) {
+	config := &Config{
+		Version:    s.Version,
+		BitQuantum: s.BitQuantum,
+		MBar:       s.MBar,
+		Filters:    strings.Join(s.Filters, ","),
+	}
+
+	// Try to obtain httpPort
+	addr, err := s.HTTPNet.Resolve(s.HTTPAddr)
+	if err != nil {
+		return nil, errgo.Notef(err, "invalid httpNet %q httpAddr %q", s.HTTPNet, s.HTTPAddr)
+	}
+	port, ok := resolveHTTPPort(addr)
+	if !ok {
+		return nil, errgo.Newf("cannot determine httpPort from httpNet %q httpAddr %q", s.HTTPNet, s.HTTPAddr)
+	}
+	config.HTTPPort = port
+	return config, nil
+}
+
+// SplitThreshold returns the maximum number of elements a prefix tree node may
+// contain before creating child nodes and distributing the elements among them.
+func (s *Settings) SplitThreshold() int {
+	return s.ThreshMult * s.MBar
+}
+
+// JoinThreshold returns the minimum cumulative number of elements under a
+// prefix tree parent node, below which all child nodes are merged into the
+// parent.
+func (s *Settings) JoinThreshold() int {
+	return s.SplitThreshold() / 2
+}
+
+// NumSamples returns the number of sample points used for interpolation.
+// This must match among all reconciliation peers.
+func (s *Settings) NumSamples() int {
+	return s.MBar + 1
+}
+
+// PartnerAddrs returns the resolved network addresses of configured partner
+// peers.
+func (s *Settings) PartnerAddrs() ([]net.Addr, error) {
+	var addrs []net.Addr
+	for _, partner := range s.Partners {
+		addr, err := partner.ReconNet.Resolve(partner.ReconAddr)
 		if err != nil {
 			return nil, err
 		}
 		addrs = append(addrs, addr)
 	}
-	return
+	return addrs, nil
 }
