@@ -335,6 +335,23 @@ func (zs *ZSet) AddAll(other *ZSet) {
 	}
 }
 
+// RemoveSlice removes all the given elements from the set.
+func (zs *ZSet) RemoveSlice(other []*Zp) {
+	for _, v := range other {
+		zs.Remove(v)
+	}
+}
+
+// RemoveAll removes all elements in another set from this one.
+func (zs *ZSet) RemoveAll(other *ZSet) {
+	if zs.p == nil {
+		zs.p = other.p
+	}
+	for k, _ := range other.s {
+		delete(zs.s, k)
+	}
+}
+
 // Items returns a slice of all elements in the set.
 func (zs *ZSet) Items() (result []*Zp) {
 	if zs == nil {

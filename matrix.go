@@ -59,20 +59,17 @@ func (m *Matrix) Set(i, j int, x *Zp) {
 var ErrMatrixTooNarrow = errors.New("Matrix is too narrow to reduce")
 
 // Reduce performs Gaussian elimination on a matrix of coefficients, in-place.
-func (m *Matrix) Reduce() (err error) {
+func (m *Matrix) Reduce() error {
 	if m.columns < m.rows {
 		return ErrMatrixTooNarrow
 	}
 	for j := 0; j < m.rows; j++ {
-		err = m.processRowForward(j)
-		if err != nil {
-			return
-		}
+		m.processRowForward(j)
 	}
 	for j := m.rows - 1; j > 0; j-- {
 		m.backSubstitute(j)
 	}
-	return
+	return nil
 }
 
 func (m *Matrix) backSubstitute(j int) {
@@ -86,7 +83,7 @@ func (m *Matrix) backSubstitute(j int) {
 	}
 }
 
-func (m *Matrix) processRowForward(j int) error {
+func (m *Matrix) processRowForward(j int) {
 	v := m.Get(j, j)
 	if v.IsZero() {
 		jswap := -1
@@ -97,7 +94,7 @@ func (m *Matrix) processRowForward(j int) error {
 			}
 		}
 		if jswap == -1 {
-			return nil
+			return
 		}
 		m.swapRows(j, jswap)
 		v = m.Get(j, j)
@@ -108,7 +105,6 @@ func (m *Matrix) processRowForward(j int) error {
 	for j2 := j + 1; j2 < m.rows; j2++ {
 		m.rowsub(j, j, j2, m.Get(j, j2).Copy())
 	}
-	return nil
 }
 
 func (m *Matrix) swapRows(j1, j2 int) {

@@ -22,32 +22,36 @@
 package recon
 
 import (
-	"github.com/bmizerany/assert"
 	. "github.com/cmars/conflux"
 	"strings"
-	"testing"
+
+	gc "gopkg.in/check.v1"
 )
 
-func TestInsertNodesNoSplit(t *testing.T) {
+type PtreeSuite struct{}
+
+var _ = gc.Suite(&PtreeSuite{})
+
+func (s *PtreeSuite) TestInsertNodesNoSplit(c *gc.C) {
 	tree := new(MemPrefixTree)
 	tree.Init()
 	tree.Insert(Zi(P_SKS, 100))
 	tree.Insert(Zi(P_SKS, 300))
 	tree.Insert(Zi(P_SKS, 500))
 	root, err := tree.Root()
-	assert.Equal(t, nil, err)
-	assert.Equal(t, 3, len(root.Elements()))
-	assert.T(t, root.IsLeaf())
+	c.Assert(err, gc.IsNil)
+	c.Assert(root.Elements(), gc.HasLen, 3)
+	c.Assert(root.IsLeaf(), gc.Equals, true)
 	tree.Remove(Zi(P_SKS, 100))
 	tree.Remove(Zi(P_SKS, 300))
 	tree.Remove(Zi(P_SKS, 500))
-	assert.Equal(t, 0, len(root.Elements()))
+	c.Assert(root.Elements(), gc.HasLen, 0)
 	for _, sv := range root.SValues() {
-		assert.Equal(t, 0, sv.Cmp(Zi(P_SKS, 1)))
+		c.Assert(sv.Cmp(Zi(P_SKS, 1)), gc.Equals, 0)
 	}
 }
 
-func TestJustOneKey(t *testing.T) {
+func (s *PtreeSuite) TestJustOneKey(c *gc.C) {
 	tree := new(MemPrefixTree)
 	tree.Init()
 	tree.Insert(Zs(P_SKS, "224045810486609649306292620830306652473"))
@@ -62,15 +66,15 @@ func TestJustOneKey(t *testing.T) {
 		expect.Add(Zs(P_SKS, sv))
 	}
 	root, err := tree.Root()
-	assert.Equal(t, err, nil)
+	c.Assert(err, gc.IsNil)
 	for _, sv := range root.SValues() {
-		assert.T(t, expect.Has(sv))
+		c.Assert(expect.Has(sv), gc.Equals, true)
 		expect.Remove(sv)
 	}
-	assert.Equal(t, 0, len(expect.Items()))
+	c.Assert(expect.Items(), gc.HasLen, 0)
 }
 
-func TestInsertNodeSplit(t *testing.T) {
+func (s *PtreeSuite) TestInsertNodeSplit(c *gc.C) {
 	tree := new(MemPrefixTree)
 	tree.Init()
 	// Add a bunch of nodes, enough to cause splits
@@ -82,17 +86,17 @@ func TestInsertNodeSplit(t *testing.T) {
 		tree.Remove(Zi(P_SKS, i+65536))
 	}
 	root, err := tree.Root()
-	assert.Equal(t, err, nil)
+	c.Assert(err, gc.IsNil)
 	// Insert/Remove reversible after splitting & joining?
 	for _, sv := range root.SValues() {
-		assert.Equal(t, 0, sv.Cmp(Zi(P_SKS, 1)))
+		c.Assert(sv.Cmp(Zi(P_SKS, 1)), gc.Equals, 0)
 	}
-	assert.Equal(t, 0, len(tree.root.children))
-	assert.Equal(t, 0, len(tree.root.elements))
+	c.Assert(tree.root.children, gc.HasLen, 0)
+	c.Assert(tree.root.elements, gc.HasLen, 0)
 }
 
-// Test key consistency
-func TestKeyMatch(t *testing.T) {
+// TestKeyMatch tests key consistency
+func (s *PtreeSuite) TestKeyMatch(c *gc.C) {
 	tree1 := new(MemPrefixTree)
 	tree1.Init()
 	for i := 1; i < 100; i++ {
@@ -115,12 +119,12 @@ func TestKeyMatch(t *testing.T) {
 		zi := Zi(P_SKS, 65537*i)
 		bs := NewZpBitstring(zi)
 		node1, err := Find(tree1, zi)
-		assert.Equal(t, err, nil)
+		c.Assert(err, gc.IsNil)
 		node2, err := Find(tree2, zi)
-		assert.Equal(t, err, nil)
-		t.Logf("node1=%v, node2=%v (%b) full=%v", node1.Key(), node2.Key(), zi.Int64(), bs)
+		c.Assert(err, gc.IsNil)
+		c.Logf("node1=%v, node2=%v (%b) full=%v", node1.Key(), node2.Key(), zi.Int64(), bs)
 		// If keys are different, one must prefix the other.
-		assert.T(t, strings.HasPrefix(node1.Key().String(), node2.Key().String()) ||
-			strings.HasPrefix(node2.Key().String(), node1.Key().String()))
+		c.Assert(strings.HasPrefix(node1.Key().String(), node2.Key().String()) ||
+			strings.HasPrefix(node2.Key().String(), node1.Key().String()), gc.Equals, true)
 	}
 }

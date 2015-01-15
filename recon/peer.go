@@ -25,15 +25,18 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"sync"
 	"time"
 
+	"gopkg.in/errgo.v1"
+	log "gopkg.in/hockeypuck/logrus.v0"
+	"gopkg.in/tomb.v2"
+
 	. "github.com/cmars/conflux"
 )
 
-const SERVE = "serve:"
+const SERVE = "serve"
 
 type Recover struct {
 	RemoteAddr     net.Addr
@@ -49,10 +52,10 @@ func (r *Recover) HkpAddr() (string, error) {
 	// Use remote HKP host:port as peer-unique identifier
 	host, _, err := net.SplitHostPort(r.RemoteAddr.String())
 	if err != nil {
-		log.Println("Cannot parse HKP remote address from", r.RemoteAddr, ":", err)
-		return "", err
+		log.Error("cannot parse HKP remote address from", r.RemoteAddr, ":", err)
+		return "", errgo.Mask(err)
 	}
-	return fmt.Sprintf("%s:%d", host, r.RemoteConfig.HTTPPort), nil
+	return fmt.Sprintf("%s:%d ", host, r.RemoteConfig.HTTPPort), nil
 }
 
 type RecoverChan chan *Recover
@@ -61,34 +64,40 @@ var PNodeNotFound error = errors.New("Prefix-tree node not found")
 
 var RemoteRejectConfigError error = errors.New("Remote rejected configuration")
 
-type reconCmd func() error
+type PeerMode string
 
-type reconCmdReq chan reconCmd
-type reconCmdResp chan error
+var (
+	PeerModeDefault    = PeerMode("")
+	PeerModeGossipOnly = PeerMode("gossip only")
+	PeerModeServeOnly  = PeerMode("serve only")
+)
 
 type Peer struct {
 	settings *Settings
 	ptree    PrefixTree
 
-	RecoverChan  RecoverChan
-	reconCmdReq  reconCmdReq
-	reconCmdResp reconCmdResp
+	RecoverChan RecoverChan
 
-	gossipStop chan stopNotify
-	serverStop chan stopNotify
+	t tomb.Tomb
 
 	enableLock sync.Mutex
 	enable     bool
+
+	tracker Tracker
 }
 
 func NewPeer(settings *Settings, tree PrefixTree) *Peer {
 	return &Peer{
-		RecoverChan:  make(RecoverChan),
-		settings:     settings,
-		ptree:        tree,
-		reconCmdReq:  make(reconCmdReq),
-		reconCmdResp: make(reconCmdResp),
+		RecoverChan: make(RecoverChan),
+		settings:    settings,
+		ptree:       tree,
 	}
+}
+
+func NewPeerState(settings *Settings, tree PrefixTree, state State) *Peer {
+	peer := NewPeer(settings, tree)
+	peer.tracker.Begin(state)
+	return peer
 }
 
 func NewMemPeer() *Peer {
@@ -98,35 +107,32 @@ func NewMemPeer() *Peer {
 	return NewPeer(settings, tree)
 }
 
+func (p *Peer) logName(label string) string {
+	return fmt.Sprintf("%s %s ", label, p.settings.ReconAddr)
+}
+
 func (p *Peer) Start() {
-	if p.serverStop != nil {
-		return
+	p.StartMode(PeerModeDefault)
+}
+
+func (p *Peer) StartMode(mode PeerMode) {
+	switch mode {
+	case PeerModeGossipOnly:
+		p.t.Go(p.Gossip)
+	case PeerModeServeOnly:
+		p.t.Go(p.Serve)
+	default:
+		p.t.Go(p.Serve)
+		p.t.Go(p.Gossip)
 	}
-	p.gossipStop = make(chan stopNotify)
-	p.serverStop = make(chan stopNotify)
-	go p.Serve()
-	go p.Gossip()
 	p.Enable()
-	go p.HandleCmds()
 }
 
 type stopNotify chan interface{}
 
-func (p *Peer) Stop() {
-	p.Disable()
-	if p.serverStop == nil {
-		return
-	}
-	log.Println("Stopping server & client...")
-	serverStopped := make(stopNotify)
-	gossipStopped := make(stopNotify)
-	go func() { p.serverStop <- serverStopped }()
-	go func() { p.gossipStop <- gossipStopped }()
-	<-serverStopped
-	<-gossipStopped
-	log.Println("Done")
-	p.serverStop = nil
-	p.gossipStop = nil
+func (p *Peer) Stop() error {
+	p.t.Kill(nil)
+	return p.t.Wait()
 }
 
 func (p *Peer) Enabled() bool {
@@ -147,70 +153,52 @@ func (p *Peer) Disable() {
 	p.enable = false
 }
 
-// HandleCmds executes recon cmds in a single goroutine.
-// This forces sequential reads and writes to the prefix
-// tree.
-func (p *Peer) HandleCmds() {
-	for {
-		select {
-		case cmd, ok := <-p.reconCmdReq:
-			if !ok {
-				return
+func (p *Peer) ExecCmd(f func() error) {
+	p.tracker.ExecIdle(f)
+}
+
+func (p *Peer) Insert(zs ...*Zp) {
+	p.tracker.ExecIdle(func() error {
+		for _, z := range zs {
+			err := p.ptree.Insert(z)
+			if err != nil {
+				return errgo.Mask(err)
 			}
-			p.reconCmdResp <- cmd()
 		}
-	}
-}
-
-func (p *Peer) ExecCmd(cmd reconCmd) (err error) {
-	p.reconCmdReq <- cmd
-	err = <-p.reconCmdResp
-	if err != nil {
-		log.Println("CMD", err)
-	}
-	return
-}
-
-func (p *Peer) Insert(z *Zp) (err error) {
-	return p.ExecCmd(func() error {
-		return p.ptree.Insert(z)
+		return nil
 	})
 }
 
-func (p *Peer) Remove(z *Zp) (err error) {
-	return p.ExecCmd(func() error {
-		return p.ptree.Remove(z)
+func (p *Peer) Remove(zs ...*Zp) {
+	p.tracker.ExecIdle(func() error {
+		for _, z := range zs {
+			err := p.ptree.Remove(z)
+			if err != nil {
+				return errgo.Mask(err)
+			}
+		}
+		return nil
 	})
 }
 
 func (p *Peer) Serve() error {
 	addr, err := p.settings.ReconNet.Resolve(p.settings.ReconAddr)
 	if err != nil {
-		return err
+		return errgo.Mask(err)
 	}
 	ln, err := net.Listen(addr.Network(), addr.String())
 	if err != nil {
-		return err
+		return errgo.Mask(err)
 	}
-	defer ln.Close()
+	p.t.Go(func() error {
+		<-p.t.Dying()
+		return ln.Close()
+	})
 	for {
-		select {
-		case stop, _ := <-p.serverStop:
-			if stop != nil {
-				stop <- new(interface{})
-				return nil
-			}
-			return nil
-		default:
-		}
-		if p.settings.ConnTimeout > 0 {
-			ln.(*net.TCPListener).SetDeadline(time.Now().Add(
-				time.Second * time.Duration(p.settings.ConnTimeout)))
-		}
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Println(SERVE, err)
-			continue
+			log.Error(p.logName(SERVE), err)
+			return err
 		}
 		if p.settings.ReadTimeout > 0 {
 			conn.SetReadDeadline(time.Now().Add(
@@ -219,102 +207,149 @@ func (p *Peer) Serve() error {
 		go func() {
 			err = p.Accept(conn)
 			if err != nil {
-				log.Println(SERVE, err)
+				log.Error(SERVE, errgo.Mask(err))
 			}
 		}()
 	}
 }
 
-func (p *Peer) handleConfig(conn net.Conn, role string) (remoteConfig *Config, err error) {
+func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) {
 	config, err := p.settings.Config()
 	if err != nil {
-		return nil, err
+		return nil, errgo.Mask(err)
 	}
 
-	// Send config to server on connect
-	go func() {
-		log.Println(role, "writing config:", config)
-		err := WriteMsg(conn, config)
-		if err != nil {
-			//return err
-			log.Println(role, err)
-			return
+	var handshake tomb.Tomb
+	defer func() {
+		handshake.Kill(nil)
+		stopErr := handshake.Wait()
+		if stopErr != nil {
+			stopErr = errgo.Mask(stopErr)
+			log.Error(p.logName(role), stopErr)
+		}
+
+		if _err == nil {
+			_err = stopErr
 		}
 	}()
 
+	handshake.Go(func() error {
+		<-handshake.Dying()
+		return nil
+	})
+
+	// Send config to server on connect
+	handshake.Go(func() error {
+		log.Debug(p.logName(role), "writing config:", config)
+		err := WriteMsg(conn, config)
+		if err != nil {
+			return errgo.Mask(err)
+		}
+		return nil
+	})
+
 	// Receive remote peer's config
-	log.Println(role, "reading remote config:", conn.RemoteAddr())
+	log.Debug(p.logName(role), "reading remote config:", conn.RemoteAddr())
 	var msg ReconMsg
 	msg, err = ReadMsg(conn)
 	if err != nil {
-		return
+		return nil, errgo.Mask(err)
 	}
-	var is bool
-	remoteConfig, is = msg.(*Config)
-	if !is {
-		err = errors.New(fmt.Sprintf(
-			"Remote config: expected config message, got %v", msg))
-		return
+
+	remoteConfig, ok := msg.(*Config)
+	if !ok {
+		return nil, errgo.Newf("remote config: expected config message, got %v", msg)
 	}
-	log.Println(role, "remote config:", remoteConfig)
+
+	log.Debug(p.logName(role), "remote config:", remoteConfig)
 	if remoteConfig.BitQuantum != config.BitQuantum {
 		bufw := bufio.NewWriter(conn)
-		WriteString(bufw, RemoteConfigFailed)
-		WriteString(bufw, "mismatched bitquantum")
+		err = WriteString(bufw, RemoteConfigFailed)
+		if err != nil {
+			log.Errorf(p.logName(role), errgo.Details(err))
+		}
+		err = WriteString(bufw, "mismatched bitquantum")
+		if err != nil {
+			log.Errorf(p.logName(role), errgo.Details(err))
+		}
+
 		bufw.Flush()
-		log.Println(role, "Cannot peer: BitQuantum remote=", remoteConfig.BitQuantum,
-			"!=", config.BitQuantum)
-		err = IncompatiblePeerError
-		return
+		log.Errorf(p.logName(role), "cannot peer: BitQuantum remote=%v != local=%v",
+			remoteConfig.BitQuantum, config.BitQuantum)
+		return nil, errgo.Mask(IncompatiblePeerError)
 	}
+
 	if remoteConfig.MBar != config.MBar {
 		bufw := bufio.NewWriter(conn)
-		WriteString(bufw, RemoteConfigFailed)
-		WriteString(bufw, "mismatched mbar")
+		err = WriteString(bufw, RemoteConfigFailed)
+		if err != nil {
+			log.Errorf(p.logName(role), errgo.Details(err))
+		}
+		err = WriteString(bufw, "mismatched mbar")
+		if err != nil {
+			log.Errorf(p.logName(role), errgo.Details(err))
+		}
+
 		bufw.Flush()
-		log.Println(role, "Cannot peer: MBar remote=", remoteConfig.MBar,
-			"!=", config.MBar)
-		err = IncompatiblePeerError
-		return
+		log.Errorf(p.logName(role), "cannot peer: MBar remote=%v != local %v",
+			remoteConfig.MBar, config.MBar)
+		return nil, errgo.Mask(IncompatiblePeerError)
 	}
-	go func() {
+
+	handshake.Go(func() error {
 		bufw := bufio.NewWriter(conn)
 		err = WriteString(bufw, RemoteConfigPassed)
 		if err != nil {
-			return
+			return errgo.Mask(err)
 		}
 		err = bufw.Flush()
 		if err != nil {
-			return
+			return errgo.Mask(err)
 		}
-	}()
+		return nil
+	})
+
 	remoteConfigStatus, err := ReadString(conn)
-	if remoteConfigStatus != RemoteConfigPassed {
-		var reason string
-		if reason, err = ReadString(conn); err == nil {
-			log.Println(role, reason)
-			err = RemoteRejectConfigError
-		}
-		return
+	if err != nil {
+		return nil, errgo.Mask(err)
 	}
-	return
+
+	if remoteConfigStatus != RemoteConfigPassed {
+		reason, err := ReadString(conn)
+		if err != nil {
+			return nil, errgo.WithCausef(err, RemoteRejectConfigError, "remote rejected config")
+		}
+		return nil, errgo.NoteMask(RemoteRejectConfigError, reason)
+	}
+
+	return remoteConfig, nil
 }
 
-func (p *Peer) Accept(conn net.Conn) error {
-	log.Println(SERVE, "connection from:", conn.RemoteAddr())
+func (p *Peer) Accept(conn net.Conn) (_err error) {
+	defer conn.Close()
+
+	state, ok := p.tracker.Begin(StateServing)
+	if !ok {
+		return errgo.Notef(ErrPeerBusy, "service unavailable, currently %s", state)
+	}
+	defer p.tracker.Done()
+
+	log.Debug(p.logName(SERVE), "connection from:", conn.RemoteAddr())
+	defer func() {
+		if _err != nil {
+			log.Error(p.logName(SERVE), errgo.Details(_err))
+		}
+	}()
+
 	remoteConfig, err := p.handleConfig(conn, SERVE)
 	if err != nil {
-		return err
+		return errgo.Mask(err)
 	}
-	return p.ExecCmd(func() (err error) {
-		if p.Enabled() {
-			err = p.interactWithClient(conn, remoteConfig, NewBitstring(0))
-		} else {
-			log.Println("Peer is currently disabled, ignoring connection.")
-		}
-		defer conn.Close()
-		return err
-	})
+
+	if p.Enabled() {
+		return p.interactWithClient(conn, remoteConfig, NewBitstring(0))
+	}
+	return errgo.Newf("peer is currently disabled, ignoring connection.")
 }
 
 type requestEntry struct {
@@ -419,21 +454,21 @@ func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) {
 			Size:    req.node.Size(),
 			Samples: req.node.SValues()}
 	}
-	log.Println(SERVE, "sendRequest:", msg)
+	log.Debug(p.logName(SERVE), "sendRequest:", msg)
 	rwc.messages = append(rwc.messages, msg)
 	rwc.pushBottom(&bottomEntry{requestEntry: req})
 }
 
-func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry) (err error) {
-	log.Println(SERVE, "handleReply:", "got:", msg)
+func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry) error {
+	log.Debug(p.logName(SERVE), "handleReply:", "got:", msg)
 	switch m := msg.(type) {
 	case *SyncFail:
 		if req.node.IsLeaf() {
-			return errors.New("Syncfail received at leaf node")
+			return errgo.New("Syncfail received at leaf node")
 		}
-		log.Println(SERVE, "SyncFail: pushing children")
+		log.Debug(rwc.Peer.logName(SERVE), "SyncFail: pushing children")
 		for _, childNode := range req.node.Children() {
-			log.Println(SERVE, "push:", childNode.Key())
+			log.Debug(rwc.Peer.logName(SERVE), "push:", childNode.Key())
 			rwc.pushRequest(&requestEntry{key: childNode.Key(), node: childNode})
 		}
 	case *Elements:
@@ -443,95 +478,113 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 		localNeeds := ZSetDiff(m.ZSet, local)
 		remoteNeeds := ZSetDiff(local, m.ZSet)
 		elementsMsg := &Elements{ZSet: remoteNeeds}
-		log.Println(SERVE, "handleReply:", "sending:", elementsMsg)
+		log.Debug(rwc.Peer.logName(SERVE), "handleReply:", "sending:", elementsMsg)
 		rwc.messages = append(rwc.messages, elementsMsg)
 		rwc.rcvrSet.AddAll(localNeeds)
 	default:
-		err = errors.New(fmt.Sprintf("unexpected message: %v", m))
+		return errgo.Newf("unexpected message: %v", m)
 	}
-	return
+	return nil
 }
 
-func (rwc *reconWithClient) flushQueue() {
+func (rwc *reconWithClient) flushQueue() error {
 	log.Println(SERVE, "flush queue")
 	rwc.messages = append(rwc.messages, &Flush{})
 	err := WriteMsg(rwc.conn, rwc.messages...)
 	if err != nil {
-		log.Println(SERVE, "Error writing messages:", err)
+		return errgo.NoteMask(err, "error writing messages")
 	}
 	rwc.messages = nil
 	rwc.pushBottom(&bottomEntry{state: reconStateFlushEnded})
 	rwc.flushing = true
+	return nil
 }
 
-func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring *Bitstring) (err error) {
-	log.Println(SERVE, "interacting with client")
+var zeroTime time.Time
+
+func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring *Bitstring) error {
+	log.Debug(p.logName(SERVE), "interacting with client")
 	recon := reconWithClient{Peer: p, conn: conn, rcvrSet: NewZSet()}
-	var root PrefixNode
-	root, err = p.ptree.Root()
+	root, err := p.ptree.Root()
 	if err != nil {
-		return
+		return err
 	}
 	recon.pushRequest(&requestEntry{node: root, key: bitstring})
 	for !recon.isDone() {
 		bottom := recon.topBottom()
-		log.Println(SERVE, "interact: bottom:", bottom)
+		log.Debug(p.logName(SERVE), "interact: bottom:", bottom)
 		switch {
 		case bottom == nil:
 			req := recon.popRequest()
-			log.Println(SERVE, "interact: popRequest:", req, "sending...")
+			log.Debug(p.logName(SERVE), "interact: popRequest:", req, "sending...")
 			recon.sendRequest(p, req)
 		case bottom.state == reconStateFlushEnded:
-			log.Println(SERVE, "interact: flush ended, popBottom")
+			log.Debug(p.logName(SERVE), "interact: flush ended, popBottom")
 			recon.popBottom()
 			recon.flushing = false
 		case bottom.state == reconStateBottom:
-			log.Println(SERVE, "Queue length:", len(recon.bottomQ))
+			log.Debug(p.logName(SERVE), "queue length:", len(recon.bottomQ))
 			var msg ReconMsg
 			var hasMsg bool
+
 			// Set a small read timeout to simulate non-blocking I/O
-			if err = conn.SetReadDeadline(time.Now().Add(time.Millisecond)); err != nil {
-				log.Println(SERVE, "Warning:", err)
+			err = conn.SetReadDeadline(time.Now().Add(time.Millisecond))
+			if err != nil {
+				return errgo.Mask(err)
 			}
-			msg, err = ReadMsg(conn)
-			hasMsg = (err == nil)
+			msg, nbErr := ReadMsg(conn)
+			hasMsg = (nbErr == nil)
+
 			// Restore blocking I/O
-			if err = conn.SetReadDeadline(time.Unix(int64(0), int64(0))); err != nil {
-				log.Println(SERVE, "Warning:", err)
+			err = conn.SetReadDeadline(zeroTime)
+			if err != nil {
+				return errgo.Mask(err)
 			}
+
 			if hasMsg {
 				recon.popBottom()
 				err = recon.handleReply(p, msg, bottom.requestEntry)
+				if err != nil {
+					return errgo.Mask(err)
+				}
 			} else if len(recon.bottomQ) > p.settings.MaxOutstandingReconRequests ||
 				len(recon.requestQ) == 0 {
 				if !recon.flushing {
-					recon.flushQueue()
+					err = recon.flushQueue()
+					if err != nil {
+						return errgo.Mask(err)
+					}
 				} else {
 					recon.popBottom()
-					if msg, err = ReadMsg(conn); err != nil {
-						return
+					msg, err = ReadMsg(conn)
+					if err != nil {
+						return errgo.Mask(err)
 					}
-					log.Println("Reply:", msg)
+					log.Debug("reply:", msg)
 					err = recon.handleReply(p, msg, bottom.requestEntry)
+					if err != nil {
+						return errgo.Mask(err)
+					}
 				}
 			} else {
 				req := recon.popRequest()
 				recon.sendRequest(p, req)
 			}
 		default:
-			log.Println("failed to match expected patterns")
-		}
-		if err != nil {
-			return
+			return errgo.New("failed to match expected patterns")
 		}
 	}
-	WriteMsg(conn, &Done{})
+	err = WriteMsg(conn, &Done{})
+	if err != nil {
+		return errgo.Mask(err)
+	}
+
 	items := recon.rcvrSet.Items()
-	if len(items) > 0 {
+	if len(items) > 0 && p.t.Alive() {
 		p.RecoverChan <- &Recover{
 			RemoteAddr:     conn.RemoteAddr(),
 			RemoteConfig:   remoteConfig,
 			RemoteElements: items}
 	}
-	return
+	return nil
 }

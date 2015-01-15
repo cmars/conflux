@@ -24,67 +24,66 @@ package recon
 import (
 	"errors"
 	"fmt"
-	"log"
 	"math/rand"
 	"net"
 	"time"
 
+	"gopkg.in/errgo.v1"
+	log "gopkg.in/hockeypuck/logrus.v0"
+
 	. "github.com/cmars/conflux"
 )
 
-const GOSSIP = "gossip:"
+const GOSSIP = "gossip"
 
 // Gossip with remote servers, acting as a client.
-func (p *Peer) Gossip() {
+func (p *Peer) Gossip() error {
 	rand.Seed(time.Now().UnixNano())
-	timer := time.NewTimer(time.Duration(0))
-	defer timer.Stop()
+	delay := time.Second * time.Duration(rand.Intn(p.settings.GossipIntervalSecs))
 	for {
 		select {
-		case stop, _ := <-p.gossipStop:
-			if stop != nil {
-				stop <- new(interface{})
-			}
-			return
-		case <-timer.C:
-			var peer net.Addr
-			var err error
-			var conn net.Conn
+		case <-p.t.Dying():
+			return nil
+		case <-time.After(delay):
+			var (
+				err  error
+				peer net.Addr
+			)
+
 			if !p.Enabled() {
 				log.Println("Peer currently disabled.")
 				goto DELAY
 			}
+
 			peer, err = p.choosePartner()
 			if err != nil {
-				if err != NoPartnersError {
-					log.Println(GOSSIP, "choosePartner:", err)
+				if errgo.Cause(err) == NoPartnersError {
+					log.Debug(p.logName(GOSSIP), "no partners to gossip with")
+				} else {
+					log.Error(p.logName(GOSSIP), "choosePartner:", errgo.Details(err))
 				}
 				goto DELAY
 			}
-			log.Println(GOSSIP, "Initiating recon with peer", peer)
-			conn, err = net.DialTimeout(peer.Network(), peer.String(), time.Second)
-			if err != nil {
-				log.Println(GOSSIP, "Error connecting to", peer, ":", err)
-				goto DELAY
-			}
-			err = p.InitiateRecon(conn)
-			if err != nil {
-				log.Println(GOSSIP, "Recon error:", err)
+
+			err = p.InitiateRecon(peer)
+			if err != nil && errgo.Cause(err) != ErrPeerBusy {
+				log.Error(p.logName(GOSSIP), "recon failed:", errgo.Details(err))
 			}
 		DELAY:
-			// jitter the delay
-			timer.Reset(time.Duration(p.settings.GossipIntervalSecs) * time.Second)
+			delay = time.Second * time.Duration(rand.Intn(p.settings.GossipIntervalSecs))
+			log.Debugf("waiting %s for next gossip attempt", delay)
 		}
 	}
 }
 
-var NoPartnersError error = errors.New("No recon partners configured")
-var IncompatiblePeerError error = errors.New("Remote peer configuration is not compatible")
+var NoPartnersError error = errors.New("no recon partners configured")
+var IncompatiblePeerError error = errors.New("remote peer configuration is not compatible")
+var ErrPeerBusy error = errors.New("peer is busy handling another request")
 
 func (p *Peer) choosePartner() (net.Addr, error) {
 	partners, err := p.settings.PartnerAddrs()
 	if err != nil {
-		return nil, err
+		return nil, errgo.Mask(err)
 	}
 	if len(partners) == 0 {
 		return nil, NoPartnersError
@@ -92,20 +91,35 @@ func (p *Peer) choosePartner() (net.Addr, error) {
 	return partners[rand.Intn(len(partners))], nil
 }
 
-func (p *Peer) InitiateRecon(conn net.Conn) error {
+func (p *Peer) InitiateRecon(addr net.Addr) error {
+	state, ok := p.tracker.Begin(StateGossipping)
+	if !ok {
+		return errgo.Notef(ErrPeerBusy, "cannot gossip, currently %s", state)
+	}
+	defer p.tracker.Done()
+
+	log.Debug(p.logName(GOSSIP), "initiating recon with peer", addr)
+	conn, err := net.DialTimeout(addr.Network(), addr.String(), 3*time.Second)
+	if err != nil {
+		log.Debug(p.logName(GOSSIP), "error connecting to", addr, ":", err)
+		return err
+	}
 	defer conn.Close()
+
 	if p.settings.ReadTimeout > 0 {
-		conn.SetReadDeadline(
+		err = conn.SetReadDeadline(
 			time.Now().Add(time.Second * time.Duration(p.settings.ReadTimeout)))
+		if err != nil {
+			log.Warn(p.logName(GOSSIP), "cannot set read timeout: %v", errgo.Details(err))
+		}
 	}
 	remoteConfig, err := p.handleConfig(conn, GOSSIP)
 	if err != nil {
-		return err
+		return errgo.Mask(err)
 	}
+
 	// Interact with peer
-	return p.ExecCmd(func() error {
-		return p.clientRecon(conn, remoteConfig)
-	})
+	return p.clientRecon(conn, remoteConfig)
 }
 
 type msgProgress struct {
@@ -115,9 +129,25 @@ type msgProgress struct {
 	messages []ReconMsg
 }
 
+func (mp *msgProgress) String() string {
+	if mp.err != nil {
+		return fmt.Sprintf("err=%v", mp.err)
+	}
+	return fmt.Sprintf("nelements=%d flush=%v messages=%+v",
+		mp.elements.Len(), mp.flush, msgTypes(mp.messages))
+}
+
+func msgTypes(messages []ReconMsg) []string {
+	var result []string
+	for _, msg := range messages {
+		result = append(result, msg.MsgType().String())
+	}
+	return result
+}
+
 type msgProgressChan chan *msgProgress
 
-var ReconDone = errors.New("Reconciliation Done")
+var ReconDone = errors.New("reconciliation done")
 
 func (p *Peer) clientRecon(conn net.Conn, remoteConfig *Config) error {
 	respSet := NewZSet()
@@ -125,29 +155,35 @@ func (p *Peer) clientRecon(conn net.Conn, remoteConfig *Config) error {
 	for step := range p.interactWithServer(conn) {
 		if step.err != nil {
 			if step.err == ReconDone {
-				log.Println(GOSSIP, "Reconcilation done.")
+				log.Info(p.logName(GOSSIP), "reconcilation done")
 				break
 			} else {
-				WriteMsg(conn, &Error{&textMsg{Text: step.err.Error()}})
-				log.Println(GOSSIP, step.err)
+				err := WriteMsg(conn, &Error{&textMsg{Text: step.err.Error()}})
+				if err != nil {
+					log.Error(p.logName(GOSSIP), errgo.Details(err))
+				}
+				log.Error(p.logName(GOSSIP), errgo.Details(step.err))
 				break
 			}
 		} else {
 			pendingMessages = append(pendingMessages, step.messages...)
 			if step.flush {
 				for _, msg := range pendingMessages {
-					WriteMsg(conn, msg)
+					err := WriteMsg(conn, msg)
+					if err != nil {
+						return errgo.Mask(err)
+					}
 				}
 				pendingMessages = nil
 			}
 		}
-		log.Println(GOSSIP, "Add step:", step)
+		log.Debug(GOSSIP, "add step:", step)
 		respSet.AddAll(step.elements)
-		log.Println(GOSSIP, "Recover set now:", respSet.Len(), "elements")
+		log.Info(GOSSIP, "recover set now:", respSet.Len(), "elements")
 	}
 	items := respSet.Items()
 	if len(items) > 0 {
-		log.Println(GOSSIP, "Sending recover:", len(items), "items")
+		log.Info(GOSSIP, "sending recover:", len(items), "items")
 		p.RecoverChan <- &Recover{
 			RemoteAddr:     conn.RemoteAddr(),
 			RemoteConfig:   remoteConfig,
@@ -163,25 +199,25 @@ func (p *Peer) interactWithServer(conn net.Conn) msgProgressChan {
 		for resp == nil || resp.err == nil {
 			msg, err := ReadMsg(conn)
 			if err != nil {
-				log.Println(GOSSIP, "interact: msg err:", err)
+				log.Error(p.logName(GOSSIP), "interact: msg err:", err)
 				out <- &msgProgress{err: err}
 				return
 			}
-			log.Println(GOSSIP, "interact: got msg:", msg)
+			log.Debug(p.logName(GOSSIP), "interact: got msg:", msg)
 			switch m := msg.(type) {
 			case *ReconRqstPoly:
 				resp = p.handleReconRqstPoly(m)
 			case *ReconRqstFull:
 				resp = p.handleReconRqstFull(m)
 			case *Elements:
-				log.Println(GOSSIP, "Elements:", m.ZSet.Len())
+				log.Debug(p.logName(GOSSIP), "elements:", m.ZSet.Len())
 				resp = &msgProgress{elements: m.ZSet}
 			case *Done:
 				resp = &msgProgress{err: ReconDone}
 			case *Flush:
 				resp = &msgProgress{elements: NewZSet(), flush: true}
 			default:
-				resp = &msgProgress{err: errors.New(fmt.Sprintf("Unexpected message: %v", m))}
+				resp = &msgProgress{err: errgo.Newf("unexpected message: %v", m)}
 			}
 			out <- resp
 		}
@@ -189,7 +225,7 @@ func (p *Peer) interactWithServer(conn net.Conn) msgProgressChan {
 	return out
 }
 
-var ReconRqstPolyNotFound = errors.New("Peer should not receive a request for a non-existant node in ReconRqstPoly")
+var ReconRqstPolyNotFound = errgo.New("peer should not receive a request for a non-existant node in ReconRqstPoly")
 
 func (p *Peer) handleReconRqstPoly(rp *ReconRqstPoly) *msgProgress {
 	remoteSize := rp.Size
@@ -204,18 +240,20 @@ func (p *Peer) handleReconRqstPoly(rp *ReconRqstPoly) *msgProgress {
 	remoteSet, localSet, err := p.solve(
 		remoteSamples, localSamples, remoteSize, localSize, points)
 	if err == ErrLowMBar {
-		log.Println(GOSSIP, "Low MBar")
+		log.Info(p.logName(GOSSIP), "low MBar")
 		if node.IsLeaf() || node.Size() < (p.settings.ThreshMult*p.settings.MBar) {
-			log.Println(GOSSIP, "Sending full elements for node:", node.Key())
+			log.Info(p.logName(GOSSIP), "sending full elements for node:", node.Key())
 			return &msgProgress{elements: NewZSet(), messages: []ReconMsg{
 				&FullElements{ZSet: NewZSet(node.Elements()...)}}}
+		} else {
+			err = errgo.Notef(err, "bs=%v leaf=%v size=%d", node.Key(), node.IsLeaf(), node.Size())
 		}
 	}
 	if err != nil {
-		log.Println(GOSSIP, "sending SyncFail because", err)
+		log.Info(p.logName(GOSSIP), "sending SyncFail because", errgo.Details(err))
 		return &msgProgress{elements: NewZSet(), messages: []ReconMsg{&SyncFail{}}}
 	}
-	log.Println(GOSSIP, "solved: localSet=", localSet, "remoteSet=", remoteSet)
+	log.Info(p.logName(GOSSIP), "solved: localSet=", localSet, "remoteSet=", remoteSet)
 	return &msgProgress{elements: remoteSet, messages: []ReconMsg{&Elements{ZSet: localSet}}}
 }
 
@@ -224,7 +262,7 @@ func (p *Peer) solve(remoteSamples, localSamples []*Zp, remoteSize, localSize in
 	for i, x := range remoteSamples {
 		values = append(values, Z(x.P).Div(x, localSamples[i]))
 	}
-	log.Println(GOSSIP, "Reconcile", values, points, remoteSize-localSize)
+	log.Debug(p.logName(GOSSIP), "reconcile", values, points, remoteSize-localSize)
 	return Reconcile(values, points, remoteSize-localSize)
 }
 
@@ -240,6 +278,6 @@ func (p *Peer) handleReconRqstFull(rf *ReconRqstFull) *msgProgress {
 	}
 	localNeeds := ZSetDiff(rf.Elements, localset)
 	remoteNeeds := ZSetDiff(localset, rf.Elements)
-	log.Println(GOSSIP, "localNeeds=(", localNeeds.Len(), ") remoteNeeds=(", remoteNeeds.Len(), ")")
+	log.Info(p.logName(GOSSIP), "localNeeds=(", localNeeds.Len(), ") remoteNeeds=(", remoteNeeds.Len(), ")")
 	return &msgProgress{elements: localNeeds, messages: []ReconMsg{&Elements{ZSet: remoteNeeds}}}
 }

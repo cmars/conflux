@@ -40,10 +40,9 @@ func abs(x int) int {
 // Interpolate returns the ratio of two polynomials RationalFn, given a set of
 // sample points and output values. The coefficients of the resulting numerator
 // and denominator represent the disjoint members in two sets being reconciled.
-func Interpolate(values []*Zp, points []*Zp, degDiff int) (rfn *RationalFn, err error) {
+func Interpolate(values []*Zp, points []*Zp, degDiff int) (*RationalFn, error) {
 	if abs(degDiff) > len(values) {
-		err = InterpolationFailure
-		return
+		return nil, InterpolationFailure
 	}
 	p := values[0].P
 	mbar := len(values)
@@ -70,9 +69,9 @@ func Interpolate(values []*Zp, points []*Zp, degDiff int) (rfn *RationalFn, err 
 		fjkjmb := accum.Copy().Neg()
 		matrix.Set(mbar, j, Z(p).Sub(fjkjmb, kjma))
 	}
-	err = matrix.Reduce()
+	err := matrix.Reduce()
 	if err != nil {
-		return
+		return nil, err
 	}
 	// Fill 'A' coefficients
 	acoeffs := make([]*Zp, ma+1)
@@ -93,13 +92,13 @@ func Interpolate(values []*Zp, points []*Zp, degDiff int) (rfn *RationalFn, err 
 	if err != nil {
 		return nil, err
 	}
-	rfn = &RationalFn{}
+	rfn := &RationalFn{}
 	rfn.Num, err = PolyDiv(apoly, g)
 	if err != nil {
 		return nil, err
 	}
 	rfn.Denom, err = PolyDiv(bpoly, g)
-	return
+	return rfn, nil
 }
 
 var ErrLowMBar error = errors.New("Low MBar")
@@ -174,7 +173,7 @@ func (p *Poly) Factor() (*ZSet, error) {
 			continue
 		}
 		if f.degree != 1 {
-			return nil, errors.New(fmt.Sprintf("Invalid factor: (%v)", f))
+			return nil, fmt.Errorf("invalid factor: (%v)", f)
 		}
 		roots.Add(f.coeff[0].Copy().Neg())
 	}

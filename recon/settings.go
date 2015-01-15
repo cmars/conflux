@@ -32,16 +32,18 @@ import (
 	"gopkg.in/errgo.v1"
 )
 
+type PartnerMap map[string]Partner
+
 // Settings holds the configuration settings for the local reconciliation peer.
 type Settings struct {
-	Version   string             `toml:"version"`
-	LogName   string             `toml:"logname"`
-	HTTPAddr  string             `toml:"httpAddr"`
-	HTTPNet   network            `toml:"httpNet"`
-	ReconAddr string             `toml:"reconAddr"`
-	ReconNet  network            `toml:"reconNet"`
-	Partners  map[string]Partner `toml:"partner"`
-	Filters   []string           `toml:"filters"`
+	Version   string     `toml:"version"`
+	LogName   string     `toml:"logname"`
+	HTTPAddr  string     `toml:"httpAddr"`
+	HTTPNet   network    `toml:"httpNet"`
+	ReconAddr string     `toml:"reconAddr"`
+	ReconNet  network    `toml:"reconNet"`
+	Partners  PartnerMap `toml:"partner"`
+	Filters   []string   `toml:"filters"`
 
 	// Backwards-compatible keys
 	CompatHTTPPort     int      `toml:"httpPort"`
@@ -54,7 +56,6 @@ type Settings struct {
 
 	GossipIntervalSecs          int `toml:"gossipIntervalSecs"`
 	MaxOutstandingReconRequests int `toml:"maxOutstandingReconRequests"`
-	ConnTimeout                 int `toml:"connTimeout"`
 	ReadTimeout                 int `toml:"readTimeout"`
 }
 
@@ -68,24 +69,24 @@ type Partner struct {
 type network string
 
 const (
-	networkDefault = network("")
-	networkTCP     = network("tcp")
-	networkUnix    = network("unix")
+	NetworkDefault = network("")
+	NetworkTCP     = network("tcp")
+	NetworkUnix    = network("unix")
 )
 
 // String implements the fmt.Stringer interface.
 func (n network) String() string {
 	if n == "" {
-		return string(networkTCP)
+		return string(NetworkTCP)
 	}
 	return string(n)
 }
 
 func (n network) Resolve(addr string) (net.Addr, error) {
 	switch n {
-	case networkDefault, networkTCP:
+	case NetworkDefault, NetworkTCP:
 		return net.ResolveTCPAddr("tcp", addr)
-	case networkUnix:
+	case NetworkUnix:
 		return net.ResolveUnixAddr("unix", addr)
 	}
 	return nil, fmt.Errorf("don't know how to resolve network %q address %q", n, addr)
@@ -105,6 +106,8 @@ var defaultSettings = Settings{
 	LogName:   DefaultLogName,
 	HTTPAddr:  DefaultHTTPAddr,
 	ReconAddr: DefaultReconAddr,
+
+	Partners: PartnerMap{},
 
 	ThreshMult: DefaultThreshMult,
 	BitQuantum: DefaultBitQuantum,
@@ -135,7 +138,7 @@ func ParseSettings(data string) (*Settings, error) {
 		settings.ReconAddr = fmt.Sprintf(":%d", settings.CompatReconPort)
 	}
 	if len(settings.CompatPartnerAddrs) > 0 {
-		settings.Partners = map[string]Partner{}
+		settings.Partners = PartnerMap{}
 		for _, partnerAddr := range settings.CompatPartnerAddrs {
 			host, _, err := net.SplitHostPort(partnerAddr)
 			if err != nil {

@@ -23,43 +23,47 @@ package recon
 
 import (
 	"bytes"
-	"github.com/bmizerany/assert"
-	"testing"
+
+	gc "gopkg.in/check.v1"
 )
 
-func TestConfigRoundTrip(t *testing.T) {
-	c := &Config{
+type MessagesSuite struct{}
+
+var _ = gc.Suite(&MessagesSuite{})
+
+func (s *MessagesSuite) TestConfigRoundTrip(c *gc.C) {
+	conf := &Config{
 		Version:    "3.1415",
 		HTTPPort:   11371,
 		BitQuantum: 2,
 		MBar:       5}
-	buf := bytes.NewBuffer(nil)
-	err := c.marshal(buf)
-	assert.Equal(t, nil, err)
-	t.Logf("config=%x", buf)
-	c2 := new(Config)
-	err = c2.unmarshal(bytes.NewBuffer(buf.Bytes()))
-	assert.Equal(t, nil, err)
-	assert.Equal(t, c.Version, c2.Version)
-	assert.Equal(t, c.HTTPPort, c2.HTTPPort)
-	assert.Equal(t, c.BitQuantum, c2.BitQuantum)
-	assert.Equal(t, c.MBar, c2.MBar)
+	var buf bytes.Buffer
+	err := conf.marshal(&buf)
+	c.Assert(err, gc.IsNil)
+	c.Logf("config=%x", &buf)
+	conf2 := &Config{}
+	err = conf2.unmarshal(bytes.NewBuffer(buf.Bytes()))
+	c.Assert(err, gc.IsNil)
+	c.Assert(conf.Version, gc.Equals, conf2.Version)
+	c.Assert(conf.HTTPPort, gc.Equals, conf2.HTTPPort)
+	c.Assert(conf.BitQuantum, gc.Equals, conf2.BitQuantum)
+	c.Assert(conf.MBar, gc.Equals, conf2.MBar)
 }
 
-func TestConfigMsgRoundTrip(t *testing.T) {
-	c := &Config{
+func (s *MessagesSuite) TestConfigMsgRoundTrip(c *gc.C) {
+	conf := &Config{
 		Version:    "3.1415",
 		HTTPPort:   11371,
 		BitQuantum: 2,
 		MBar:       5}
 	buf := bytes.NewBuffer(nil)
-	err := WriteMsg(buf, c)
-	assert.Equal(t, nil, err)
+	err := WriteMsg(buf, conf)
+	c.Assert(err, gc.IsNil)
 	msg, err := ReadMsg(bytes.NewBuffer(buf.Bytes()))
-	assert.Equal(t, nil, err)
-	c2 := msg.(*Config)
-	assert.Equal(t, c.Version, c2.Version)
-	assert.Equal(t, c.HTTPPort, c2.HTTPPort)
-	assert.Equal(t, c.BitQuantum, c2.BitQuantum)
-	assert.Equal(t, c.MBar, c2.MBar)
+	c.Assert(err, gc.IsNil)
+	conf2 := msg.(*Config)
+	c.Assert(conf.Version, gc.Equals, conf2.Version)
+	c.Assert(conf.HTTPPort, gc.Equals, conf2.HTTPPort)
+	c.Assert(conf.BitQuantum, gc.Equals, conf2.BitQuantum)
+	c.Assert(conf.MBar, gc.Equals, conf2.MBar)
 }
