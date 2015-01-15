@@ -39,6 +39,7 @@ func init() {
 	log.SetLevel(log.DebugLevel)
 }
 
+var ShortDelay = time.Duration(30 * time.Millisecond)
 var LongTimeout = time.Duration(30 * time.Second)
 
 type Cleanup func()
@@ -64,6 +65,7 @@ func (s *ReconSuite) pollRootConvergence(c *gc.C, peer1, peer2 *recon.Peer, ptre
 		defer peer2.Stop()
 		var zs1 *conflux.ZSet = conflux.NewZSet()
 		var zs2 *conflux.ZSet = conflux.NewZSet()
+		timer := time.NewTimer(LongTimeout)
 	POLLING:
 		for {
 			select {
@@ -101,7 +103,7 @@ func (s *ReconSuite) pollRootConvergence(c *gc.C, peer1, peer2 *recon.Peer, ptre
 					zs2 = conflux.NewZSet(root2.Elements()...)
 					return nil
 				})
-			case _ = <-time.After(LongTimeout):
+			case _ = <-timer.C:
 				return fmt.Errorf("timeout waiting for convergence")
 			default:
 			}
@@ -120,6 +122,7 @@ func (s *ReconSuite) pollConvergence(c *gc.C, peer1, peer2 *recon.Peer, peer1Nee
 	t.Go(func() error {
 		defer peer1.Stop()
 		defer peer2.Stop()
+		timer := time.NewTimer(timeout)
 	POLLING:
 		for {
 			select {
@@ -137,7 +140,7 @@ func (s *ReconSuite) pollConvergence(c *gc.C, peer1, peer2 *recon.Peer, peer1Nee
 				c.Logf("peer2 recover: %v", r2)
 				peer2.Insert(r2.RemoteElements...)
 				peer2Needs.RemoveSlice(r2.RemoteElements)
-			case _ = <-time.After(timeout):
+			case _ = <-timer.C:
 				c.Log("peer1 still needed ", peer1Needs.Len(), ":", peer1Needs)
 				c.Log("peer2 still needed ", peer2Needs.Len(), ":", peer2Needs)
 				return fmt.Errorf("timeout waiting for convergence")
@@ -147,6 +150,7 @@ func (s *ReconSuite) pollConvergence(c *gc.C, peer1, peer2 *recon.Peer, peer1Nee
 				c.Log("all done!")
 				return nil
 			}
+			time.Sleep(ShortDelay)
 		}
 		return fmt.Errorf("set reconciliation did not converge")
 	})
@@ -299,7 +303,7 @@ func (s *ReconSuite) TestPolySyncLowMBar(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 }
 
-func (s *ReconSuite) RunOneSided(c *gc.C, clientHas bool, n int, timeout time.Duration) {
+func (s *ReconSuite) RunOneSided(c *gc.C, n int, timeout time.Duration) {
 	ptree1, cleanup, err := s.Factory()
 	c.Assert(err, gc.IsNil)
 	defer cleanup()
@@ -310,16 +314,9 @@ func (s *ReconSuite) RunOneSided(c *gc.C, clientHas bool, n int, timeout time.Du
 
 	expected := conflux.NewZSet()
 
-	var ptree recon.PrefixTree
-	if clientHas {
-		ptree = ptree2
-	} else {
-		ptree = ptree1
-	}
-
 	for i := 1; i < n; i++ {
 		z := conflux.Zi(conflux.P_SKS, 65537*i)
-		ptree.Insert(z)
+		ptree2.Insert(z)
 		expected.Add(z)
 	}
 
@@ -327,10 +324,6 @@ func (s *ReconSuite) RunOneSided(c *gc.C, clientHas bool, n int, timeout time.Du
 	peer1 := s.newPeer(port1, port2, recon.PeerModeGossipOnly, ptree1)
 	peer2 := s.newPeer(port2, port1, recon.PeerModeServeOnly, ptree2)
 
-	if clientHas {
-		err = s.pollConvergence(c, peer2, peer1, expected, conflux.NewZSet(), timeout)
-	} else {
-		err = s.pollConvergence(c, peer1, peer2, conflux.NewZSet(), expected, timeout)
-	}
+	err = s.pollConvergence(c, peer1, peer2, expected, conflux.NewZSet(), timeout)
 	c.Assert(err, gc.IsNil)
 }

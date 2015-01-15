@@ -22,6 +22,7 @@
 package testing
 
 import (
+	"flag"
 	"testing"
 	"time"
 
@@ -29,6 +30,8 @@ import (
 
 	"github.com/cmars/conflux/recon"
 )
+
+var long = flag.Bool("long", false, "run long-running tests")
 
 func Test(t *testing.T) { gc.TestingT(t) }
 
@@ -46,30 +49,20 @@ var _ = gc.Suite(&MemReconSuite{
 	},
 })
 
-func (s *MemReconSuite) TestOneSidedMediumLeft(c *gc.C) {
-	s.RunOneSided(c, false, 250, 30*time.Second)
+func (s *MemReconSuite) TestOneSidedMedium(c *gc.C) {
+	s.RunOneSided(c, 250, 30*time.Second)
 }
 
-func (s *MemReconSuite) TestOneSidedMediumRight(c *gc.C) {
-	s.RunOneSided(c, true, 250, 30*time.Second)
+func (s *MemReconSuite) TestOneSidedLarge(c *gc.C) {
+	if !*long {
+		c.Skip("long running test")
+	}
+	s.RunOneSided(c, 15000, 60*time.Second)
 }
 
-func (s *MemReconSuite) TestOneSidedMedium2Right(c *gc.C) {
-	s.RunOneSided(c, true, 5000, 45*time.Second)
-}
-
-func (s *MemReconSuite) TestOneSidedLargeLeft(c *gc.C) {
-	s.RunOneSided(c, false, 15000, 60*time.Second)
-}
-
-func (s *MemReconSuite) TestOneSidedLargeRight(c *gc.C) {
-	s.RunOneSided(c, true, 15000, 60*time.Second)
-}
-
-func (s *MemReconSuite) TestOneSidedRidiculousLeft(c *gc.C) {
-	s.RunOneSided(c, false, 150000, 300*time.Second)
-}
-
-func (s *MemReconSuite) TestOneSidedRidiculousRight(c *gc.C) {
-	s.RunOneSided(c, true, 150000, 300*time.Second)
+func (s *MemReconSuite) TestOneSidedRidiculous(c *gc.C) {
+	if !*long {
+		c.Skip("long running test")
+	}
+	s.RunOneSided(c, 150000, 300*time.Second)
 }
