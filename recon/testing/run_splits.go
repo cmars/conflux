@@ -14,7 +14,7 @@ func lookupNode(key string, start recon.PrefixNode) (recon.PrefixNode, error) {
 		if node.IsLeaf() {
 			return nil, fmt.Errorf("unexpected leaf node")
 		}
-		if len(key) < node.BitQuantum() {
+		if len(key) < node.Config().BitQuantum {
 			return nil, fmt.Errorf("bitstring alignment error, must be multiple of bitquantum")
 		}
 		childIndex := 0

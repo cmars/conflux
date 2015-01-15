@@ -53,15 +53,13 @@ logname="blammo"
 filters=["something","else"]
 `,
 		&Settings{
+			PTreeConfig:                 defaultPTreeConfig,
 			Version:                     "2.3.4",
 			LogName:                     "blammo",
 			Filters:                     []string{"something", "else"},
 			HTTPAddr:                    ":11371",
 			ReconAddr:                   ":11370",
 			Partners:                    PartnerMap{},
-			ThreshMult:                  DefaultThreshMult,
-			BitQuantum:                  DefaultBitQuantum,
-			MBar:                        DefaultMBar,
 			GossipIntervalSecs:          DefaultGossipIntervalSecs,
 			MaxOutstandingReconRequests: DefaultMaxOutstandingReconRequests,
 		},
@@ -77,15 +75,13 @@ reconAddr="[2001:db8:85a3::8a2e:370:7334]:11370"
 filters=["something","else"]
 `,
 		&Settings{
+			PTreeConfig:                 defaultPTreeConfig,
 			Version:                     "2.3.4",
 			LogName:                     "blammo",
 			HTTPAddr:                    "12.23.34.45:11371",
 			ReconAddr:                   "[2001:db8:85a3::8a2e:370:7334]:11370",
 			Filters:                     []string{"something", "else"},
 			Partners:                    PartnerMap{},
-			ThreshMult:                  DefaultThreshMult,
-			BitQuantum:                  DefaultBitQuantum,
-			MBar:                        DefaultMBar,
 			GossipIntervalSecs:          DefaultGossipIntervalSecs,
 			MaxOutstandingReconRequests: DefaultMaxOutstandingReconRequests,
 		},
@@ -150,13 +146,11 @@ httpAddr="4.3.2.1:11371"
 reconAddr="8.7.6.5:11370"
 `,
 		&Settings{
+			PTreeConfig:                 defaultPTreeConfig,
 			Version:                     DefaultVersion,
 			LogName:                     DefaultLogName,
 			HTTPAddr:                    DefaultHTTPAddr,
 			ReconAddr:                   DefaultReconAddr,
-			ThreshMult:                  DefaultThreshMult,
-			BitQuantum:                  DefaultBitQuantum,
-			MBar:                        DefaultMBar,
 			GossipIntervalSecs:          DefaultGossipIntervalSecs,
 			MaxOutstandingReconRequests: DefaultMaxOutstandingReconRequests,
 			Partners: map[string]Partner{
@@ -180,15 +174,13 @@ reconPort=11370
 partners=["1.2.3.4:11370","5.6.7.8:11370"]
 `,
 		&Settings{
+			PTreeConfig:                 defaultPTreeConfig,
 			Version:                     DefaultVersion,
 			LogName:                     DefaultLogName,
 			HTTPAddr:                    ":11371",
 			ReconAddr:                   ":11370",
 			CompatHTTPPort:              11371,
 			CompatReconPort:             11370,
-			ThreshMult:                  DefaultThreshMult,
-			BitQuantum:                  DefaultBitQuantum,
-			MBar:                        DefaultMBar,
 			GossipIntervalSecs:          DefaultGossipIntervalSecs,
 			MaxOutstandingReconRequests: DefaultMaxOutstandingReconRequests,
 			Partners: map[string]Partner{

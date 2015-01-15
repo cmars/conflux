@@ -22,64 +22,56 @@
 package leveldb
 
 import (
-	"testing"
+	"flag"
+	"path/filepath"
+	stdtesting "testing"
+	"time"
+
+	gc "gopkg.in/check.v1"
 
 	"github.com/cmars/conflux/recon"
-	. "github.com/cmars/conflux/testing"
+	"github.com/cmars/conflux/recon/testing"
 )
 
-type peerManager struct {
-	t *testing.T
+var long = flag.Bool("long", false, "run long-running tests")
+
+func Test(t *stdtesting.T) { gc.TestingT(t) }
+
+type LeveldbReconSuite struct {
+	*testing.ReconSuite
 }
 
-func (lpm *peerManager) CreatePeer() (peer *recon.Peer, path string) {
-	return createTestPeer(lpm.t), ""
-}
+var _ = gc.Suite(&LeveldbReconSuite{})
 
-func (lpm *peerManager) DestroyPeer(peer *recon.Peer, path string) {
-	if peer != nil {
-		peer.Stop()
-		destroyTestPeer(peer)
+func (s *LeveldbReconSuite) SetUpTest(c *gc.C) {
+	s.ReconSuite = &testing.ReconSuite{
+		Factory: func() (recon.PrefixTree, testing.Cleanup, error) {
+			path := filepath.Join(c.MkDir(), "db")
+			ptree, err := New(recon.DefaultSettings().PTreeConfig, path)
+			c.Assert(err, gc.IsNil)
+			err = ptree.Create()
+			c.Assert(err, gc.IsNil)
+			return ptree, func() {
+				ptree.Drop()
+			}, nil
+		},
 	}
 }
 
-// Test full node sync.
-func TestFullSync(t *testing.T) {
-	RunFullSync(t, &peerManager{t})
+func (s *LeveldbReconSuite) TestOneSidedMedium(c *gc.C) {
+	s.RunOneSided(c, 250, 30*time.Second)
 }
 
-// Test sync with polynomial interpolation.
-func TestPolySyncMBar(t *testing.T) {
-	RunPolySyncMBar(t, &peerManager{t})
+func (s *LeveldbReconSuite) TestOneSidedLarge(c *gc.C) {
+	if !*long {
+		c.Skip("long running test")
+	}
+	s.RunOneSided(c, 15000, 60*time.Second)
 }
 
-// Test sync with polynomial interpolation.
-func TestPolySyncLowMBar(t *testing.T) {
-	RunPolySyncLowMBar(t, &peerManager{t})
-}
-
-func TestOneSidedMediumLeft(t *testing.T) {
-	RunOneSided(t, &peerManager{t}, false, 250, 10)
-}
-
-func TestOneSidedMediumRight(t *testing.T) {
-	RunOneSided(t, &peerManager{t}, true, 250, 10)
-}
-
-/*
-func TestOneSidedLargeLeft(t *testing.T) {
-	RunOneSided(t, &peerManager{t}, false, 15000, 180)
-}
-
-func TestOneSidedLargeRight(t *testing.T) {
-	RunOneSided(t, &peerManager{t}, true, 15000, 180)
-}
-*/
-
-func TestSplits85(t *testing.T) {
-	RunSplits85(t, &peerManager{t})
-}
-
-func TestSplits15k(t *testing.T) {
-	RunSplits15k(t, &peerManager{t})
+func (s *LeveldbReconSuite) TestOneSidedRidiculous(c *gc.C) {
+	if !*long {
+		c.Skip("long running test")
+	}
+	s.RunOneSided(c, 150000, 300*time.Second)
 }

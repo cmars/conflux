@@ -35,7 +35,9 @@ import (
 )
 
 type prefixTree struct {
-	*Settings
+	recon.PTreeConfig
+	path string
+
 	root   *prefixNode
 	db     *leveldb.DB
 	points []*Zp
@@ -86,16 +88,17 @@ func mustDecodeZZarray(buf []byte) []*Zp {
 
 const COLLECTION_NAME = "conflux.recon"
 
-func New(settings *Settings) (ptree recon.PrefixTree, err error) {
+func New(config recon.PTreeConfig, path string) (ptree recon.PrefixTree, err error) {
 	tree := &prefixTree{
-		Settings: settings,
-		points:   Zpoints(P_SKS, settings.NumSamples())}
+		PTreeConfig: config,
+		path:        path,
+		points:      Zpoints(P_SKS, config.NumSamples())}
 	ptree = tree
 	return
 }
 
 func (t *prefixTree) Create() (err error) {
-	if t.db, err = leveldb.OpenFile(t.Settings.Path(), nil); err != nil {
+	if t.db, err = leveldb.OpenFile(t.path, nil); err != nil {
 		return
 	}
 	return t.ensureRoot()
@@ -105,7 +108,7 @@ func (t *prefixTree) Drop() error {
 	if t.db != nil {
 		t.db.Close()
 	}
-	return os.Remove(t.Settings.Path())
+	return os.Remove(t.path)
 }
 
 func (t *prefixTree) Close() (err error) {
@@ -155,7 +158,7 @@ func (t *prefixTree) getNode(key []byte) (node *prefixNode, err error) {
 }
 
 func (t *prefixTree) Node(bs *Bitstring) (node recon.PrefixNode, err error) {
-	nbq := t.BitQuantum()
+	nbq := t.BitQuantum
 	key := bs
 	nodeKey := mustEncodeBitstring(key)
 	for {
@@ -168,6 +171,10 @@ func (t *prefixTree) Node(bs *Bitstring) (node recon.PrefixNode, err error) {
 		nodeKey = mustEncodeBitstring(key)
 	}
 	return node, err
+}
+
+func (n *prefixNode) Config() *recon.PTreeConfig {
+	return &n.PTreeConfig
 }
 
 func (n *prefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) error {
@@ -241,7 +248,7 @@ func (n *prefixNode) split(depth int) (err error) {
 		return err
 	}
 	// Create child nodes
-	numChildren := 1 << uint(n.BitQuantum())
+	numChildren := 1 << uint(n.BitQuantum)
 	var children []*prefixNode
 	for i := 0; i < numChildren; i++ {
 		// Create new empty child node
@@ -369,9 +376,9 @@ func (t *prefixTree) newChildNode(parent *prefixNode, childIndex int) *prefixNod
 	var key *Bitstring
 	if parent != nil {
 		parentKey := parent.Key()
-		key = NewBitstring(parentKey.BitLen() + t.BitQuantum())
+		key = NewBitstring(parentKey.BitLen() + t.BitQuantum)
 		key.SetBytes(parentKey.Bytes())
-		for j := 0; j < parent.BitQuantum(); j++ {
+		for j := 0; j < parent.BitQuantum; j++ {
 			if (1<<uint(j))&childIndex == 0 {
 				key.Clear(parentKey.BitLen() + j)
 			} else {
@@ -408,11 +415,11 @@ func (n *prefixNode) Children() (result []recon.PrefixNode) {
 		return nil
 	}
 	key := n.Key()
-	numChildren := 1 << uint(n.BitQuantum())
+	numChildren := 1 << uint(n.BitQuantum)
 	for i := 0; i < numChildren; i++ {
-		childKey := NewBitstring(key.BitLen() + n.BitQuantum())
+		childKey := NewBitstring(key.BitLen() + n.BitQuantum)
 		childKey.SetBytes(key.Bytes())
-		for j := 0; j < n.BitQuantum(); j++ {
+		for j := 0; j < n.BitQuantum; j++ {
 			if (1<<uint(j))&i == 0 {
 				childKey.Clear(key.BitLen() + j)
 			} else {
@@ -456,7 +463,7 @@ func (n *prefixNode) Parent() (recon.PrefixNode, bool) {
 	if key.BitLen() == 0 {
 		return nil, false
 	}
-	parentKey := NewBitstring(key.BitLen() - n.BitQuantum())
+	parentKey := NewBitstring(key.BitLen() - n.BitQuantum)
 	parentKey.SetBytes(key.Bytes())
 	parent, err := n.Node(parentKey)
 	if err != nil {

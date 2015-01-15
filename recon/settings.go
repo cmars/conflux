@@ -34,8 +34,16 @@ import (
 
 type PartnerMap map[string]Partner
 
+type PTreeConfig struct {
+	ThreshMult int `toml:"threshMult"`
+	BitQuantum int `toml:"bitQuantum"`
+	MBar       int `toml:"mBar"`
+}
+
 // Settings holds the configuration settings for the local reconciliation peer.
 type Settings struct {
+	PTreeConfig
+
 	Version   string     `toml:"version"`
 	LogName   string     `toml:"logname"`
 	HTTPAddr  string     `toml:"httpAddr"`
@@ -49,10 +57,6 @@ type Settings struct {
 	CompatHTTPPort     int      `toml:"httpPort"`
 	CompatReconPort    int      `toml:"reconPort"`
 	CompatPartnerAddrs []string `toml:"partners"`
-
-	ThreshMult int `toml:"threshMult"`
-	BitQuantum int `toml:"bitQuantum"`
-	MBar       int `toml:"mBar"`
 
 	GossipIntervalSecs          int `toml:"gossipIntervalSecs"`
 	MaxOutstandingReconRequests int `toml:"maxOutstandingReconRequests"`
@@ -99,19 +103,27 @@ const (
 	DefaultReconAddr                   = ":11370"
 	DefaultGossipIntervalSecs          = 60
 	DefaultMaxOutstandingReconRequests = 100
+
+	DefaultThreshMult = 10
+	DefaultBitQuantum = 2
+	DefaultMBar       = 5
 )
 
+var defaultPTreeConfig = PTreeConfig{
+	ThreshMult: DefaultThreshMult,
+	BitQuantum: DefaultBitQuantum,
+	MBar:       DefaultMBar,
+}
+
 var defaultSettings = Settings{
+	PTreeConfig: defaultPTreeConfig,
+
 	Version:   DefaultVersion,
 	LogName:   DefaultLogName,
 	HTTPAddr:  DefaultHTTPAddr,
 	ReconAddr: DefaultReconAddr,
 
 	Partners: PartnerMap{},
-
-	ThreshMult: DefaultThreshMult,
-	BitQuantum: DefaultBitQuantum,
-	MBar:       DefaultMBar,
 
 	GossipIntervalSecs:          DefaultGossipIntervalSecs,
 	MaxOutstandingReconRequests: DefaultMaxOutstandingReconRequests,
@@ -205,21 +217,21 @@ func (s *Settings) Config() (*Config, error) {
 
 // SplitThreshold returns the maximum number of elements a prefix tree node may
 // contain before creating child nodes and distributing the elements among them.
-func (s *Settings) SplitThreshold() int {
-	return s.ThreshMult * s.MBar
+func (c *PTreeConfig) SplitThreshold() int {
+	return c.ThreshMult * c.MBar
 }
 
 // JoinThreshold returns the minimum cumulative number of elements under a
 // prefix tree parent node, below which all child nodes are merged into the
 // parent.
-func (s *Settings) JoinThreshold() int {
-	return s.SplitThreshold() / 2
+func (c *PTreeConfig) JoinThreshold() int {
+	return c.SplitThreshold() / 2
 }
 
 // NumSamples returns the number of sample points used for interpolation.
 // This must match among all reconciliation peers.
-func (s *Settings) NumSamples() int {
-	return s.MBar + 1
+func (c *PTreeConfig) NumSamples() int {
+	return c.MBar + 1
 }
 
 // PartnerAddrs returns the resolved network addresses of configured partner
