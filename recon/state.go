@@ -22,8 +22,9 @@
 package recon
 
 import (
-	"log"
 	"sync"
+
+	log "gopkg.in/hockeypuck/logrus.v0"
 )
 
 type State string
@@ -56,7 +57,7 @@ func (t *Tracker) Done() {
 	for _, execIdle := range t.execOnIdle {
 		err := execIdle()
 		if err != nil {
-			log.Println(err)
+			log.Error(err)
 		}
 	}
 	t.execOnIdle = nil

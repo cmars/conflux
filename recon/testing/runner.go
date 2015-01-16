@@ -31,7 +31,7 @@ import (
 	log "gopkg.in/hockeypuck/logrus.v0"
 	"gopkg.in/tomb.v2"
 
-	"github.com/cmars/conflux"
+	cf "github.com/cmars/conflux"
 	"github.com/cmars/conflux/recon"
 )
 
@@ -63,8 +63,8 @@ func (s *ReconSuite) pollRootConvergence(c *gc.C, peer1, peer2 *recon.Peer, ptre
 	t.Go(func() error {
 		defer peer1.Stop()
 		defer peer2.Stop()
-		var zs1 *conflux.ZSet = conflux.NewZSet()
-		var zs2 *conflux.ZSet = conflux.NewZSet()
+		var zs1 *cf.ZSet = cf.NewZSet()
+		var zs2 *cf.ZSet = cf.NewZSet()
 		timer := time.NewTimer(LongTimeout)
 	POLLING:
 		for {
@@ -83,7 +83,7 @@ func (s *ReconSuite) pollRootConvergence(c *gc.C, peer1, peer2 *recon.Peer, ptre
 					if err != nil {
 						return err
 					}
-					zs1 = conflux.NewZSet(recon.MustElements(root1)...)
+					zs1 = cf.NewZSet(recon.MustElements(root1)...)
 					return nil
 				})
 			case r2, ok := <-peer2.RecoverChan:
@@ -100,7 +100,7 @@ func (s *ReconSuite) pollRootConvergence(c *gc.C, peer1, peer2 *recon.Peer, ptre
 					if err != nil {
 						return err
 					}
-					zs2 = conflux.NewZSet(recon.MustElements(root2)...)
+					zs2 = cf.NewZSet(recon.MustElements(root2)...)
 					return nil
 				})
 			case _ = <-timer.C:
@@ -117,7 +117,7 @@ func (s *ReconSuite) pollRootConvergence(c *gc.C, peer1, peer2 *recon.Peer, ptre
 	return t.Wait()
 }
 
-func (s *ReconSuite) pollConvergence(c *gc.C, peer1, peer2 *recon.Peer, peer1Needs, peer2Needs *conflux.ZSet, timeout time.Duration) error {
+func (s *ReconSuite) pollConvergence(c *gc.C, peer1, peer2 *recon.Peer, peer1Needs, peer2Needs *cf.ZSet, timeout time.Duration) error {
 	var t tomb.Tomb
 	t.Go(func() error {
 		defer peer1.Stop()
@@ -195,13 +195,13 @@ func (s *ReconSuite) TestFullSync(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	defer cleanup()
 
-	ptree1.Insert(conflux.Zi(conflux.P_SKS, 65537))
-	ptree1.Insert(conflux.Zi(conflux.P_SKS, 65539))
+	ptree1.Insert(cf.Zi(cf.P_SKS, 65537))
+	ptree1.Insert(cf.Zi(cf.P_SKS, 65539))
 	root, _ := ptree1.Root()
 	c.Log("peer1:", recon.MustElements(root))
 
-	ptree2.Insert(conflux.Zi(conflux.P_SKS, 65537))
-	ptree2.Insert(conflux.Zi(conflux.P_SKS, 65541))
+	ptree2.Insert(cf.Zi(cf.P_SKS, 65537))
+	ptree2.Insert(cf.Zi(cf.P_SKS, 65541))
 	root, _ = ptree2.Root()
 	c.Log("peer2:", recon.MustElements(root))
 
@@ -223,28 +223,28 @@ func (s *ReconSuite) TestPolySyncMBar(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	defer cleanup()
 
-	onlyInPeer1 := conflux.NewZSet()
+	onlyInPeer1 := cf.NewZSet()
 	// Load up peer 1 with items
 	for i := 1; i < 100; i++ {
-		ptree1.Insert(conflux.Zi(conflux.P_SKS, 65537*i))
+		ptree1.Insert(cf.Zi(cf.P_SKS, 65537*i))
 	}
 	// Four extra samples
 	for i := 1; i < 5; i++ {
-		z := conflux.Zi(conflux.P_SKS, 68111*i)
+		z := cf.Zi(cf.P_SKS, 68111*i)
 		ptree1.Insert(z)
 		onlyInPeer1.Add(z)
 	}
 	root, _ := ptree1.Root()
 	c.Log("peer1:", recon.MustElements(root))
 
-	onlyInPeer2 := conflux.NewZSet()
+	onlyInPeer2 := cf.NewZSet()
 	// Load up peer 2 with items
 	for i := 1; i < 100; i++ {
-		ptree2.Insert(conflux.Zi(conflux.P_SKS, 65537*i))
+		ptree2.Insert(cf.Zi(cf.P_SKS, 65537*i))
 	}
 	// One extra sample
 	for i := 1; i < 2; i++ {
-		z := conflux.Zi(conflux.P_SKS, 70001*i)
+		z := cf.Zi(cf.P_SKS, 70001*i)
 		ptree2.Insert(z)
 		onlyInPeer2.Add(z)
 	}
@@ -269,26 +269,26 @@ func (s *ReconSuite) TestPolySyncLowMBar(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	defer cleanup()
 
-	onlyInPeer1 := conflux.NewZSet()
+	onlyInPeer1 := cf.NewZSet()
 	for i := 1; i < 100; i++ {
-		ptree1.Insert(conflux.Zi(conflux.P_SKS, 65537*i))
+		ptree1.Insert(cf.Zi(cf.P_SKS, 65537*i))
 	}
 	// extra samples
 	for i := 1; i < 50; i++ {
-		z := conflux.Zi(conflux.P_SKS, 68111*i)
+		z := cf.Zi(cf.P_SKS, 68111*i)
 		onlyInPeer1.Add(z)
 		ptree1.Insert(z)
 	}
 	root1, _ := ptree1.Root()
 	c.Log("peer1:", recon.MustElements(root1))
 
-	onlyInPeer2 := conflux.NewZSet()
+	onlyInPeer2 := cf.NewZSet()
 	for i := 1; i < 100; i++ {
-		ptree2.Insert(conflux.Zi(conflux.P_SKS, 65537*i))
+		ptree2.Insert(cf.Zi(cf.P_SKS, 65537*i))
 	}
 	// extra samples
 	for i := 1; i < 20; i++ {
-		z := conflux.Zi(conflux.P_SKS, 70001*i)
+		z := cf.Zi(cf.P_SKS, 70001*i)
 		onlyInPeer2.Add(z)
 		ptree2.Insert(z)
 	}
@@ -312,10 +312,10 @@ func (s *ReconSuite) RunOneSided(c *gc.C, n int, timeout time.Duration) {
 	c.Assert(err, gc.IsNil)
 	defer cleanup()
 
-	expected := conflux.NewZSet()
+	expected := cf.NewZSet()
 
 	for i := 1; i < n; i++ {
-		z := conflux.Zi(conflux.P_SKS, 65537*i)
+		z := cf.Zi(cf.P_SKS, 65537*i)
 		ptree2.Insert(z)
 		expected.Add(z)
 	}
@@ -324,6 +324,6 @@ func (s *ReconSuite) RunOneSided(c *gc.C, n int, timeout time.Duration) {
 	peer1 := s.newPeer(port1, port2, recon.PeerModeGossipOnly, ptree1)
 	peer2 := s.newPeer(port2, port1, recon.PeerModeServeOnly, ptree2)
 
-	err = s.pollConvergence(c, peer1, peer2, expected, conflux.NewZSet(), timeout)
+	err = s.pollConvergence(c, peer1, peer2, expected, cf.NewZSet(), timeout)
 	c.Assert(err, gc.IsNil)
 }

@@ -33,7 +33,7 @@ import (
 	log "gopkg.in/hockeypuck/logrus.v0"
 	"gopkg.in/tomb.v2"
 
-	. "github.com/cmars/conflux"
+	cf "github.com/cmars/conflux"
 )
 
 const SERVE = "serve"
@@ -41,7 +41,7 @@ const SERVE = "serve"
 type Recover struct {
 	RemoteAddr     net.Addr
 	RemoteConfig   *Config
-	RemoteElements []*Zp
+	RemoteElements []*cf.Zp
 }
 
 func (r *Recover) String() string {
@@ -60,9 +60,9 @@ func (r *Recover) HkpAddr() (string, error) {
 
 type RecoverChan chan *Recover
 
-var PNodeNotFound error = errors.New("Prefix-tree node not found")
+var ErrNodeNotFound error = errors.New("prefix-tree node not found")
 
-var RemoteRejectConfigError error = errors.New("Remote rejected configuration")
+var ErrRemoteRejectedConfig error = errors.New("remote rejected configuration")
 
 type PeerMode string
 
@@ -157,7 +157,7 @@ func (p *Peer) ExecCmd(f func() error) {
 	p.tracker.ExecIdle(f)
 }
 
-func (p *Peer) Insert(zs ...*Zp) {
+func (p *Peer) Insert(zs ...*cf.Zp) {
 	p.tracker.ExecIdle(func() error {
 		for _, z := range zs {
 			err := p.ptree.Insert(z)
@@ -169,7 +169,7 @@ func (p *Peer) Insert(zs ...*Zp) {
 	})
 }
 
-func (p *Peer) Remove(zs ...*Zp) {
+func (p *Peer) Remove(zs ...*cf.Zp) {
 	p.tracker.ExecIdle(func() error {
 		for _, z := range zs {
 			err := p.ptree.Remove(z)
@@ -276,7 +276,7 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) 
 		bufw.Flush()
 		log.Errorf(p.logName(role), "cannot peer: BitQuantum remote=%v != local=%v",
 			remoteConfig.BitQuantum, config.BitQuantum)
-		return nil, errgo.Mask(IncompatiblePeerError)
+		return nil, errgo.Mask(ErrIncompatiblePeer)
 	}
 
 	if remoteConfig.MBar != config.MBar {
@@ -293,7 +293,7 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) 
 		bufw.Flush()
 		log.Errorf(p.logName(role), "cannot peer: MBar remote=%v != local %v",
 			remoteConfig.MBar, config.MBar)
-		return nil, errgo.Mask(IncompatiblePeerError)
+		return nil, errgo.Mask(ErrIncompatiblePeer)
 	}
 
 	handshake.Go(func() error {
@@ -317,9 +317,9 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) 
 	if remoteConfigStatus != RemoteConfigPassed {
 		reason, err := ReadString(conn)
 		if err != nil {
-			return nil, errgo.WithCausef(err, RemoteRejectConfigError, "remote rejected config")
+			return nil, errgo.WithCausef(err, ErrRemoteRejectedConfig, "remote rejected config")
 		}
-		return nil, errgo.NoteMask(RemoteRejectConfigError, reason)
+		return nil, errgo.NoteMask(ErrRemoteRejectedConfig, reason)
 	}
 
 	return remoteConfig, nil
@@ -347,14 +347,14 @@ func (p *Peer) Accept(conn net.Conn) (_err error) {
 	}
 
 	if p.Enabled() {
-		return p.interactWithClient(conn, remoteConfig, NewBitstring(0))
+		return p.interactWithClient(conn, remoteConfig, cf.NewBitstring(0))
 	}
 	return errgo.Newf("peer is currently disabled, ignoring connection.")
 }
 
 type requestEntry struct {
 	node PrefixNode
-	key  *Bitstring
+	key  *cf.Bitstring
 }
 
 func (r *requestEntry) String() string {
@@ -399,7 +399,7 @@ type reconWithClient struct {
 	*Peer
 	requestQ []*requestEntry
 	bottomQ  []*bottomEntry
-	rcvrSet  *ZSet
+	rcvrSet  *cf.ZSet
 	flushing bool
 	conn     net.Conn
 	messages []ReconMsg
@@ -451,7 +451,7 @@ func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) error {
 		}
 		msg = &ReconRqstFull{
 			Prefix:   req.key,
-			Elements: NewZSet(elements...)}
+			Elements: cf.NewZSet(elements...)}
 	} else {
 		msg = &ReconRqstPoly{
 			Prefix:  req.key,
@@ -487,9 +487,9 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 		if err != nil {
 			return err
 		}
-		local := NewZSet(elements...)
-		localNeeds := ZSetDiff(m.ZSet, local)
-		remoteNeeds := ZSetDiff(local, m.ZSet)
+		local := cf.NewZSet(elements...)
+		localNeeds := cf.ZSetDiff(m.ZSet, local)
+		remoteNeeds := cf.ZSetDiff(local, m.ZSet)
 		elementsMsg := &Elements{ZSet: remoteNeeds}
 		log.Debug(rwc.Peer.logName(SERVE), "handleReply:", "sending:", elementsMsg)
 		rwc.messages = append(rwc.messages, elementsMsg)
@@ -515,9 +515,9 @@ func (rwc *reconWithClient) flushQueue() error {
 
 var zeroTime time.Time
 
-func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring *Bitstring) error {
+func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring *cf.Bitstring) error {
 	log.Debug(p.logName(SERVE), "interacting with client")
-	recon := reconWithClient{Peer: p, conn: conn, rcvrSet: NewZSet()}
+	recon := reconWithClient{Peer: p, conn: conn, rcvrSet: cf.NewZSet()}
 	root, err := p.ptree.Root()
 	if err != nil {
 		return err

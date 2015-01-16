@@ -27,15 +27,16 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	. "github.com/cmars/conflux"
 	"io"
+
+	cf "github.com/cmars/conflux"
 )
 
 var SksZpNbytes int
 
 func init() {
-	SksZpNbytes = P_SKS.BitLen() / 8
-	if P_SKS.BitLen()%8 != 0 {
+	SksZpNbytes = cf.P_SKS.BitLen() / 8
+	if cf.P_SKS.BitLen()%8 != 0 {
 		SksZpNbytes++
 	}
 }
@@ -158,12 +159,12 @@ func WriteString(w io.Writer, text string) (err error) {
 	return
 }
 
-func ReadBitstring(r io.Reader) (*Bitstring, error) {
+func ReadBitstring(r io.Reader) (*cf.Bitstring, error) {
 	nbits, err := ReadInt(r)
 	if err != nil {
 		return nil, err
 	}
-	bs := NewBitstring(nbits)
+	bs := cf.NewBitstring(nbits)
 	nbytes, err := ReadInt(r)
 	if err != nil {
 		return nil, err
@@ -177,7 +178,7 @@ func ReadBitstring(r io.Reader) (*Bitstring, error) {
 	return bs, err
 }
 
-func WriteBitstring(w io.Writer, bs *Bitstring) (err error) {
+func WriteBitstring(w io.Writer, bs *cf.Bitstring) (err error) {
 	err = WriteInt(w, bs.BitLen())
 	if err != nil {
 		return
@@ -190,12 +191,12 @@ func WriteBitstring(w io.Writer, bs *Bitstring) (err error) {
 	return
 }
 
-func ReadZZarray(r io.Reader) ([]*Zp, error) {
+func ReadZZarray(r io.Reader) ([]*cf.Zp, error) {
 	n, err := ReadInt(r)
 	if err != nil {
 		return nil, err
 	}
-	arr := make([]*Zp, n)
+	arr := make([]*cf.Zp, n)
 	for i := 0; i < n; i++ {
 		arr[i], err = ReadZp(r)
 		if err != nil {
@@ -205,7 +206,7 @@ func ReadZZarray(r io.Reader) ([]*Zp, error) {
 	return arr, nil
 }
 
-func WriteZZarray(w io.Writer, arr []*Zp) (err error) {
+func WriteZZarray(w io.Writer, arr []*cf.Zp) (err error) {
 	err = WriteInt(w, len(arr))
 	if err != nil {
 		return
@@ -219,32 +220,32 @@ func WriteZZarray(w io.Writer, arr []*Zp) (err error) {
 	return
 }
 
-func ReadZSet(r io.Reader) (*ZSet, error) {
+func ReadZSet(r io.Reader) (*cf.ZSet, error) {
 	arr, err := ReadZZarray(r)
 	if err != nil {
 		return nil, err
 	}
-	zset := NewZSet()
+	zset := cf.NewZSet()
 	zset.AddSlice(arr)
 	return zset, nil
 }
 
-func WriteZSet(w io.Writer, zset *ZSet) error {
+func WriteZSet(w io.Writer, zset *cf.ZSet) error {
 	return WriteZZarray(w, zset.Items())
 }
 
-func ReadZp(r io.Reader) (*Zp, error) {
+func ReadZp(r io.Reader) (*cf.Zp, error) {
 	buf := make([]byte, SksZpNbytes)
 	_, err := io.ReadFull(r, buf)
 	if err != nil {
 		return nil, err
 	}
-	z := Zb(P_SKS, buf)
+	z := cf.Zb(cf.P_SKS, buf)
 	z.Norm()
 	return z, nil
 }
 
-func WriteZp(w io.Writer, z *Zp) (err error) {
+func WriteZp(w io.Writer, z *cf.Zp) (err error) {
 	num := z.Bytes()
 	_, err = w.Write(num)
 	if err != nil {
@@ -258,9 +259,9 @@ func WriteZp(w io.Writer, z *Zp) (err error) {
 }
 
 type ReconRqstPoly struct {
-	Prefix  *Bitstring
+	Prefix  *cf.Bitstring
 	Size    int
-	Samples []*Zp
+	Samples []*cf.Zp
 }
 
 func (msg *ReconRqstPoly) MsgType() MsgType {
@@ -299,8 +300,8 @@ func (msg *ReconRqstPoly) unmarshal(r io.Reader) (err error) {
 }
 
 type ReconRqstFull struct {
-	Prefix   *Bitstring
-	Elements *ZSet
+	Prefix   *cf.Bitstring
+	Elements *cf.ZSet
 }
 
 func (msg *ReconRqstFull) String() string {
@@ -331,7 +332,7 @@ func (msg *ReconRqstFull) unmarshal(r io.Reader) (err error) {
 }
 
 type Elements struct {
-	*ZSet
+	*cf.ZSet
 }
 
 func (msg *Elements) String() string {
@@ -353,7 +354,7 @@ func (msg *Elements) unmarshal(r io.Reader) (err error) {
 }
 
 type FullElements struct {
-	*ZSet
+	*cf.ZSet
 }
 
 func (msg *FullElements) String() string {

@@ -26,7 +26,7 @@ import (
 
 	gc "gopkg.in/check.v1"
 
-	. "github.com/cmars/conflux"
+	cf "github.com/cmars/conflux"
 	"github.com/cmars/conflux/recon"
 )
 
@@ -58,28 +58,28 @@ func (s *PtreeSuite) TearDownTest(c *gc.C) {
 }
 
 func (s *PtreeSuite) TestInsertNodesNoSplit(c *gc.C) {
-	s.ptree.Insert(Zi(P_SKS, 100))
-	s.ptree.Insert(Zi(P_SKS, 300))
-	s.ptree.Insert(Zi(P_SKS, 500))
+	s.ptree.Insert(cf.Zi(cf.P_SKS, 100))
+	s.ptree.Insert(cf.Zi(cf.P_SKS, 300))
+	s.ptree.Insert(cf.Zi(cf.P_SKS, 500))
 	root, err := s.ptree.Root()
 	c.Assert(err, gc.IsNil)
 	c.Assert(recon.MustElements(root), gc.HasLen, 3)
 	c.Assert(root.IsLeaf(), gc.Equals, true)
-	s.ptree.Remove(Zi(P_SKS, 100))
-	s.ptree.Remove(Zi(P_SKS, 300))
-	s.ptree.Remove(Zi(P_SKS, 500))
+	s.ptree.Remove(cf.Zi(cf.P_SKS, 100))
+	s.ptree.Remove(cf.Zi(cf.P_SKS, 300))
+	s.ptree.Remove(cf.Zi(cf.P_SKS, 500))
 	root, err = s.ptree.Root()
 	c.Assert(recon.MustElements(root), gc.HasLen, 0)
 	for _, sv := range root.SValues() {
-		c.Assert(sv.Cmp(Zi(P_SKS, 1)), gc.Equals, 0)
+		c.Assert(sv.Cmp(cf.Zi(cf.P_SKS, 1)), gc.Equals, 0)
 	}
 }
 
 func (s *PtreeSuite) TestJustOneKey(c *gc.C) {
 	root, err := s.ptree.Root()
 	c.Assert(err, gc.IsNil)
-	s.ptree.Insert(Zs(P_SKS, "224045810486609649306292620830306652473"))
-	expect := NewZSet()
+	s.ptree.Insert(cf.Zs(cf.P_SKS, "224045810486609649306292620830306652473"))
+	expect := cf.NewZSet()
 	for _, sv := range []string{
 		"306467079064992673198834899522272784866",
 		"306467079064992673198834899522272784865",
@@ -87,7 +87,7 @@ func (s *PtreeSuite) TestJustOneKey(c *gc.C) {
 		"306467079064992673198834899522272784864",
 		"306467079064992673198834899522272784868",
 		"306467079064992673198834899522272784863"} {
-		expect.Add(Zs(P_SKS, sv))
+		expect.Add(cf.Zs(cf.P_SKS, sv))
 	}
 	c.Assert(err, gc.IsNil)
 	root, err = s.ptree.Root()
@@ -104,7 +104,7 @@ func (s *PtreeSuite) TestInsertRemoveProtection(c *gc.C) {
 	origSValues := root.SValues()
 	c.Assert(err, gc.IsNil)
 	// Add an element, should succeed
-	err = s.ptree.Insert(Zs(P_SKS, "224045810486609649306292620830306652473"))
+	err = s.ptree.Insert(cf.Zs(cf.P_SKS, "224045810486609649306292620830306652473"))
 	c.Assert(err, gc.IsNil)
 	// Snapshot svalues with one element added
 	root, err = s.ptree.Root()
@@ -114,7 +114,7 @@ func (s *PtreeSuite) TestInsertRemoveProtection(c *gc.C) {
 		c.Assert(origSValues[i].String(), gc.Not(gc.Equals), sv.String())
 	}
 	// Attempt to insert duplicate element, should fail
-	err = s.ptree.Insert(Zs(P_SKS, "224045810486609649306292620830306652473"))
+	err = s.ptree.Insert(cf.Zs(cf.P_SKS, "224045810486609649306292620830306652473"))
 	c.Assert(err, gc.NotNil)
 	// After attempt to insert duplicate, svalues should be unchanged
 	root, err = s.ptree.Root()
@@ -124,7 +124,7 @@ func (s *PtreeSuite) TestInsertRemoveProtection(c *gc.C) {
 		c.Assert(oneDupSValues[i].String(), gc.Equals, sv.String())
 	}
 	// Remove element, should be back to original svalues
-	err = s.ptree.Remove(Zs(P_SKS, "224045810486609649306292620830306652473"))
+	err = s.ptree.Remove(cf.Zs(cf.P_SKS, "224045810486609649306292620830306652473"))
 	c.Assert(err, gc.IsNil)
 	root, err = s.ptree.Root()
 	c.Assert(err, gc.IsNil)
@@ -133,7 +133,7 @@ func (s *PtreeSuite) TestInsertRemoveProtection(c *gc.C) {
 		c.Assert(origSValues[i].String(), gc.Equals, sv.String())
 	}
 	// Remove non-existent element, svalues should be unchanged
-	err = s.ptree.Remove(Zs(P_SKS, "224045810486609649306292620830306652473"))
+	err = s.ptree.Remove(cf.Zs(cf.P_SKS, "224045810486609649306292620830306652473"))
 	c.Assert(err, gc.NotNil)
 	root, err = s.ptree.Root()
 	c.Assert(err, gc.IsNil)
@@ -143,9 +143,9 @@ func (s *PtreeSuite) TestInsertRemoveProtection(c *gc.C) {
 }
 
 func (s *PtreeSuite) TestInsertDups(c *gc.C) {
-	items := []*Zp{}
+	items := []*cf.Zp{}
 	for i := 0; i < s.config.SplitThreshold()*4; i++ {
-		z := Zrand(P_SKS)
+		z := cf.Zrand(cf.P_SKS)
 		items = append(items, z)
 		err := s.ptree.Insert(z)
 		c.Assert(err, gc.IsNil)
@@ -171,17 +171,17 @@ func (s *PtreeSuite) TestInsertNodeSplit(c *gc.C) {
 	root, err := s.ptree.Root()
 	for _, sv := range root.SValues() {
 		c.Log("SV:", sv)
-		c.Assert(sv.Cmp(Zi(P_SKS, 1)), gc.Equals, 0)
+		c.Assert(sv.Cmp(cf.Zi(cf.P_SKS, 1)), gc.Equals, 0)
 	}
 	// Add a bunch of nodes, enough to cause splits
 	for i := 0; i < s.config.SplitThreshold()*4; i++ {
-		z := Zi(P_SKS, i+65536)
+		z := cf.Zi(cf.P_SKS, i+65536)
 		c.Log("Insert:", z)
 		s.ptree.Insert(z)
 	}
 	// Remove a bunch of nodes, enough to cause joins
 	for i := 0; i < s.config.SplitThreshold()*4; i++ {
-		z := Zi(P_SKS, i+65536)
+		z := cf.Zi(cf.P_SKS, i+65536)
 		c.Log("Remove:", z)
 		s.ptree.Remove(z)
 	}
@@ -190,7 +190,7 @@ func (s *PtreeSuite) TestInsertNodeSplit(c *gc.C) {
 	// Insert/Remove reversible after splitting & joining?
 	for _, sv := range root.SValues() {
 		c.Log("SV:", sv)
-		c.Assert(sv.Cmp(Zi(P_SKS, 1)), gc.Equals, 0)
+		c.Assert(sv.Cmp(cf.Zi(cf.P_SKS, 1)), gc.Equals, 0)
 	}
 	c.Assert(recon.MustChildren(root), gc.HasLen, 0)
 	c.Assert(recon.MustElements(root), gc.HasLen, 0)

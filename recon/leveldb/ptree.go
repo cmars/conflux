@@ -31,7 +31,7 @@ import (
 
 	"github.com/syndtr/goleveldb/leveldb"
 
-	. "github.com/cmars/conflux"
+	cf "github.com/cmars/conflux"
 	"github.com/cmars/conflux/recon"
 )
 
@@ -41,7 +41,7 @@ type prefixTree struct {
 
 	root   *prefixNode
 	db     *leveldb.DB
-	points []*Zp
+	points []*cf.Zp
 }
 
 type prefixNode struct {
@@ -53,7 +53,7 @@ type prefixNode struct {
 	NodeElements [][]byte
 }
 
-func mustEncodeBitstring(bs *Bitstring) []byte {
+func mustEncodeBitstring(bs *cf.Bitstring) []byte {
 	w := bytes.NewBuffer(nil)
 	err := recon.WriteBitstring(w, bs)
 	if err != nil {
@@ -62,7 +62,7 @@ func mustEncodeBitstring(bs *Bitstring) []byte {
 	return w.Bytes()
 }
 
-func mustDecodeBitstring(buf []byte) *Bitstring {
+func mustDecodeBitstring(buf []byte) *cf.Bitstring {
 	bs, err := recon.ReadBitstring(bytes.NewBuffer(buf))
 	if err != nil {
 		panic(err)
@@ -70,7 +70,7 @@ func mustDecodeBitstring(buf []byte) *Bitstring {
 	return bs
 }
 
-func mustEncodeZZarray(arr []*Zp) []byte {
+func mustEncodeZZarray(arr []*cf.Zp) []byte {
 	w := bytes.NewBuffer(nil)
 	err := recon.WriteZZarray(w, arr)
 	if err != nil {
@@ -79,7 +79,7 @@ func mustEncodeZZarray(arr []*Zp) []byte {
 	return w.Bytes()
 }
 
-func mustDecodeZZarray(buf []byte) []*Zp {
+func mustDecodeZZarray(buf []byte) []*cf.Zp {
 	arr, err := recon.ReadZZarray(bytes.NewBuffer(buf))
 	if err != nil {
 		panic(err)
@@ -93,7 +93,7 @@ func New(config recon.PTreeConfig, path string) (ptree recon.PrefixTree, err err
 	tree := &prefixTree{
 		PTreeConfig: config,
 		path:        path,
-		points:      Zpoints(P_SKS, config.NumSamples())}
+		points:      cf.Zpoints(cf.P_SKS, config.NumSamples())}
 	ptree = tree
 	return
 }
@@ -121,17 +121,17 @@ func (t *prefixTree) Init() {
 
 func (t *prefixTree) ensureRoot() (err error) {
 	_, err = t.Root()
-	if err != recon.PNodeNotFound {
+	if err != recon.ErrNodeNotFound {
 		return
 	}
 	root := t.newChildNode(nil, 0)
 	return root.upsertNode()
 }
 
-func (t *prefixTree) Points() []*Zp { return t.points }
+func (t *prefixTree) Points() []*cf.Zp { return t.points }
 
 func (t *prefixTree) Root() (recon.PrefixNode, error) {
-	return t.Node(NewBitstring(0))
+	return t.Node(cf.NewBitstring(0))
 }
 
 func (t *prefixTree) hasKey(key []byte) bool {
@@ -143,12 +143,12 @@ func (t *prefixTree) getNode(key []byte) (node *prefixNode, err error) {
 	var val []byte
 	if val, err = t.db.Get(key, nil); err != nil {
 		if err == leveldb.ErrNotFound {
-			err = recon.PNodeNotFound
+			err = recon.ErrNodeNotFound
 		}
 		return
 	}
 	if len(val) == 0 {
-		err = recon.PNodeNotFound
+		err = recon.ErrNodeNotFound
 		return
 	}
 	dec := gob.NewDecoder(bytes.NewBuffer(val))
@@ -158,16 +158,16 @@ func (t *prefixTree) getNode(key []byte) (node *prefixNode, err error) {
 	return
 }
 
-func (t *prefixTree) Node(bs *Bitstring) (node recon.PrefixNode, err error) {
+func (t *prefixTree) Node(bs *cf.Bitstring) (node recon.PrefixNode, err error) {
 	nbq := t.BitQuantum
 	key := bs
 	nodeKey := mustEncodeBitstring(key)
 	for {
 		node, err = t.getNode(nodeKey)
-		if err != recon.PNodeNotFound || key.BitLen() == 0 {
+		if err != recon.ErrNodeNotFound || key.BitLen() == 0 {
 			break
 		}
-		key = NewBitstring(key.BitLen() - nbq)
+		key = cf.NewBitstring(key.BitLen() - nbq)
 		key.SetBytes(bs.Bytes())
 		nodeKey = mustEncodeBitstring(key)
 	}
@@ -178,7 +178,7 @@ func (n *prefixNode) Config() *recon.PTreeConfig {
 	return &n.PTreeConfig
 }
 
-func (n *prefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) error {
+func (n *prefixNode) insert(z *cf.Zp, marray []*cf.Zp, bs *cf.Bitstring, depth int) error {
 	for {
 		n.updateSvalues(z, marray)
 		n.NumElements++
@@ -221,7 +221,7 @@ func (n *prefixNode) deleteElements() error {
 	return n.upsertNode()
 }
 
-func (n *prefixNode) deleteElement(element *Zp) error {
+func (n *prefixNode) deleteElement(element *cf.Zp) error {
 	elementBytes := element.Bytes()
 	var elements [][]byte
 	var removed bool
@@ -239,7 +239,7 @@ func (n *prefixNode) deleteElement(element *Zp) error {
 	return n.upsertNode()
 }
 
-func (n *prefixNode) insertElement(element *Zp) error {
+func (n *prefixNode) insertElement(element *cf.Zp) error {
 	n.NodeElements = append(n.NodeElements, element.Bytes())
 	return n.upsertNode()
 }
@@ -266,8 +266,8 @@ func (n *prefixNode) split(depth int) (err error) {
 	}
 	// Move elements into child nodes
 	for _, element := range splitElements {
-		z := Zb(P_SKS, element)
-		bs := NewZpBitstring(z)
+		z := cf.Zb(cf.P_SKS, element)
+		bs := cf.NewZpBitstring(z)
 		childIndex := recon.NextChild(n, bs, depth)
 		child := children[childIndex]
 		marray, err := recon.AddElementArray(child, z)
@@ -282,7 +282,7 @@ func (n *prefixNode) split(depth int) (err error) {
 	return nil
 }
 
-func (n *prefixNode) remove(z *Zp, marray []*Zp, bs *Bitstring, depth int) error {
+func (n *prefixNode) remove(z *cf.Zp, marray []*cf.Zp, bs *cf.Bitstring, depth int) error {
 	var err error
 	for {
 		n.updateSvalues(z, marray)
@@ -335,22 +335,22 @@ func (n *prefixNode) join() error {
 	return n.upsertNode()
 }
 
-func ErrDuplicateElement(z *Zp) error {
+func ErrDuplicateElement(z *cf.Zp) error {
 	return fmt.Errorf("attempt to insert duplicate element %v", z)
 }
 
-func ErrElementNotFound(z *Zp) error {
+func ErrElementNotFound(z *cf.Zp) error {
 	return fmt.Errorf("expected element %v was not found", z)
 }
 
-func (t *prefixTree) Insert(z *Zp) error {
+func (t *prefixTree) Insert(z *cf.Zp) error {
 	_, lookupErr := t.db.Get(z.Bytes(), nil)
 	if lookupErr == nil {
 		return ErrDuplicateElement(z)
 	} else if lookupErr != leveldb.ErrNotFound {
 		return lookupErr
 	}
-	bs := NewZpBitstring(z)
+	bs := cf.NewZpBitstring(z)
 	root, err := t.Root()
 	if err != nil {
 		return err
@@ -366,12 +366,12 @@ func (t *prefixTree) Insert(z *Zp) error {
 	return t.db.Put(z.Bytes(), []byte{}, nil)
 }
 
-func (t *prefixTree) Remove(z *Zp) error {
+func (t *prefixTree) Remove(z *cf.Zp) error {
 	_, lookupErr := t.db.Get(z.Bytes(), nil)
 	if lookupErr != nil {
 		return lookupErr
 	}
-	bs := NewZpBitstring(z)
+	bs := cf.NewZpBitstring(z)
 	root, err := t.Root()
 	if err != nil {
 		return err
@@ -386,10 +386,10 @@ func (t *prefixTree) Remove(z *Zp) error {
 
 func (t *prefixTree) newChildNode(parent *prefixNode, childIndex int) *prefixNode {
 	n := &prefixNode{prefixTree: t, Leaf: true}
-	var key *Bitstring
+	var key *cf.Bitstring
 	if parent != nil {
 		parentKey := parent.Key()
-		key = NewBitstring(parentKey.BitLen() + t.BitQuantum)
+		key = cf.NewBitstring(parentKey.BitLen() + t.BitQuantum)
 		key.SetBytes(parentKey.Bytes())
 		for j := 0; j < parent.BitQuantum; j++ {
 			if (1<<uint(j))&childIndex == 0 {
@@ -399,12 +399,12 @@ func (t *prefixTree) newChildNode(parent *prefixNode, childIndex int) *prefixNod
 			}
 		}
 	} else {
-		key = NewBitstring(0)
+		key = cf.NewBitstring(0)
 	}
 	n.NodeKey = mustEncodeBitstring(key)
-	svalues := make([]*Zp, t.NumSamples())
+	svalues := make([]*cf.Zp, t.NumSamples())
 	for i := 0; i < len(svalues); i++ {
-		svalues[i] = Zi(P_SKS, 1)
+		svalues[i] = cf.Zi(cf.P_SKS, 1)
 	}
 	n.NodeSValues = mustEncodeZZarray(svalues)
 	return n
@@ -431,7 +431,7 @@ func (n *prefixNode) Children() ([]recon.PrefixNode, error) {
 	numChildren := 1 << uint(n.BitQuantum)
 	var result []recon.PrefixNode
 	for i := 0; i < numChildren; i++ {
-		childKey := NewBitstring(key.BitLen() + n.BitQuantum)
+		childKey := cf.NewBitstring(key.BitLen() + n.BitQuantum)
 		childKey.SetBytes(key.Bytes())
 		for j := 0; j < n.BitQuantum; j++ {
 			if (1<<uint(j))&i == 0 {
@@ -449,11 +449,11 @@ func (n *prefixNode) Children() ([]recon.PrefixNode, error) {
 	return result, nil
 }
 
-func (n *prefixNode) Elements() ([]*Zp, error) {
-	var result []*Zp
+func (n *prefixNode) Elements() ([]*cf.Zp, error) {
+	var result []*cf.Zp
 	if n.IsLeaf() {
 		for _, element := range n.NodeElements {
-			result = append(result, Zb(P_SKS, element))
+			result = append(result, cf.Zb(cf.P_SKS, element))
 		}
 	} else {
 		children, err := n.Children()
@@ -473,11 +473,11 @@ func (n *prefixNode) Elements() ([]*Zp, error) {
 
 func (n *prefixNode) Size() int { return n.NumElements }
 
-func (n *prefixNode) SValues() []*Zp {
+func (n *prefixNode) SValues() []*cf.Zp {
 	return mustDecodeZZarray(n.NodeSValues)
 }
 
-func (n *prefixNode) Key() *Bitstring {
+func (n *prefixNode) Key() *cf.Bitstring {
 	return mustDecodeBitstring(n.NodeKey)
 }
 
@@ -486,7 +486,7 @@ func (n *prefixNode) Parent() (recon.PrefixNode, bool, error) {
 	if key.BitLen() == 0 {
 		return nil, false, nil
 	}
-	parentKey := NewBitstring(key.BitLen() - n.BitQuantum)
+	parentKey := cf.NewBitstring(key.BitLen() - n.BitQuantum)
 	parentKey.SetBytes(key.Bytes())
 	parent, err := n.Node(parentKey)
 	if err != nil {
@@ -495,13 +495,13 @@ func (n *prefixNode) Parent() (recon.PrefixNode, bool, error) {
 	return parent, true, nil
 }
 
-func (n *prefixNode) updateSvalues(z *Zp, marray []*Zp) {
+func (n *prefixNode) updateSvalues(z *cf.Zp, marray []*cf.Zp) {
 	if len(marray) != len(n.points) {
 		panic("Inconsistent NumSamples size")
 	}
 	svalues := mustDecodeZZarray(n.NodeSValues)
 	for i := 0; i < len(marray); i++ {
-		svalues[i] = Z(z.P).Mul(svalues[i], marray[i])
+		svalues[i] = cf.Z(z.P).Mul(svalues[i], marray[i])
 	}
 	n.NodeSValues = mustEncodeZZarray(svalues)
 }
