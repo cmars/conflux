@@ -240,7 +240,7 @@ func (p *Peer) handleReconRqstPoly(rp *ReconRqstPoly) *msgProgress {
 	localSize := node.Size()
 	remoteSet, localSet, err := p.solve(
 		remoteSamples, localSamples, remoteSize, localSize, points)
-	if err == cf.ErrLowMBar {
+	if errgo.Cause(err) == cf.ErrLowMBar {
 		log.Info(p.logName(GOSSIP), "low MBar")
 		if node.IsLeaf() || node.Size() < (p.settings.ThreshMult*p.settings.MBar) {
 			log.Info(p.logName(GOSSIP), "sending full elements for node:", node.Key())

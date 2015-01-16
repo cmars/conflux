@@ -27,6 +27,7 @@ import (
 	"math/big"
 
 	gc "gopkg.in/check.v1"
+	"gopkg.in/errgo.v1"
 )
 
 type DecodeSuite struct{}
@@ -246,7 +247,7 @@ func (s *DecodeSuite) TestLowMBar(c *gc.C) {
 	values := []*Zp{Zs(p, "260405721246918987273155339614020972656"), Zs(p, "243393001638573476362665007855413044937"), Zs(p, "505905314437392989818278468923779137359"), Zs(p, "105358332430258313066486664282953088018"), Zs(p, "2560440886574256298562818527295701964"), Zs(p, "118746265689993312951910051444187575775"), Zs(p, "529698088600031242289045200206930982765"), Zs(p, "441488592726201746187835041000728091281")}
 	points := Zpoints(p, len(values))
 	_, _, err := Reconcile(values, points, 3)
-	c.Assert(err, gc.Equals, ErrLowMBar)
+	c.Assert(errgo.Cause(err), gc.Equals, ErrLowMBar)
 }
 
 func (s *DecodeSuite) TestFactorCheck(c *gc.C) {

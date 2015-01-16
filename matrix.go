@@ -26,7 +26,11 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+
+	"gopkg.in/errgo.v1"
 )
+
+var ErrMatrixTooNarrow = errors.New("matrix is too narrow to reduce")
 
 // Matrix represents a rectangular array of numbers over a finite field Z(p).
 type Matrix struct {
@@ -56,12 +60,10 @@ func (m *Matrix) Set(i, j int, x *Zp) {
 	m.cells[i+(j*m.columns)] = x.Copy()
 }
 
-var ErrMatrixTooNarrow = errors.New("Matrix is too narrow to reduce")
-
 // Reduce performs Gaussian elimination on a matrix of coefficients, in-place.
 func (m *Matrix) Reduce() error {
 	if m.columns < m.rows {
-		return ErrMatrixTooNarrow
+		return errgo.Mask(ErrMatrixTooNarrow)
 	}
 	for j := 0; j < m.rows; j++ {
 		m.processRowForward(j)

@@ -24,9 +24,10 @@ package conflux
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"math/big"
+
+	"gopkg.in/errgo.v1"
 )
 
 // Poly represents a polynomial in a finite field.
@@ -252,7 +253,7 @@ func PolyDivmod(x, y *Poly) (q *Poly, r *Poly, err error) {
 	}
 	degDiff := x.degree - y.degree
 	if degDiff < 0 {
-		return nil, nil, fmt.Errorf("Quotient degree %d < dividend %d", x.degree, y.degree)
+		return nil, nil, errgo.Newf("quotient degree %d < dividend %d", x.degree, y.degree)
 	}
 	c := Z(x.p).Div(x.coeff[x.degree], y.coeff[y.degree])
 	m := PolyTerm(degDiff, c)
@@ -263,25 +264,25 @@ func PolyDivmod(x, y *Poly) (q *Poly, r *Poly, err error) {
 		// TODO: eliminate recursion
 		q, r, err := PolyDivmod(newX, y)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, errgo.Mask(err)
 		}
 
 		q = NewPoly().Add(q, m)
 		return q, r, nil
 	}
-	return nil, nil, errors.New("divmod error")
+	return nil, nil, errgo.New("divmod error")
 }
 
 // PolyDiv returns the quotient between two Polys.
-func PolyDiv(x, y *Poly) (q *Poly, err error) {
-	q, _, err = PolyDivmod(x, y)
-	return
+func PolyDiv(x, y *Poly) (*Poly, error) {
+	q, _, err := PolyDivmod(x, y)
+	return q, err
 }
 
 // PolyDiv returns the mod function between two Polys.
-func PolyMod(x, y *Poly) (r *Poly, err error) {
-	_, r, err = PolyDivmod(x, y)
-	return
+func PolyMod(x, y *Poly) (*Poly, error) {
+	_, r, err := PolyDivmod(x, y)
+	return r, err
 }
 
 func polyGcd(x, y *Poly) (*Poly, error) {
@@ -290,16 +291,16 @@ func polyGcd(x, y *Poly) (*Poly, error) {
 	}
 	_, r, err := PolyDivmod(x, y)
 	if err != nil {
-		return nil, err
+		return nil, errgo.Mask(err)
 	}
 	return polyGcd(y, r)
 }
 
 // PolyGcd returns the greatest common divisor between two Polys.
-func PolyGcd(x, y *Poly) (result *Poly, err error) {
-	result, err = polyGcd(x, y)
+func PolyGcd(x, y *Poly) (*Poly, error) {
+	result, err := polyGcd(x, y)
 	if err != nil {
-		return nil, err
+		return nil, errgo.Mask(err)
 	}
 	result = NewPoly().Mul(result,
 		NewPoly(result.coeff[result.degree].Copy().Inv()))
