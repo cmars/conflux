@@ -243,8 +243,12 @@ func (p *Peer) handleReconRqstPoly(rp *ReconRqstPoly) *msgProgress {
 		log.Info(p.logName(GOSSIP), "low MBar")
 		if node.IsLeaf() || node.Size() < (p.settings.ThreshMult*p.settings.MBar) {
 			log.Info(p.logName(GOSSIP), "sending full elements for node:", node.Key())
+			elements, err := node.Elements()
+			if err != nil {
+				return &msgProgress{err: errgo.Mask(err)}
+			}
 			return &msgProgress{elements: NewZSet(), messages: []ReconMsg{
-				&FullElements{ZSet: NewZSet(node.Elements()...)}}}
+				&FullElements{ZSet: NewZSet(elements...)}}}
 		} else {
 			err = errgo.Notef(err, "bs=%v leaf=%v size=%d", node.Key(), node.IsLeaf(), node.Size())
 		}
@@ -274,7 +278,11 @@ func (p *Peer) handleReconRqstFull(rf *ReconRqstFull) *msgProgress {
 	} else if err != nil {
 		return &msgProgress{err: err}
 	} else {
-		localset = NewZSet(node.Elements()...)
+		elements, err := node.Elements()
+		if err != nil {
+			return &msgProgress{err: err}
+		}
+		localset = NewZSet(elements...)
 	}
 	localNeeds := ZSetDiff(rf.Elements, localset)
 	remoteNeeds := ZSetDiff(localset, rf.Elements)

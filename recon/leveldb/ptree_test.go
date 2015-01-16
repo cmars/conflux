@@ -63,13 +63,13 @@ func (s *PtreeSuite) TestInsertNodesNoSplit(c *gc.C) {
 	s.ptree.Insert(Zi(P_SKS, 500))
 	root, err := s.ptree.Root()
 	c.Assert(err, gc.IsNil)
-	c.Assert(root.Elements(), gc.HasLen, 3)
+	c.Assert(recon.MustElements(root), gc.HasLen, 3)
 	c.Assert(root.IsLeaf(), gc.Equals, true)
 	s.ptree.Remove(Zi(P_SKS, 100))
 	s.ptree.Remove(Zi(P_SKS, 300))
 	s.ptree.Remove(Zi(P_SKS, 500))
 	root, err = s.ptree.Root()
-	c.Assert(root.Elements(), gc.HasLen, 0)
+	c.Assert(recon.MustElements(root), gc.HasLen, 0)
 	for _, sv := range root.SValues() {
 		c.Assert(sv.Cmp(Zi(P_SKS, 1)), gc.Equals, 0)
 	}
@@ -192,8 +192,8 @@ func (s *PtreeSuite) TestInsertNodeSplit(c *gc.C) {
 		c.Log("SV:", sv)
 		c.Assert(sv.Cmp(Zi(P_SKS, 1)), gc.Equals, 0)
 	}
-	c.Assert(root.Children(), gc.HasLen, 0)
-	c.Assert(root.Elements(), gc.HasLen, 0)
+	c.Assert(recon.MustChildren(root), gc.HasLen, 0)
+	c.Assert(recon.MustElements(root), gc.HasLen, 0)
 }
 
 func (s *PtreeSuite) TestNewChildIndex(c *gc.C) {

@@ -24,7 +24,7 @@ func lookupNode(key string, start recon.PrefixNode) (recon.PrefixNode, error) {
 		if key[1] == '1' {
 			childIndex |= 0x2
 		}
-		node = node.Children()[childIndex]
+		node = recon.MustChildren(node)[childIndex]
 		key = key[2:]
 	}
 	return node, nil
@@ -42,7 +42,7 @@ func (s *ReconSuite) TestSplits85(c *gc.C) {
 	root, err := ptree.Root()
 	c.Assert(err, gc.IsNil)
 	c.Assert(85, gc.Equals, root.Size())
-	for i, child := range root.Children() {
+	for i, child := range recon.MustChildren(root) {
 		c.Log("child#", i, ":", child.Key())
 	}
 
@@ -50,7 +50,7 @@ func (s *ReconSuite) TestSplits85(c *gc.C) {
 		c.Log("root svalue:", svalue)
 	}
 
-	for _, node := range root.Children() {
+	for _, node := range recon.MustChildren(root) {
 		c.Log("child:", node.Key(), "has", node.Size())
 	}
 

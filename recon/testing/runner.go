@@ -83,7 +83,7 @@ func (s *ReconSuite) pollRootConvergence(c *gc.C, peer1, peer2 *recon.Peer, ptre
 					if err != nil {
 						return err
 					}
-					zs1 = conflux.NewZSet(root1.Elements()...)
+					zs1 = conflux.NewZSet(recon.MustElements(root1)...)
 					return nil
 				})
 			case r2, ok := <-peer2.RecoverChan:
@@ -100,7 +100,7 @@ func (s *ReconSuite) pollRootConvergence(c *gc.C, peer1, peer2 *recon.Peer, ptre
 					if err != nil {
 						return err
 					}
-					zs2 = conflux.NewZSet(root2.Elements()...)
+					zs2 = conflux.NewZSet(recon.MustElements(root2)...)
 					return nil
 				})
 			case _ = <-timer.C:
@@ -198,12 +198,12 @@ func (s *ReconSuite) TestFullSync(c *gc.C) {
 	ptree1.Insert(conflux.Zi(conflux.P_SKS, 65537))
 	ptree1.Insert(conflux.Zi(conflux.P_SKS, 65539))
 	root, _ := ptree1.Root()
-	c.Log("peer1:", root.Elements())
+	c.Log("peer1:", recon.MustElements(root))
 
 	ptree2.Insert(conflux.Zi(conflux.P_SKS, 65537))
 	ptree2.Insert(conflux.Zi(conflux.P_SKS, 65541))
 	root, _ = ptree2.Root()
-	c.Log("peer2:", root.Elements())
+	c.Log("peer2:", recon.MustElements(root))
 
 	port1, port2 := portPair(c)
 	peer1 := s.newPeer(port1, port2, recon.PeerModeGossipOnly, ptree1)
@@ -235,7 +235,7 @@ func (s *ReconSuite) TestPolySyncMBar(c *gc.C) {
 		onlyInPeer1.Add(z)
 	}
 	root, _ := ptree1.Root()
-	c.Log("peer1:", root.Elements())
+	c.Log("peer1:", recon.MustElements(root))
 
 	onlyInPeer2 := conflux.NewZSet()
 	// Load up peer 2 with items
@@ -249,7 +249,7 @@ func (s *ReconSuite) TestPolySyncMBar(c *gc.C) {
 		onlyInPeer2.Add(z)
 	}
 	root, _ = ptree2.Root()
-	c.Log("peer2:", root.Elements())
+	c.Log("peer2:", recon.MustElements(root))
 
 	port1, port2 := portPair(c)
 	peer1 := s.newPeer(port1, port2, recon.PeerModeGossipOnly, ptree1)
@@ -280,7 +280,7 @@ func (s *ReconSuite) TestPolySyncLowMBar(c *gc.C) {
 		ptree1.Insert(z)
 	}
 	root1, _ := ptree1.Root()
-	c.Log("peer1:", root1.Elements())
+	c.Log("peer1:", recon.MustElements(root1))
 
 	onlyInPeer2 := conflux.NewZSet()
 	for i := 1; i < 100; i++ {
@@ -293,7 +293,7 @@ func (s *ReconSuite) TestPolySyncLowMBar(c *gc.C) {
 		ptree2.Insert(z)
 	}
 	root2, _ := ptree2.Root()
-	c.Log("peer2:", root2.Elements())
+	c.Log("peer2:", recon.MustElements(root2))
 
 	port1, port2 := portPair(c)
 	peer1 := s.newPeer(port1, port2, recon.PeerModeGossipOnly, ptree1)

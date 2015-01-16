@@ -42,13 +42,29 @@ type PrefixTree interface {
 
 type PrefixNode interface {
 	Config() *PTreeConfig
-	Parent() (PrefixNode, bool)
+	Parent() (PrefixNode, bool, error)
 	Key() *Bitstring
-	Elements() []*Zp
+	Elements() ([]*Zp, error)
 	Size() int
-	Children() []PrefixNode
+	Children() ([]PrefixNode, error)
 	SValues() []*Zp
 	IsLeaf() bool
+}
+
+func MustElements(node PrefixNode) []*Zp {
+	elements, err := node.Elements()
+	if err != nil {
+		panic(err)
+	}
+	return elements
+}
+
+func MustChildren(node PrefixNode) []PrefixNode {
+	children, err := node.Children()
+	if err != nil {
+		panic(err)
+	}
+	return children
 }
 
 var ErrSamplePointElement = errors.New("sample point added to elements")
@@ -186,7 +202,9 @@ func (n *MemPrefixNode) Config() *PTreeConfig {
 	return &n.PTreeConfig
 }
 
-func (n *MemPrefixNode) Parent() (PrefixNode, bool) { return n.parent, n.parent != nil }
+func (n *MemPrefixNode) Parent() (PrefixNode, bool, error) {
+	return n.parent, n.parent != nil, nil
+}
 
 func (n *MemPrefixNode) Key() *Bitstring {
 	var keys []int
@@ -206,22 +224,27 @@ func (n *MemPrefixNode) Key() *Bitstring {
 	return bs
 }
 
-func (n *MemPrefixNode) Children() (result []PrefixNode) {
+func (n *MemPrefixNode) Children() ([]PrefixNode, error) {
+	var result []PrefixNode
 	for _, child := range n.children {
 		result = append(result, child)
 	}
-	return
+	return result, nil
 }
 
-func (n *MemPrefixNode) Elements() []*Zp {
+func (n *MemPrefixNode) Elements() ([]*Zp, error) {
 	if n.IsLeaf() {
-		return n.elements
+		return n.elements, nil
 	}
 	var result []*Zp
 	for _, child := range n.children {
-		result = append(result, child.Elements()...)
+		elements, err := child.Elements()
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, elements...)
 	}
-	return result
+	return result, nil
 }
 
 func (n *MemPrefixNode) Size() int      { return n.numElements }
@@ -259,7 +282,11 @@ func (n *MemPrefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) er
 		}
 	}
 	childIndex := NextChild(n, bs, depth)
-	child := n.Children()[childIndex].(*MemPrefixNode)
+	children, err := n.Children()
+	if err != nil {
+		return err
+	}
+	child := children[childIndex].(*MemPrefixNode)
 	return child.insert(z, marray, bs, depth+1)
 }
 
@@ -322,7 +349,11 @@ func (n *MemPrefixNode) remove(z *Zp, marray []*Zp, bs *Bitstring, depth int) er
 			n.join()
 		} else {
 			childIndex := NextChild(n, bs, depth)
-			child := n.Children()[childIndex].(*MemPrefixNode)
+			children, err := n.Children()
+			if err != nil {
+				return err
+			}
+			child := children[childIndex].(*MemPrefixNode)
 			return child.remove(z, marray, bs, depth+1)
 		}
 	}

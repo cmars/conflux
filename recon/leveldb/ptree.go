@@ -26,12 +26,13 @@ package leveldb
 import (
 	"bytes"
 	"encoding/gob"
-	"errors"
 	"fmt"
+	"os"
+
+	"github.com/syndtr/goleveldb/leveldb"
+
 	. "github.com/cmars/conflux"
 	"github.com/cmars/conflux/recon"
-	"github.com/syndtr/goleveldb/leveldb"
-	"os"
 )
 
 type prefixTree struct {
@@ -201,7 +202,11 @@ func (n *prefixNode) insert(z *Zp, marray []*Zp, bs *Bitstring, depth int) error
 			return err
 		}
 		childIndex := recon.NextChild(n, bs, depth)
-		n = n.Children()[childIndex].(*prefixNode)
+		children, err := n.Children()
+		if err != nil {
+			return err
+		}
+		n = children[childIndex].(*prefixNode)
 		depth++
 	}
 }
@@ -297,7 +302,11 @@ func (n *prefixNode) remove(z *Zp, marray []*Zp, bs *Bitstring, depth int) error
 					return err
 				}
 				childIndex := recon.NextChild(n, bs, depth)
-				n = n.Children()[childIndex].(*prefixNode)
+				children, err := n.Children()
+				if err != nil {
+					return err
+				}
+				n = children[childIndex].(*prefixNode)
 				depth++
 			}
 		}
@@ -311,7 +320,11 @@ func (n *prefixNode) remove(z *Zp, marray []*Zp, bs *Bitstring, depth int) error
 
 func (n *prefixNode) join() error {
 	var elements [][]byte
-	for _, child := range n.Children() {
+	children, err := n.Children()
+	if err != nil {
+		return err
+	}
+	for _, child := range children {
 		elements = append(elements, child.(*prefixNode).NodeElements...)
 		if err := child.(*prefixNode).deleteNode(); err != nil {
 			return err
@@ -323,11 +336,11 @@ func (n *prefixNode) join() error {
 }
 
 func ErrDuplicateElement(z *Zp) error {
-	return errors.New(fmt.Sprintf("Attempt to insert duplicate element %v", z))
+	return fmt.Errorf("attempt to insert duplicate element %v", z)
 }
 
 func ErrElementNotFound(z *Zp) error {
-	return errors.New(fmt.Sprintf("Expected element %v was not found", z))
+	return fmt.Errorf("expected element %v was not found", z)
 }
 
 func (t *prefixTree) Insert(z *Zp) error {
@@ -410,12 +423,13 @@ func (n *prefixNode) IsLeaf() bool {
 	return n.Leaf
 }
 
-func (n *prefixNode) Children() (result []recon.PrefixNode) {
+func (n *prefixNode) Children() ([]recon.PrefixNode, error) {
 	if n.IsLeaf() {
-		return nil
+		return nil, nil
 	}
 	key := n.Key()
 	numChildren := 1 << uint(n.BitQuantum)
+	var result []recon.PrefixNode
 	for i := 0; i < numChildren; i++ {
 		childKey := NewBitstring(key.BitLen() + n.BitQuantum)
 		childKey.SetBytes(key.Bytes())
@@ -428,24 +442,33 @@ func (n *prefixNode) Children() (result []recon.PrefixNode) {
 		}
 		child, err := n.Node(childKey)
 		if err != nil {
-			panic(fmt.Sprintf("Children failed on child#%v, key=%v: %v", i, childKey, err))
+			return nil, fmt.Errorf("children failed on child#%v, key=%v: %v", i, childKey, err)
 		}
 		result = append(result, child)
 	}
-	return
+	return result, nil
 }
 
-func (n *prefixNode) Elements() (result []*Zp) {
+func (n *prefixNode) Elements() ([]*Zp, error) {
+	var result []*Zp
 	if n.IsLeaf() {
 		for _, element := range n.NodeElements {
 			result = append(result, Zb(P_SKS, element))
 		}
 	} else {
-		for _, child := range n.Children() {
-			result = append(result, child.Elements()...)
+		children, err := n.Children()
+		if err != nil {
+			return nil, err
+		}
+		for _, child := range children {
+			elements, err := child.Elements()
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, elements...)
 		}
 	}
-	return
+	return result, nil
 }
 
 func (n *prefixNode) Size() int { return n.NumElements }
@@ -458,18 +481,18 @@ func (n *prefixNode) Key() *Bitstring {
 	return mustDecodeBitstring(n.NodeKey)
 }
 
-func (n *prefixNode) Parent() (recon.PrefixNode, bool) {
+func (n *prefixNode) Parent() (recon.PrefixNode, bool, error) {
 	key := n.Key()
 	if key.BitLen() == 0 {
-		return nil, false
+		return nil, false, nil
 	}
 	parentKey := NewBitstring(key.BitLen() - n.BitQuantum)
 	parentKey.SetBytes(key.Bytes())
 	parent, err := n.Node(parentKey)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to get parent: %v", err))
+		return nil, false, fmt.Errorf("failed to get parent: %v", err)
 	}
-	return parent, true
+	return parent, true, nil
 }
 
 func (n *prefixNode) updateSvalues(z *Zp, marray []*Zp) {

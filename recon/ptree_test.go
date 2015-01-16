@@ -40,12 +40,12 @@ func (s *PtreeSuite) TestInsertNodesNoSplit(c *gc.C) {
 	tree.Insert(Zi(P_SKS, 500))
 	root, err := tree.Root()
 	c.Assert(err, gc.IsNil)
-	c.Assert(root.Elements(), gc.HasLen, 3)
+	c.Assert(MustElements(root), gc.HasLen, 3)
 	c.Assert(root.IsLeaf(), gc.Equals, true)
 	tree.Remove(Zi(P_SKS, 100))
 	tree.Remove(Zi(P_SKS, 300))
 	tree.Remove(Zi(P_SKS, 500))
-	c.Assert(root.Elements(), gc.HasLen, 0)
+	c.Assert(MustElements(root), gc.HasLen, 0)
 	for _, sv := range root.SValues() {
 		c.Assert(sv.Cmp(Zi(P_SKS, 1)), gc.Equals, 0)
 	}

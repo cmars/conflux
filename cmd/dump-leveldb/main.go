@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	. "github.com/cmars/conflux"
-	. "github.com/cmars/conflux/recon"
+	"github.com/cmars/conflux"
+	"github.com/cmars/conflux/recon"
 	"github.com/cmars/conflux/recon/leveldb"
 )
 
@@ -14,9 +14,9 @@ func die(err error) {
 	panic(err)
 }
 
-func walk(tree PrefixTree) {
+func walk(tree recon.PrefixTree) {
 	fmt.Println("[")
-	var nodes []PrefixNode
+	var nodes []recon.PrefixNode
 	root, err := tree.Root()
 	if err != nil {
 		die(err)
@@ -33,15 +33,15 @@ func walk(tree PrefixTree) {
 		nodes = nodes[:len(nodes)-1]
 		visit(node)
 		if !node.IsLeaf() {
-			nodes = append(node.Children(), nodes...)
+			nodes = append(recon.MustChildren(node), nodes...)
 		}
 	}
 	fmt.Println("]")
 }
 
-func visit(node PrefixNode) {
+func visit(node recon.PrefixNode) {
 	render := struct {
-		SValues      []*Zp
+		SValues      []*conflux.Zp
 		NumElements  int
 		Key          string
 		Leaf         bool
@@ -56,11 +56,11 @@ func visit(node PrefixNode) {
 		[]string{},
 	}
 	if node.IsLeaf() {
-		for _, element := range node.Elements() {
+		for _, element := range recon.MustElements(node) {
 			render.Fingerprints = append(render.Fingerprints, fmt.Sprintf("%x", element.Bytes()))
 		}
 	}
-	for _, child := range node.Children() {
+	for _, child := range recon.MustChildren(node) {
 		render.Children = append(render.Children, child.Key().String())
 	}
 	out, err := json.MarshalIndent(render, "", "\t")
@@ -78,9 +78,8 @@ func main() {
 		os.Exit(1)
 	}
 	dbDir = os.Args[1]
-	settings := leveldb.DefaultSettings()
-	settings.Set("conflux.recon.leveldb.path", dbDir)
-	ptree, err := leveldb.New(settings)
+	settings := recon.DefaultSettings()
+	ptree, err := leveldb.New(settings.PTreeConfig, dbDir)
 	if err != nil {
 		die(err)
 	}

@@ -442,12 +442,16 @@ func (rwc *reconWithClient) isDone() bool {
 	return len(rwc.requestQ) == 0 && len(rwc.bottomQ) == 0
 }
 
-func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) {
+func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) error {
 	var msg ReconMsg
 	if req.node.IsLeaf() || (req.node.Size() < p.settings.MBar) {
+		elements, err := req.node.Elements()
+		if err != nil {
+			return err
+		}
 		msg = &ReconRqstFull{
 			Prefix:   req.key,
-			Elements: NewZSet(req.node.Elements()...)}
+			Elements: NewZSet(elements...)}
 	} else {
 		msg = &ReconRqstPoly{
 			Prefix:  req.key,
@@ -457,6 +461,7 @@ func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) {
 	log.Debug(p.logName(SERVE), "sendRequest:", msg)
 	rwc.messages = append(rwc.messages, msg)
 	rwc.pushBottom(&bottomEntry{requestEntry: req})
+	return nil
 }
 
 func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry) error {
@@ -467,14 +472,22 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 			return errgo.New("Syncfail received at leaf node")
 		}
 		log.Debug(rwc.Peer.logName(SERVE), "SyncFail: pushing children")
-		for _, childNode := range req.node.Children() {
+		children, err := req.node.Children()
+		if err != nil {
+			return err
+		}
+		for _, childNode := range children {
 			log.Debug(rwc.Peer.logName(SERVE), "push:", childNode.Key())
 			rwc.pushRequest(&requestEntry{key: childNode.Key(), node: childNode})
 		}
 	case *Elements:
 		rwc.rcvrSet.AddAll(m.ZSet)
 	case *FullElements:
-		local := NewZSet(req.node.Elements()...)
+		elements, err := req.node.Elements()
+		if err != nil {
+			return err
+		}
+		local := NewZSet(elements...)
 		localNeeds := ZSetDiff(m.ZSet, local)
 		remoteNeeds := ZSetDiff(local, m.ZSet)
 		elementsMsg := &Elements{ZSet: remoteNeeds}
@@ -517,7 +530,10 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 		case bottom == nil:
 			req := recon.popRequest()
 			log.Debug(p.logName(SERVE), "interact: popRequest:", req, "sending...")
-			recon.sendRequest(p, req)
+			err = recon.sendRequest(p, req)
+			if err != nil {
+				return err
+			}
 		case bottom.state == reconStateFlushEnded:
 			log.Debug(p.logName(SERVE), "interact: flush ended, popBottom")
 			recon.popBottom()
@@ -568,7 +584,10 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 				}
 			} else {
 				req := recon.popRequest()
-				recon.sendRequest(p, req)
+				err = recon.sendRequest(p, req)
+				if err != nil {
+					return err
+				}
 			}
 		default:
 			return errgo.New("failed to match expected patterns")
