@@ -159,22 +159,20 @@ func (s *ReconSuite) pollConvergence(c *gc.C, peer1, peer2 *recon.Peer, peer1Nee
 
 func portPair(c *gc.C) (int, int) {
 	l1, err := net.Listen("tcp", ":0")
-	if err != nil {
-		panic(err)
-	}
+	c.Assert(err, gc.IsNil)
 	l2, err := net.Listen("tcp", ":0")
-	if err != nil {
-		panic(err)
-	}
-	l1.Close()
-	l2.Close()
-	return l1.Addr().(*net.TCPAddr).Port, l2.Addr().(*net.TCPAddr).Port
+	c.Assert(err, gc.IsNil)
+	c.Assert(l1.Close(), gc.IsNil)
+	c.Assert(l2.Close(), gc.IsNil)
+	p1, p2 := l1.Addr().(*net.TCPAddr).Port, l2.Addr().(*net.TCPAddr).Port
+	c.Assert(p1, gc.Not(gc.Equals), p2)
+	return p1, p2
 }
 
 func (s *ReconSuite) newPeer(listenPort, partnerPort int, mode recon.PeerMode, ptree recon.PrefixTree) *recon.Peer {
 	settings := recon.DefaultSettings()
 	settings.ReconAddr = fmt.Sprintf(":%d", listenPort)
-	partnerAddr := fmt.Sprintf(":%d", partnerPort)
+	partnerAddr := fmt.Sprintf("localhost:%d", partnerPort)
 	settings.Partners[partnerAddr] = recon.Partner{
 		ReconAddr: partnerAddr,
 	}

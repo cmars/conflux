@@ -93,7 +93,7 @@ func (n network) Resolve(addr string) (net.Addr, error) {
 	case NetworkUnix:
 		return net.ResolveUnixAddr("unix", addr)
 	}
-	return nil, fmt.Errorf("don't know how to resolve network %q address %q", n, addr)
+	return nil, errgo.Newf("don't know how to resolve network %q address %q", n, addr)
 }
 
 const (
@@ -139,7 +139,7 @@ func ParseSettings(data string) (*Settings, error) {
 	doc.Conflux.Recon = defaultSettings
 	_, err := toml.Decode(data, &doc)
 	if err != nil {
-		return nil, err
+		return nil, errgo.Mask(err)
 	}
 
 	settings := &doc.Conflux.Recon
@@ -241,7 +241,7 @@ func (s *Settings) PartnerAddrs() ([]net.Addr, error) {
 	for _, partner := range s.Partners {
 		addr, err := partner.ReconNet.Resolve(partner.ReconAddr)
 		if err != nil {
-			return nil, err
+			return nil, errgo.Mask(err)
 		}
 		addrs = append(addrs, addr)
 	}

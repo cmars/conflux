@@ -38,6 +38,10 @@ import (
 
 const SERVE = "serve"
 
+var ErrNodeNotFound error = errors.New("prefix-tree node not found")
+
+var ErrRemoteRejectedConfig error = errors.New("remote rejected configuration")
+
 type Recover struct {
 	RemoteAddr     net.Addr
 	RemoteConfig   *Config
@@ -59,10 +63,6 @@ func (r *Recover) HkpAddr() (string, error) {
 }
 
 type RecoverChan chan *Recover
-
-var ErrNodeNotFound error = errors.New("prefix-tree node not found")
-
-var ErrRemoteRejectedConfig error = errors.New("remote rejected configuration")
 
 type PeerMode string
 
@@ -107,8 +107,17 @@ func NewMemPeer() *Peer {
 	return NewPeer(settings, tree)
 }
 
-func (p *Peer) logName(label string) string {
-	return fmt.Sprintf("%s %s ", label, p.settings.ReconAddr)
+func (p *Peer) log(label string) *log.Entry {
+	return p.logFields(label, log.Fields{})
+}
+
+func (p *Peer) logFields(label string, fields log.Fields) *log.Entry {
+	fields["label"] = fmt.Sprintf("%s %s", label, p.settings.ReconAddr)
+	return log.WithFields(fields)
+}
+
+func (p *Peer) logErr(label string, err error) *log.Entry {
+	return p.logFields(label, log.Fields{"error": errgo.Details(err)})
 }
 
 func (p *Peer) Start() {
@@ -197,7 +206,7 @@ func (p *Peer) Serve() error {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Error(p.logName(SERVE), err)
+			p.logErr(SERVE, errgo.Mask(err)).Error()
 			return err
 		}
 		if p.settings.ReadTimeout > 0 {
@@ -207,7 +216,7 @@ func (p *Peer) Serve() error {
 		go func() {
 			err = p.Accept(conn)
 			if err != nil {
-				log.Error(SERVE, errgo.Mask(err))
+				p.logErr(SERVE, errgo.Mask(err)).Error()
 			}
 		}()
 	}
@@ -225,7 +234,7 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) 
 		stopErr := handshake.Wait()
 		if stopErr != nil {
 			stopErr = errgo.Mask(stopErr)
-			log.Error(p.logName(role), stopErr)
+			p.logErr(role, stopErr).Error()
 		}
 
 		if _err == nil {
@@ -240,7 +249,7 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) 
 
 	// Send config to server on connect
 	handshake.Go(func() error {
-		log.Debug(p.logName(role), "writing config:", config)
+		p.logFields(role, log.Fields{"config": config}).Debug("writing config")
 		err := WriteMsg(conn, config)
 		if err != nil {
 			return errgo.Mask(err)
@@ -249,7 +258,7 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) 
 	})
 
 	// Receive remote peer's config
-	log.Debug(p.logName(role), "reading remote config:", conn.RemoteAddr())
+	p.logFields(role, log.Fields{"remoteAddr": conn.RemoteAddr()}).Debug("reading remote config")
 	var msg ReconMsg
 	msg, err = ReadMsg(conn)
 	if err != nil {
@@ -261,21 +270,23 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) 
 		return nil, errgo.Newf("remote config: expected config message, got %v", msg)
 	}
 
-	log.Debug(p.logName(role), "remote config:", remoteConfig)
+	p.logFields(role, log.Fields{"remoteConfig": remoteConfig}).Debug()
 	if remoteConfig.BitQuantum != config.BitQuantum {
 		bufw := bufio.NewWriter(conn)
 		err = WriteString(bufw, RemoteConfigFailed)
 		if err != nil {
-			log.Errorf(p.logName(role), errgo.Details(err))
+			p.logErr(role, err)
 		}
 		err = WriteString(bufw, "mismatched bitquantum")
 		if err != nil {
-			log.Errorf(p.logName(role), errgo.Details(err))
+			p.logErr(role, err)
 		}
 
 		bufw.Flush()
-		log.Errorf(p.logName(role), "cannot peer: BitQuantum remote=%v != local=%v",
-			remoteConfig.BitQuantum, config.BitQuantum)
+		p.logFields(role, log.Fields{
+			"remoteBitquantum": remoteConfig.BitQuantum,
+			"localBitquantum":  config.BitQuantum,
+		}).Error("cannot peer: mismatched BitQuantum values")
 		return nil, errgo.Mask(ErrIncompatiblePeer)
 	}
 
@@ -283,16 +294,18 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) 
 		bufw := bufio.NewWriter(conn)
 		err = WriteString(bufw, RemoteConfigFailed)
 		if err != nil {
-			log.Errorf(p.logName(role), errgo.Details(err))
+			p.logErr(role, err)
 		}
 		err = WriteString(bufw, "mismatched mbar")
 		if err != nil {
-			log.Errorf(p.logName(role), errgo.Details(err))
+			p.logErr(role, err).Error()
 		}
 
 		bufw.Flush()
-		log.Errorf(p.logName(role), "cannot peer: MBar remote=%v != local %v",
-			remoteConfig.MBar, config.MBar)
+		p.logFields(role, log.Fields{
+			"remoteMBar": remoteConfig.MBar,
+			"localMBar":  config.MBar,
+		}).Error("cannot peer: mismatched MBar")
 		return nil, errgo.Mask(ErrIncompatiblePeer)
 	}
 
@@ -334,10 +347,12 @@ func (p *Peer) Accept(conn net.Conn) (_err error) {
 	}
 	defer p.tracker.Done()
 
-	log.Debug(p.logName(SERVE), "connection from:", conn.RemoteAddr())
+	p.logFields(SERVE, log.Fields{
+		"remoteAddr": conn.RemoteAddr(),
+	}).Debug("accepted connection")
 	defer func() {
 		if _err != nil {
-			log.Error(p.logName(SERVE), errgo.Details(_err))
+			p.logErr(SERVE, _err).Error()
 		}
 	}()
 
@@ -349,7 +364,7 @@ func (p *Peer) Accept(conn net.Conn) (_err error) {
 	if p.Enabled() {
 		return p.interactWithClient(conn, remoteConfig, cf.NewBitstring(0))
 	}
-	return errgo.Newf("peer is currently disabled, ignoring connection.")
+	return errgo.Newf("peer is currently disabled, ignoring connection")
 }
 
 type requestEntry struct {
@@ -458,26 +473,26 @@ func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) error {
 			Size:    req.node.Size(),
 			Samples: req.node.SValues()}
 	}
-	log.Debug(p.logName(SERVE), "sendRequest:", msg)
+	p.logFields(SERVE, log.Fields{"msg": msg}).Debug("sendRequest")
 	rwc.messages = append(rwc.messages, msg)
 	rwc.pushBottom(&bottomEntry{requestEntry: req})
 	return nil
 }
 
 func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry) error {
-	log.Debug(p.logName(SERVE), "handleReply:", "got:", msg)
+	rwc.Peer.logFields(SERVE, log.Fields{"msg": msg}).Debug("handleReply")
 	switch m := msg.(type) {
 	case *SyncFail:
 		if req.node.IsLeaf() {
 			return errgo.New("Syncfail received at leaf node")
 		}
-		log.Debug(rwc.Peer.logName(SERVE), "SyncFail: pushing children")
+		rwc.Peer.log(SERVE).Debug("SyncFail: pushing children")
 		children, err := req.node.Children()
 		if err != nil {
-			return err
+			return errgo.Mask(err)
 		}
 		for _, childNode := range children {
-			log.Debug(rwc.Peer.logName(SERVE), "push:", childNode.Key())
+			rwc.Peer.logFields(SERVE, log.Fields{"childNode": childNode.Key()}).Debug("push")
 			rwc.pushRequest(&requestEntry{key: childNode.Key(), node: childNode})
 		}
 	case *Elements:
@@ -491,7 +506,9 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 		localNeeds := cf.ZSetDiff(m.ZSet, local)
 		remoteNeeds := cf.ZSetDiff(local, m.ZSet)
 		elementsMsg := &Elements{ZSet: remoteNeeds}
-		log.Debug(rwc.Peer.logName(SERVE), "handleReply:", "sending:", elementsMsg)
+		rwc.Peer.logFields(SERVE, log.Fields{
+			"msg": elementsMsg,
+		}).Debug("handleReply: sending")
 		rwc.messages = append(rwc.messages, elementsMsg)
 		rwc.rcvrSet.AddAll(localNeeds)
 	default:
@@ -501,7 +518,7 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 }
 
 func (rwc *reconWithClient) flushQueue() error {
-	log.Println(SERVE, "flush queue")
+	rwc.Peer.log(SERVE).Debug("flush queue")
 	rwc.messages = append(rwc.messages, &Flush{})
 	err := WriteMsg(rwc.conn, rwc.messages...)
 	if err != nil {
@@ -516,7 +533,7 @@ func (rwc *reconWithClient) flushQueue() error {
 var zeroTime time.Time
 
 func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring *cf.Bitstring) error {
-	log.Debug(p.logName(SERVE), "interacting with client")
+	p.log(SERVE).Debug("interacting with client")
 	recon := reconWithClient{Peer: p, conn: conn, rcvrSet: cf.NewZSet()}
 	root, err := p.ptree.Root()
 	if err != nil {
@@ -525,21 +542,25 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 	recon.pushRequest(&requestEntry{node: root, key: bitstring})
 	for !recon.isDone() {
 		bottom := recon.topBottom()
-		log.Debug(p.logName(SERVE), "interact: bottom:", bottom)
+		p.logFields(SERVE, log.Fields{"bottom": bottom}).Debug("interact")
 		switch {
 		case bottom == nil:
 			req := recon.popRequest()
-			log.Debug(p.logName(SERVE), "interact: popRequest:", req, "sending...")
+			p.logFields(SERVE, log.Fields{
+				"popRequest": req,
+			}).Debug("interact: sending...")
 			err = recon.sendRequest(p, req)
 			if err != nil {
 				return err
 			}
 		case bottom.state == reconStateFlushEnded:
-			log.Debug(p.logName(SERVE), "interact: flush ended, popBottom")
+			p.log(SERVE).Debug("interact: flush ended, popBottom")
 			recon.popBottom()
 			recon.flushing = false
 		case bottom.state == reconStateBottom:
-			log.Debug(p.logName(SERVE), "queue length:", len(recon.bottomQ))
+			p.logFields(SERVE, log.Fields{
+				"queueLength": len(recon.bottomQ),
+			}).Debug()
 			var msg ReconMsg
 			var hasMsg bool
 
@@ -576,7 +597,7 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 					if err != nil {
 						return errgo.Mask(err)
 					}
-					log.Debug("reply:", msg)
+					p.logFields(SERVE, log.Fields{"msg": msg}).Debug("reply")
 					err = recon.handleReply(p, msg, bottom.requestEntry)
 					if err != nil {
 						return errgo.Mask(err)

@@ -24,6 +24,7 @@ package recon
 import (
 	"sync"
 
+	"gopkg.in/errgo.v1"
 	log "gopkg.in/hockeypuck/logrus.v0"
 )
 
@@ -57,7 +58,7 @@ func (t *Tracker) Done() {
 	for _, execIdle := range t.execOnIdle {
 		err := execIdle()
 		if err != nil {
-			log.Error(err)
+			log.Error(errgo.Details(err))
 		}
 	}
 	t.execOnIdle = nil
