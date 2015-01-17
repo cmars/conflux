@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/cmars/conflux.svg?branch=master)](https://travis-ci.org/cmars/conflux)
+[![Build Status](https://travis-ci.org/hockeypuck/conflux.svg?branch=v2)](https://travis-ci.org/hockeypuck/conflux)
 
 conflux - Distributed database synchronization
 ==============================================
