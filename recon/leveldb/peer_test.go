@@ -29,8 +29,8 @@ import (
 
 	gc "gopkg.in/check.v1"
 
-	"github.com/cmars/conflux/recon"
-	"github.com/cmars/conflux/recon/testing"
+	"gopkg.in/hockeypuck/conflux.v2/recon"
+	"gopkg.in/hockeypuck/conflux.v2/recon/testing"
 )
 
 var long = flag.Bool("long", false, "run long-running tests")

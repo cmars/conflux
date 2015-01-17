@@ -26,9 +26,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/cmars/conflux"
-	"github.com/cmars/conflux/recon"
-	"github.com/cmars/conflux/recon/leveldb"
+	"gopkg.in/hockeypuck/conflux.v2"
+	"gopkg.in/hockeypuck/conflux.v2/recon"
+	"gopkg.in/hockeypuck/conflux.v2/recon/leveldb"
 )
 
 func die(err error) {

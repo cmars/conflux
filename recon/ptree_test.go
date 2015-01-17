@@ -26,7 +26,7 @@ import (
 
 	gc "gopkg.in/check.v1"
 
-	cf "github.com/cmars/conflux"
+	cf "gopkg.in/hockeypuck/conflux.v2"
 )
 
 type PtreeSuite struct{}

@@ -31,8 +31,8 @@ import (
 	log "gopkg.in/hockeypuck/logrus.v0"
 	"gopkg.in/tomb.v2"
 
-	cf "github.com/cmars/conflux"
-	"github.com/cmars/conflux/recon"
+	cf "gopkg.in/hockeypuck/conflux.v2"
+	"gopkg.in/hockeypuck/conflux.v2/recon"
 )
 
 func init() {

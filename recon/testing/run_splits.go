@@ -26,7 +26,7 @@ import (
 
 	gc "gopkg.in/check.v1"
 
-	"github.com/cmars/conflux/recon"
+	"gopkg.in/hockeypuck/conflux.v2/recon"
 )
 
 func lookupNode(key string, start recon.PrefixNode) (recon.PrefixNode, error) {

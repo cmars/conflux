@@ -31,7 +31,7 @@ import (
 	"gopkg.in/errgo.v1"
 	log "gopkg.in/hockeypuck/logrus.v0"
 
-	cf "github.com/cmars/conflux"
+	cf "gopkg.in/hockeypuck/conflux.v2"
 )
 
 const GOSSIP = "gossip"

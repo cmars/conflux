@@ -29,7 +29,7 @@ import (
 	"fmt"
 	"io"
 
-	cf "github.com/cmars/conflux"
+	cf "gopkg.in/hockeypuck/conflux.v2"
 )
 
 var SksZpNbytes int

@@ -26,8 +26,8 @@ import (
 
 	gc "gopkg.in/check.v1"
 
-	cf "github.com/cmars/conflux"
-	"github.com/cmars/conflux/recon"
+	cf "gopkg.in/hockeypuck/conflux.v2"
+	"gopkg.in/hockeypuck/conflux.v2/recon"
 )
 
 const TEST_DB = "recon_test"
