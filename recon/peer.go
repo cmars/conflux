@@ -29,6 +29,7 @@ import (
 	"net"
 	"sync"
 	"time"
+        "strings"
 
 	. "github.com/cmars/conflux"
 )
@@ -52,6 +53,9 @@ func (r *Recover) HkpAddr() (string, error) {
 		log.Println("Cannot parse HKP remote address from", r.RemoteAddr, ":", err)
 		return "", err
 	}
+        if strings.Contains(host,":") {
+                host = fmt.Sprintf("[%s]",host)
+        }
 	return fmt.Sprintf("%s:%d", host, r.RemoteConfig.HttpPort), nil
 }
 
