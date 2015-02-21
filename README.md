@@ -1,4 +1,5 @@
 [![Build Status](https://travis-ci.org/hockeypuck/conflux.svg?branch=v2)](https://travis-ci.org/hockeypuck/conflux)
+[![GoDoc](https://godoc.org/gopkg.in/hockeypuck/conflux.v2?status.svg)](https://godoc.org/gopkg.in/hockeypuck/conflux.v2)
 
 conflux - Distributed database synchronization
 ==============================================
