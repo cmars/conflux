@@ -90,7 +90,7 @@ filters=["something","else"]
 		"invalid toml",
 		`nope`,
 		nil,
-		`.*Expected key separator '=', but got '\\n' instead.*`,
+		`.*(Expected key separator '=', but got '\\n' instead|Bare keys cannot contain '\\n').*`,
 	}, {
 		"invalid http net",
 		`
