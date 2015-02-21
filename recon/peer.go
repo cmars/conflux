@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -59,7 +60,10 @@ func (r *Recover) HkpAddr() (string, error) {
 		log.Error("cannot parse HKP remote address from", r.RemoteAddr, ":", err)
 		return "", errgo.Mask(err)
 	}
-	return fmt.Sprintf("%s:%d ", host, r.RemoteConfig.HTTPPort), nil
+	if strings.Contains(host, ":") {
+		host = fmt.Sprintf("[%s]", host)
+	}
+	return fmt.Sprintf("%s:%d", host, r.RemoteConfig.HTTPPort), nil
 }
 
 type RecoverChan chan *Recover
