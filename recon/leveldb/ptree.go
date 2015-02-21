@@ -21,6 +21,11 @@
 
 // Package leveldb provides a key-value storage implementation of the
 // recon prefix tree interface.
+//
+// The Conflux leveldb API is versioned with gopkg. Use in your projects with:
+//
+// import "gopkg.in/hockeypuck/conflux.v2/recon/leveldb"
+//
 package leveldb
 
 import (

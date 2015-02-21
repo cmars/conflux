@@ -21,4 +21,12 @@ The reconciliation algorithm are released under the GNU General Public License v
 The reconciliation network protocol and prefix tree data storage interfaces
 are released under the Affero General Public License version 3.
 
+Usage
+-----
+Conflux API is versioned with gopkg. Use in your projects with:
+
+```go
+import "gopkg.in/hockeypuck/conflux.v2"
+```
+
 Copyright (c) 2012-2015  Casey Marshall <cmars@cmarstech.com>

@@ -23,6 +23,11 @@
 // Package conflux provides set reconciliation core functionality
 // and the supporting math: polynomial arithmetic over finite fields,
 // factoring and rational function interpolation.
+//
+// The Conflux API is versioned with gopkg. Use in your projects with:
+//
+// import "gopkg.in/hockeypuck/conflux.v2"
+//
 package conflux
 
 import (

@@ -21,6 +21,11 @@
 
 // Package recon provides the SKS reconciliation protocol, prefix tree interface
 // and an in-memory prefix-tree implementation.
+//
+// The Conflux recon API is versioned with gopkg. Use in your projects with:
+//
+// import "gopkg.in/hockeypuck/conflux.v2/recon"
+//
 package recon
 
 import (
