@@ -129,6 +129,42 @@ var defaultSettings = Settings{
 	MaxOutstandingReconRequests: DefaultMaxOutstandingReconRequests,
 }
 
+// Resolve resolves network addresses and backwards-compatible settings. Use
+// Resolve after decoding from TOML.
+func (s *Settings) Resolve() error {
+	if s.CompatHTTPPort != 0 {
+		s.HTTPAddr = fmt.Sprintf(":%d", s.CompatHTTPPort)
+	}
+	if s.CompatReconPort != 0 {
+		s.ReconAddr = fmt.Sprintf(":%d", s.CompatReconPort)
+	}
+	if len(s.CompatPartnerAddrs) > 0 {
+		s.Partners = PartnerMap{}
+		for _, partnerAddr := range s.CompatPartnerAddrs {
+			host, _, err := net.SplitHostPort(partnerAddr)
+			if err != nil {
+				return errgo.Notef(err, "invalid 'partners' address %q", partnerAddr)
+			}
+			p := Partner{
+				HTTPAddr:  fmt.Sprintf("%s:11371", host),
+				ReconAddr: partnerAddr,
+			}
+			s.Partners[host] = p
+		}
+	}
+
+	_, err := s.HTTPNet.Resolve(s.HTTPAddr)
+	if err != nil {
+		return errgo.Notef(err, "invalid httpNet %q httpAddr %q", s.HTTPNet, s.HTTPAddr)
+	}
+	_, err = s.ReconNet.Resolve(s.ReconAddr)
+	if err != nil {
+		return errgo.Notef(err, "invalid reconNet %q reconAddr %q", s.ReconNet, s.ReconAddr)
+	}
+
+	return nil
+}
+
 // ParseSettings parses a TOML-formatted string representation into Settings.
 func ParseSettings(data string) (*Settings, error) {
 	var doc struct {
@@ -143,36 +179,10 @@ func ParseSettings(data string) (*Settings, error) {
 	}
 
 	settings := &doc.Conflux.Recon
-	if settings.CompatHTTPPort != 0 {
-		settings.HTTPAddr = fmt.Sprintf(":%d", settings.CompatHTTPPort)
-	}
-	if settings.CompatReconPort != 0 {
-		settings.ReconAddr = fmt.Sprintf(":%d", settings.CompatReconPort)
-	}
-	if len(settings.CompatPartnerAddrs) > 0 {
-		settings.Partners = PartnerMap{}
-		for _, partnerAddr := range settings.CompatPartnerAddrs {
-			host, _, err := net.SplitHostPort(partnerAddr)
-			if err != nil {
-				return nil, errgo.Notef(err, "invalid 'partners' address %q", partnerAddr)
-			}
-			p := Partner{
-				HTTPAddr:  fmt.Sprintf("%s:11371", host),
-				ReconAddr: partnerAddr,
-			}
-			settings.Partners[host] = p
-		}
-	}
-
-	_, err = settings.HTTPNet.Resolve(settings.HTTPAddr)
+	err = settings.Resolve()
 	if err != nil {
-		return nil, errgo.Notef(err, "invalid httpNet %q httpAddr %q", settings.HTTPNet, settings.HTTPAddr)
+		return nil, errgo.Mask(err)
 	}
-	_, err = settings.ReconNet.Resolve(settings.ReconAddr)
-	if err != nil {
-		return nil, errgo.Notef(err, "invalid reconNet %q reconAddr %q", settings.ReconNet, settings.ReconAddr)
-	}
-
 	return settings, nil
 }
 

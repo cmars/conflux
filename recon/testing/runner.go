@@ -78,14 +78,18 @@ func (s *ReconSuite) pollRootConvergence(c *gc.C, peer1, peer2 *recon.Peer, ptre
 					c.Assert(zp, gc.NotNil)
 					peer1.Insert(zp)
 				}
-				peer1.ExecCmd(func() error {
-					root1, err := ptree1.Root()
-					if err != nil {
-						return err
-					}
-					zs1 = cf.NewZSet(recon.MustElements(root1)...)
-					return nil
-				})
+				peer1.ExecCmd(
+					func() error {
+						root1, err := ptree1.Root()
+						if err != nil {
+							return err
+						}
+						zs1 = cf.NewZSet(recon.MustElements(root1)...)
+						return nil
+					},
+					func(err error) {
+						c.Assert(err, gc.IsNil)
+					})
 			case r2, ok := <-peer2.RecoverChan:
 				if !ok {
 					break POLLING
@@ -95,14 +99,18 @@ func (s *ReconSuite) pollRootConvergence(c *gc.C, peer1, peer2 *recon.Peer, ptre
 					c.Assert(zp, gc.NotNil)
 					peer2.Insert(zp)
 				}
-				peer2.ExecCmd(func() error {
-					root2, err := ptree2.Root()
-					if err != nil {
-						return err
-					}
-					zs2 = cf.NewZSet(recon.MustElements(root2)...)
-					return nil
-				})
+				peer2.ExecCmd(
+					func() error {
+						root2, err := ptree2.Root()
+						if err != nil {
+							return err
+						}
+						zs2 = cf.NewZSet(recon.MustElements(root2)...)
+						return nil
+					},
+					func(err error) {
+						c.Assert(err, gc.IsNil)
+					})
 			case _ = <-timer.C:
 				return fmt.Errorf("timeout waiting for convergence")
 			default:

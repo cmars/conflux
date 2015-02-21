@@ -23,9 +23,6 @@ package recon
 
 import (
 	"sync"
-
-	"gopkg.in/errgo.v1"
-	log "gopkg.in/hockeypuck/logrus.v0"
 )
 
 type State string
@@ -46,7 +43,7 @@ func (s State) String() string {
 type Tracker struct {
 	mu         sync.Mutex
 	state      State
-	execOnIdle []func() error
+	execOnIdle []func()
 }
 
 func (t *Tracker) Done() {
@@ -56,10 +53,7 @@ func (t *Tracker) Done() {
 	t.state = StateIdle
 
 	for _, execIdle := range t.execOnIdle {
-		err := execIdle()
-		if err != nil {
-			log.Error(errgo.Details(err))
-		}
+		execIdle()
 	}
 	t.execOnIdle = nil
 }
@@ -74,13 +68,16 @@ func (t *Tracker) Begin(state State) (State, bool) {
 	return t.state, t.state == state
 }
 
-func (t *Tracker) ExecIdle(f func() error) {
+func (t *Tracker) ExecIdle(f func() error, errh ErrorHandler) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	runner := func() {
+		errh(f())
+	}
 	if t.state == StateIdle {
-		f()
+		runner()
 	} else {
-		t.execOnIdle = append(t.execOnIdle, f)
+		t.execOnIdle = append(t.execOnIdle, runner)
 	}
 }

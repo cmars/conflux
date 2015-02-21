@@ -162,32 +162,52 @@ func (p *Peer) Disable() {
 	p.enable = false
 }
 
-func (p *Peer) ExecCmd(f func() error) {
-	p.tracker.ExecIdle(f)
+func (p *Peer) ExecCmd(f func() error, cb func(error)) {
+	p.tracker.ExecIdle(f, cb)
 }
 
 func (p *Peer) Insert(zs ...*cf.Zp) {
-	p.tracker.ExecIdle(func() error {
-		for _, z := range zs {
-			err := p.ptree.Insert(z)
-			if err != nil {
-				return errgo.Mask(err)
-			}
+	p.InsertWith(func(err error) {
+		if err != nil {
+			log.Errorf("insert failed: %v", err)
 		}
-		return nil
-	})
+	}, zs...)
+}
+
+type ErrorHandler func(error)
+
+func (p *Peer) InsertWith(f ErrorHandler, zs ...*cf.Zp) {
+	p.tracker.ExecIdle(
+		func() error {
+			for _, z := range zs {
+				err := p.ptree.Insert(z)
+				if err != nil {
+					return errgo.Mask(err)
+				}
+			}
+			return nil
+		}, f)
 }
 
 func (p *Peer) Remove(zs ...*cf.Zp) {
-	p.tracker.ExecIdle(func() error {
-		for _, z := range zs {
-			err := p.ptree.Remove(z)
-			if err != nil {
-				return errgo.Mask(err)
-			}
+	p.RemoveWith(func(err error) {
+		if err != nil {
+			log.Errorf("remove failed: %v", err)
 		}
-		return nil
-	})
+	}, zs...)
+}
+
+func (p *Peer) RemoveWith(f ErrorHandler, zs ...*cf.Zp) {
+	p.tracker.ExecIdle(
+		func() error {
+			for _, z := range zs {
+				err := p.ptree.Remove(z)
+				if err != nil {
+					return errgo.Mask(err)
+				}
+			}
+			return nil
+		}, f)
 }
 
 func (p *Peer) Serve() error {
