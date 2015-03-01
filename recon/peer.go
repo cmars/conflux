@@ -57,7 +57,7 @@ func (r *Recover) HkpAddr() (string, error) {
 	// Use remote HKP host:port as peer-unique identifier
 	host, _, err := net.SplitHostPort(r.RemoteAddr.String())
 	if err != nil {
-		log.Error("cannot parse HKP remote address from", r.RemoteAddr, ":", err)
+		log.Errorf("cannot parse HKP remote address from %q: %v", r.RemoteAddr, err)
 		return "", errgo.Mask(err)
 	}
 	if strings.Contains(host, ":") {

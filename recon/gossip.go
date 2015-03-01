@@ -187,13 +187,13 @@ func (p *Peer) clientRecon(conn net.Conn, remoteConfig *Config) error {
 				pendingMessages = nil
 			}
 		}
-		p.log(GOSSIP).Debug("add step: %v", step)
+		p.log(GOSSIP).Debugf("add step: %v", step)
 		respSet.AddAll(step.elements)
-		p.log(GOSSIP).Info("recover set now %d elements", respSet.Len())
+		p.log(GOSSIP).Infof("recover set now %d elements", respSet.Len())
 	}
 	items := respSet.Items()
 	if len(items) > 0 {
-		p.log(GOSSIP).Info("sending recover: %d items", len(items))
+		p.log(GOSSIP).Infof("sending recover: %d items", len(items))
 		p.RecoverChan <- &Recover{
 			RemoteAddr:     conn.RemoteAddr(),
 			RemoteConfig:   remoteConfig,
