@@ -253,21 +253,25 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) 
 	}
 
 	var handshake tomb.Tomb
-	defer func() {
-		handshake.Kill(nil)
-		stopErr := handshake.Wait()
-		if stopErr != nil {
-			stopErr = errgo.Mask(stopErr)
-			p.logErr(role, stopErr).Error()
-		}
+	result := make(chan *Config)
 
-		if _err == nil {
-			_err = stopErr
-		}
-	}()
-
+	// Receive remote peer's config
 	handshake.Go(func() error {
-		<-handshake.Dying()
+		defer close(result)
+
+		p.logFields(role, log.Fields{"remoteAddr": conn.RemoteAddr()}).Debug("reading remote config")
+		var msg ReconMsg
+		msg, err = ReadMsg(conn)
+		if err != nil {
+			return errgo.Mask(err)
+		}
+
+		remoteConfig, ok := msg.(*Config)
+		if !ok {
+			return errgo.Newf("expected remote config, got %+v", msg)
+		}
+
+		result <- remoteConfig
 		return nil
 	})
 
@@ -281,17 +285,12 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) 
 		return nil
 	})
 
-	// Receive remote peer's config
-	p.logFields(role, log.Fields{"remoteAddr": conn.RemoteAddr()}).Debug("reading remote config")
-	var msg ReconMsg
-	msg, err = ReadMsg(conn)
+	remoteConfig, ok := <-result
+	err = handshake.Wait()
 	if err != nil {
 		return nil, errgo.Mask(err)
-	}
-
-	remoteConfig, ok := msg.(*Config)
-	if !ok {
-		return nil, errgo.Newf("remote config: expected config message, got %v", msg)
+	} else if !ok {
+		return nil, errgo.New("config handshake failed")
 	}
 
 	p.logFields(role, log.Fields{"remoteConfig": remoteConfig}).Debug()
@@ -333,7 +332,8 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) 
 		return nil, errgo.Mask(ErrIncompatiblePeer)
 	}
 
-	handshake.Go(func() error {
+	var response tomb.Tomb
+	response.Go(func() error {
 		bufw := bufio.NewWriter(conn)
 		err = WriteString(bufw, RemoteConfigPassed)
 		if err != nil {
@@ -357,6 +357,12 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) 
 			return nil, errgo.WithCausef(err, ErrRemoteRejectedConfig, "remote rejected config")
 		}
 		return nil, errgo.NoteMask(ErrRemoteRejectedConfig, reason)
+	}
+
+	// Ensure we were able to write the response.
+	err = response.Wait()
+	if err != nil {
+		return nil, errgo.Mask(err)
 	}
 
 	return remoteConfig, nil
@@ -597,7 +603,8 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 			hasMsg = (nbErr == nil)
 
 			// Restore blocking I/O
-			err = conn.SetReadDeadline(zeroTime)
+			err = conn.SetReadDeadline(time.Now().Add(
+				time.Second * time.Duration(p.settings.ReadTimeout)))
 			if err != nil {
 				return errgo.Mask(err)
 			}

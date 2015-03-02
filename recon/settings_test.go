@@ -62,6 +62,7 @@ filters=["something","else"]
 			Partners:                    PartnerMap{},
 			GossipIntervalSecs:          DefaultGossipIntervalSecs,
 			MaxOutstandingReconRequests: DefaultMaxOutstandingReconRequests,
+			ReadTimeout:                 DefaultReadTimeout,
 		},
 		"",
 	}, {
@@ -84,6 +85,7 @@ filters=["something","else"]
 			Partners:                    PartnerMap{},
 			GossipIntervalSecs:          DefaultGossipIntervalSecs,
 			MaxOutstandingReconRequests: DefaultMaxOutstandingReconRequests,
+			ReadTimeout:                 DefaultReadTimeout,
 		},
 		"",
 	}, {
@@ -153,6 +155,7 @@ reconAddr="8.7.6.5:11370"
 			ReconAddr:                   DefaultReconAddr,
 			GossipIntervalSecs:          DefaultGossipIntervalSecs,
 			MaxOutstandingReconRequests: DefaultMaxOutstandingReconRequests,
+			ReadTimeout:                 DefaultReadTimeout,
 			Partners: map[string]Partner{
 				"alice": Partner{
 					HTTPAddr:  "1.2.3.4:11371",
@@ -183,6 +186,7 @@ partners=["1.2.3.4:11370","5.6.7.8:11370"]
 			CompatReconPort:             11370,
 			GossipIntervalSecs:          DefaultGossipIntervalSecs,
 			MaxOutstandingReconRequests: DefaultMaxOutstandingReconRequests,
+			ReadTimeout:                 DefaultReadTimeout,
 			Partners: map[string]Partner{
 				"1.2.3.4": Partner{
 					HTTPAddr:  "1.2.3.4:11371",

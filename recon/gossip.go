@@ -107,7 +107,7 @@ func (p *Peer) choosePartner() (net.Addr, error) {
 func (p *Peer) InitiateRecon(addr net.Addr) error {
 	state, ok := p.tracker.Begin(StateGossipping)
 	if !ok {
-		return errgo.Notef(ErrPeerBusy, "cannot gossip, currently %s", state)
+		return errgo.WithCausef(nil, ErrPeerBusy, "cannot gossip, currently %s", state)
 	}
 	defer p.tracker.Done()
 

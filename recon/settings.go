@@ -108,6 +108,7 @@ const (
 	DefaultReconAddr                   = ":11370"
 	DefaultGossipIntervalSecs          = 60
 	DefaultMaxOutstandingReconRequests = 100
+	DefaultReadTimeout                 = 30
 
 	DefaultThreshMult = 10
 	DefaultBitQuantum = 2
@@ -123,10 +124,11 @@ var defaultPTreeConfig = PTreeConfig{
 var defaultSettings = Settings{
 	PTreeConfig: defaultPTreeConfig,
 
-	Version:   DefaultVersion,
-	LogName:   DefaultLogName,
-	HTTPAddr:  DefaultHTTPAddr,
-	ReconAddr: DefaultReconAddr,
+	Version:     DefaultVersion,
+	LogName:     DefaultLogName,
+	HTTPAddr:    DefaultHTTPAddr,
+	ReconAddr:   DefaultReconAddr,
+	ReadTimeout: DefaultReadTimeout,
 
 	Partners: PartnerMap{},
 
