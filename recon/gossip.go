@@ -45,30 +45,30 @@ func (p *Peer) Gossip() error {
 		case <-p.t.Dying():
 			return nil
 		case <-time.After(delay):
-			var (
-				err  error
-				peer net.Addr
-			)
-
-			if !p.Enabled() {
-				p.log(GOSSIP).Info("peer currently disabled")
+			_, ok := p.tracker.Begin(StateGossipping)
+			if !ok {
 				goto DELAY
 			}
 
-			peer, err = p.choosePartner()
-			if err != nil {
-				if errgo.Cause(err) == ErrNoPartners {
-					p.log(GOSSIP).Debug("no partners to gossip with")
-				} else {
-					p.logErr(GOSSIP, err).Error("choosePartner")
+			func() {
+				defer p.tracker.Done()
+
+				peer, err := p.choosePartner()
+				if err != nil {
+					if errgo.Cause(err) == ErrNoPartners {
+						p.log(GOSSIP).Debug("no partners to gossip with")
+					} else {
+						p.logErr(GOSSIP, err).Error("choosePartner")
+					}
 				}
-				goto DELAY
-			}
 
-			err = p.InitiateRecon(peer)
-			if err != nil && errgo.Cause(err) != ErrPeerBusy {
-				p.logErr(GOSSIP, err).Errorf("recon with %v failed", peer)
-			}
+				err = p.InitiateRecon(peer)
+				if errgo.Cause(err) == ErrPeerBusy {
+					p.logErr(GOSSIP, err).Debug()
+				} else if err != nil {
+					p.logErr(GOSSIP, err).Errorf("recon with %v failed", peer)
+				}
+			}()
 		DELAY:
 			delay = time.Second * time.Duration(rand.Intn(p.settings.GossipIntervalSecs))
 			p.log(GOSSIP).Infof("waiting %s for next gossip attempt", delay)
@@ -105,27 +105,14 @@ func (p *Peer) choosePartner() (net.Addr, error) {
 }
 
 func (p *Peer) InitiateRecon(addr net.Addr) error {
-	state, ok := p.tracker.Begin(StateGossipping)
-	if !ok {
-		return errgo.WithCausef(nil, ErrPeerBusy, "cannot gossip, currently %s", state)
-	}
-	defer p.tracker.Done()
-
 	p.log(GOSSIP).Debugf("initiating recon with peer %v", addr)
-	conn, err := net.DialTimeout(addr.Network(), addr.String(), 3*time.Second)
+	conn, err := net.DialTimeout(addr.Network(), addr.String(), 30*time.Second)
 	if err != nil {
 		return errgo.Mask(err)
 	}
 	defer conn.Close()
 
-	if p.settings.ReadTimeout > 0 {
-		err = conn.SetReadDeadline(
-			time.Now().Add(time.Second * time.Duration(p.settings.ReadTimeout)))
-		if err != nil {
-			p.logErr(GOSSIP, err).Warn("cannot set read timeout")
-		}
-	}
-	remoteConfig, err := p.handleConfig(conn, GOSSIP)
+	remoteConfig, err := p.handleConfig(conn, GOSSIP, "")
 	if err != nil {
 		return errgo.Mask(err)
 	}

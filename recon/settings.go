@@ -65,7 +65,6 @@ type Settings struct {
 
 	GossipIntervalSecs          int `toml:"gossipIntervalSecs"`
 	MaxOutstandingReconRequests int `toml:"maxOutstandingReconRequests"`
-	ReadTimeout                 int `toml:"readTimeout"`
 }
 
 type Partner struct {
@@ -108,7 +107,6 @@ const (
 	DefaultReconAddr                   = ":11370"
 	DefaultGossipIntervalSecs          = 60
 	DefaultMaxOutstandingReconRequests = 100
-	DefaultReadTimeout                 = 30
 
 	DefaultThreshMult = 10
 	DefaultBitQuantum = 2
@@ -124,11 +122,10 @@ var defaultPTreeConfig = PTreeConfig{
 var defaultSettings = Settings{
 	PTreeConfig: defaultPTreeConfig,
 
-	Version:     DefaultVersion,
-	LogName:     DefaultLogName,
-	HTTPAddr:    DefaultHTTPAddr,
-	ReconAddr:   DefaultReconAddr,
-	ReadTimeout: DefaultReadTimeout,
+	Version:   DefaultVersion,
+	LogName:   DefaultLogName,
+	HTTPAddr:  DefaultHTTPAddr,
+	ReconAddr: DefaultReconAddr,
 
 	Partners: PartnerMap{},
 

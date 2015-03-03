@@ -233,20 +233,22 @@ func (p *Peer) Serve() error {
 			p.logErr(SERVE, errgo.Mask(err)).Error()
 			return err
 		}
-		if p.settings.ReadTimeout > 0 {
-			conn.SetReadDeadline(time.Now().Add(
-				time.Second * time.Duration(p.settings.ReadTimeout)))
+
+		if tcConn, ok := conn.(*net.TCPConn); ok {
+			tcConn.SetKeepAlive(true)
+			tcConn.SetKeepAlivePeriod(3 * time.Minute)
 		}
-		go func() {
-			err = p.Accept(conn)
-			if err != nil {
-				p.logErr(SERVE, errgo.Mask(err)).Error()
-			}
-		}()
+
+		err = p.Accept(conn)
+		if errgo.Cause(err) == ErrPeerBusy {
+			p.logErr(GOSSIP, err).Debug()
+		} else if err != nil {
+			p.logErr(SERVE, err).Errorf("recon with %v failed", conn.RemoteAddr())
+		}
 	}
 }
 
-func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) {
+func (p *Peer) handleConfig(conn net.Conn, role string, failResp string) (_ *Config, _err error) {
 	config, err := p.settings.Config()
 	if err != nil {
 		return nil, errgo.Mask(err)
@@ -254,6 +256,16 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) 
 
 	var handshake tomb.Tomb
 	result := make(chan *Config)
+
+	// Send config to server on connect
+	handshake.Go(func() error {
+		p.logFields(role, log.Fields{"config": config}).Debug("writing config")
+		err := WriteMsg(conn, config)
+		if err != nil {
+			return errgo.Mask(err)
+		}
+		return nil
+	})
 
 	// Receive remote peer's config
 	handshake.Go(func() error {
@@ -275,16 +287,6 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) 
 		return nil
 	})
 
-	// Send config to server on connect
-	handshake.Go(func() error {
-		p.logFields(role, log.Fields{"config": config}).Debug("writing config")
-		err := WriteMsg(conn, config)
-		if err != nil {
-			return errgo.Mask(err)
-		}
-		return nil
-	})
-
 	remoteConfig, ok := <-result
 	err = handshake.Wait()
 	if err != nil {
@@ -294,46 +296,43 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) 
 	}
 
 	p.logFields(role, log.Fields{"remoteConfig": remoteConfig}).Debug()
-	if remoteConfig.BitQuantum != config.BitQuantum {
-		bufw := bufio.NewWriter(conn)
-		err = WriteString(bufw, RemoteConfigFailed)
-		if err != nil {
-			p.logErr(role, err)
-		}
-		err = WriteString(bufw, "mismatched bitquantum")
-		if err != nil {
-			p.logErr(role, err)
-		}
 
-		bufw.Flush()
-		p.logFields(role, log.Fields{
-			"remoteBitquantum": remoteConfig.BitQuantum,
-			"localBitquantum":  config.BitQuantum,
-		}).Error("cannot peer: mismatched BitQuantum values")
-		return nil, errgo.Mask(ErrIncompatiblePeer)
+	if failResp == "" {
+		if remoteConfig.BitQuantum != config.BitQuantum {
+			failResp = "mismatched bitquantum"
+			p.logFields(role, log.Fields{
+				"remoteBitquantum": remoteConfig.BitQuantum,
+				"localBitquantum":  config.BitQuantum,
+			}).Error("mismatched BitQuantum values")
+		} else if remoteConfig.MBar != config.MBar {
+			failResp = "mismatched mbar"
+			p.logFields(role, log.Fields{
+				"remoteMBar": remoteConfig.MBar,
+				"localMBar":  config.MBar,
+			}).Error("mismatched MBar")
+		}
 	}
 
-	if remoteConfig.MBar != config.MBar {
-		bufw := bufio.NewWriter(conn)
-		err = WriteString(bufw, RemoteConfigFailed)
+	if failResp != "" {
+		err = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 		if err != nil {
 			p.logErr(role, err)
 		}
-		err = WriteString(bufw, "mismatched mbar")
+
+		err = WriteString(conn, RemoteConfigFailed)
 		if err != nil {
-			p.logErr(role, err).Error()
+			p.logErr(role, err)
+		}
+		err = WriteString(conn, failResp)
+		if err != nil {
+			p.logErr(role, err)
 		}
 
-		bufw.Flush()
-		p.logFields(role, log.Fields{
-			"remoteMBar": remoteConfig.MBar,
-			"localMBar":  config.MBar,
-		}).Error("cannot peer: mismatched MBar")
-		return nil, errgo.Mask(ErrIncompatiblePeer)
+		return nil, errgo.Newf("cannot peer: %v", failResp)
 	}
 
-	var response tomb.Tomb
-	response.Go(func() error {
+	var acknowledge tomb.Tomb
+	acknowledge.Go(func() error {
 		bufw := bufio.NewWriter(conn)
 		err = WriteString(bufw, RemoteConfigPassed)
 		if err != nil {
@@ -346,21 +345,23 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) 
 		return nil
 	})
 
-	remoteConfigStatus, err := ReadString(conn)
-	if err != nil {
-		return nil, errgo.Mask(err)
-	}
-
-	if remoteConfigStatus != RemoteConfigPassed {
-		reason, err := ReadString(conn)
+	acknowledge.Go(func() error {
+		remoteConfigStatus, err := ReadString(conn)
 		if err != nil {
-			return nil, errgo.WithCausef(err, ErrRemoteRejectedConfig, "remote rejected config")
+			return errgo.Mask(err)
 		}
-		return nil, errgo.NoteMask(ErrRemoteRejectedConfig, reason)
-	}
+		if remoteConfigStatus != RemoteConfigPassed {
+			reason, err := ReadString(conn)
+			if err != nil {
+				return errgo.WithCausef(err, ErrRemoteRejectedConfig, "remote rejected config")
+			}
+			return errgo.NoteMask(ErrRemoteRejectedConfig, reason)
+		}
+		return nil
+	})
 
-	// Ensure we were able to write the response.
-	err = response.Wait()
+	// Ensure we were able to complete acknowledgement.
+	err = acknowledge.Wait()
 	if err != nil {
 		return nil, errgo.Mask(err)
 	}
@@ -371,12 +372,6 @@ func (p *Peer) handleConfig(conn net.Conn, role string) (_ *Config, _err error) 
 func (p *Peer) Accept(conn net.Conn) (_err error) {
 	defer conn.Close()
 
-	state, ok := p.tracker.Begin(StateServing)
-	if !ok {
-		return errgo.Notef(ErrPeerBusy, "service unavailable, currently %s", state)
-	}
-	defer p.tracker.Done()
-
 	p.logFields(SERVE, log.Fields{
 		"remoteAddr": conn.RemoteAddr(),
 	}).Debug("accepted connection")
@@ -386,15 +381,22 @@ func (p *Peer) Accept(conn net.Conn) (_err error) {
 		}
 	}()
 
-	remoteConfig, err := p.handleConfig(conn, SERVE)
+	var failResp string
+	state, ok := p.tracker.Begin(StateServing)
+	if !ok {
+		failResp = fmt.Sprintf("service not available, currently %v", state)
+	}
+
+	remoteConfig, err := p.handleConfig(conn, SERVE, failResp)
 	if err != nil {
 		return errgo.Mask(err)
 	}
 
-	if p.Enabled() {
+	if ok {
+		defer p.tracker.Done()
 		return p.interactWithClient(conn, remoteConfig, cf.NewBitstring(0))
 	}
-	return errgo.Newf("peer is currently disabled, ignoring connection")
+	return nil
 }
 
 type requestEntry struct {
@@ -603,8 +605,7 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 			hasMsg = (nbErr == nil)
 
 			// Restore blocking I/O
-			err = conn.SetReadDeadline(time.Now().Add(
-				time.Second * time.Duration(p.settings.ReadTimeout)))
+			err = conn.SetReadDeadline(time.Time{})
 			if err != nil {
 				return errgo.Mask(err)
 			}
