@@ -42,7 +42,7 @@ func (s *SettingsSuite) TestParse(c *gc.C) {
 	}{{
 		"empty string",
 		``,
-		&defaultSettings,
+		DefaultSettings(),
 		"",
 	}, {
 		"field setting with some defaults",

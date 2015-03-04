@@ -45,14 +45,8 @@ func (p *Peer) Gossip() error {
 		case <-p.t.Dying():
 			return nil
 		case <-time.After(delay):
-			_, ok := p.tracker.Begin(StateGossipping)
-			if !ok {
-				goto DELAY
-			}
 
-			func() {
-				defer p.tracker.Done()
-
+			if p.readAcquire() {
 				peer, err := p.choosePartner()
 				if err != nil {
 					if errgo.Cause(err) == ErrNoPartners {
@@ -68,8 +62,10 @@ func (p *Peer) Gossip() error {
 				} else if err != nil {
 					p.logErr(GOSSIP, err).Errorf("recon with %v failed", peer)
 				}
-			}()
-		DELAY:
+
+				p.wg.Done()
+			}
+
 			delay = time.Second * time.Duration(rand.Intn(p.settings.GossipIntervalSecs))
 			p.log(GOSSIP).Infof("waiting %s for next gossip attempt", delay)
 		}
@@ -194,6 +190,7 @@ func (p *Peer) interactWithServer(conn net.Conn) msgProgressChan {
 	go func() {
 		var resp *msgProgress
 		for resp == nil || resp.err == nil {
+			p.setReadDeadline(conn, defaultTimeout)
 			msg, err := ReadMsg(conn)
 			if err != nil {
 				p.logErr(GOSSIP, err).Error("interact: read msg")

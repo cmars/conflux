@@ -84,10 +84,17 @@ type Peer struct {
 
 	t tomb.Tomb
 
-	enableLock sync.Mutex
-	enable     bool
+	wg sync.WaitGroup
 
-	tracker Tracker
+	mu       sync.RWMutex
+	mutating bool
+	once     *sync.Once
+
+	muElements     sync.Mutex
+	insertElements []*cf.Zp
+	removeElements []*cf.Zp
+
+	mutatedFunc func()
 }
 
 func NewPeer(settings *Settings, tree PrefixTree) *Peer {
@@ -96,12 +103,6 @@ func NewPeer(settings *Settings, tree PrefixTree) *Peer {
 		settings:    settings,
 		ptree:       tree,
 	}
-}
-
-func NewPeerState(settings *Settings, tree PrefixTree, state State) *Peer {
-	peer := NewPeer(settings, tree)
-	peer.tracker.Begin(state)
-	return peer
 }
 
 func NewMemPeer() *Peer {
@@ -124,10 +125,6 @@ func (p *Peer) logErr(label string, err error) *log.Entry {
 	return p.logFields(label, log.Fields{"error": errgo.Details(err)})
 }
 
-func (p *Peer) Start() {
-	p.StartMode(PeerModeDefault)
-}
-
 func (p *Peer) StartMode(mode PeerMode) {
 	switch mode {
 	case PeerModeGossipOnly:
@@ -138,80 +135,89 @@ func (p *Peer) StartMode(mode PeerMode) {
 		p.t.Go(p.Serve)
 		p.t.Go(p.Gossip)
 	}
-	p.Enable()
 }
 
-type stopNotify chan interface{}
+func (p *Peer) Start() {
+	p.t.Go(p.Serve)
+	p.t.Go(p.Gossip)
+}
 
 func (p *Peer) Stop() error {
 	p.t.Kill(nil)
 	return p.t.Wait()
 }
 
-func (p *Peer) Enabled() bool {
-	p.enableLock.Lock()
-	defer p.enableLock.Unlock()
-	return p.enable
-}
-
-func (p *Peer) Enable() {
-	p.enableLock.Lock()
-	defer p.enableLock.Unlock()
-	p.enable = true
-}
-
-func (p *Peer) Disable() {
-	p.enableLock.Lock()
-	defer p.enableLock.Unlock()
-	p.enable = false
-}
-
-func (p *Peer) ExecCmd(f func() error, cb func(error)) {
-	p.tracker.ExecIdle(f, cb)
-}
-
 func (p *Peer) Insert(zs ...*cf.Zp) {
-	p.InsertWith(func(err error) {
-		if err != nil {
-			log.Errorf("insert failed: %v", err)
-		}
-	}, zs...)
-}
-
-type ErrorHandler func(error)
-
-func (p *Peer) InsertWith(f ErrorHandler, zs ...*cf.Zp) {
-	p.tracker.ExecIdle(
-		func() error {
-			for _, z := range zs {
-				err := p.ptree.Insert(z)
-				if err != nil {
-					return errgo.Mask(err)
-				}
-			}
-			return nil
-		}, f)
+	p.muElements.Lock()
+	defer p.muElements.Unlock()
+	p.insertElements = append(p.insertElements, zs...)
 }
 
 func (p *Peer) Remove(zs ...*cf.Zp) {
-	p.RemoveWith(func(err error) {
-		if err != nil {
-			log.Errorf("remove failed: %v", err)
-		}
-	}, zs...)
+	p.muElements.Lock()
+	defer p.muElements.Unlock()
+	p.removeElements = append(p.removeElements, zs...)
 }
 
-func (p *Peer) RemoveWith(f ErrorHandler, zs ...*cf.Zp) {
-	p.tracker.ExecIdle(
-		func() error {
-			for _, z := range zs {
-				err := p.ptree.Remove(z)
-				if err != nil {
-					return errgo.Mask(err)
-				}
+func (p *Peer) SetMutatedFunc(f func()) {
+	p.muElements.Lock()
+	defer p.muElements.Unlock()
+	p.mutatedFunc = f
+}
+
+func (p *Peer) readAcquire() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	if !p.mutating {
+		p.wg.Add(1)
+
+		if p.once == nil {
+			p.once = &sync.Once{}
+		}
+		p.once.Do(p.mutate)
+		return true
+	}
+	return false
+}
+
+func (p *Peer) mutate() {
+	p.t.Go(func() error {
+		p.wg.Wait()
+
+		p.mu.Lock()
+		p.mutating = true
+		p.once = nil
+		p.mu.Unlock()
+
+		p.muElements.Lock()
+		for _, z := range p.insertElements {
+			err := p.ptree.Insert(z)
+			if err != nil {
+				log.Warningf("cannot insert %q into prefix tree: %v", z, errgo.Details(err))
 			}
-			return nil
-		}, f)
+		}
+		p.logFields("mutate", log.Fields{"elements": p.insertElements}).Debugf("inserted")
+		for _, z := range p.removeElements {
+			err := p.ptree.Remove(z)
+			if err != nil {
+				log.Warningf("cannot remove %q from prefix tree: %v", z, errgo.Details(err))
+			}
+		}
+		p.logFields("mutate", log.Fields{"elements": p.insertElements}).Debugf("removed")
+		p.insertElements = nil
+		p.removeElements = nil
+		if p.mutatedFunc != nil {
+			p.mutatedFunc()
+		}
+		p.muElements.Unlock()
+
+		p.mu.Lock()
+		p.mutating = false
+		p.mu.Unlock()
+
+		return nil
+	})
 }
 
 func (p *Peer) Serve() error {
@@ -239,16 +245,29 @@ func (p *Peer) Serve() error {
 			tcConn.SetKeepAlivePeriod(3 * time.Minute)
 		}
 
-		err = p.Accept(conn)
-		if errgo.Cause(err) == ErrPeerBusy {
-			p.logErr(GOSSIP, err).Debug()
-		} else if err != nil {
-			p.logErr(SERVE, err).Errorf("recon with %v failed", conn.RemoteAddr())
-		}
+		go func() {
+			err = p.Accept(conn)
+			if errgo.Cause(err) == ErrPeerBusy {
+				p.logErr(GOSSIP, err).Debug()
+			} else if err != nil {
+				p.logErr(SERVE, err).Errorf("recon with %v failed", conn.RemoteAddr())
+			}
+		}()
+	}
+}
+
+var defaultTimeout = 30 * time.Second
+
+func (p *Peer) setReadDeadline(conn net.Conn, d time.Duration) {
+	err := conn.SetReadDeadline(time.Now().Add(d))
+	if err != nil {
+		log.Warningf("failed to set read deadline: %v")
 	}
 }
 
 func (p *Peer) handleConfig(conn net.Conn, role string, failResp string) (_ *Config, _err error) {
+	p.setReadDeadline(conn, defaultTimeout)
+
 	config, err := p.settings.Config()
 	if err != nil {
 		return nil, errgo.Mask(err)
@@ -382,9 +401,10 @@ func (p *Peer) Accept(conn net.Conn) (_err error) {
 	}()
 
 	var failResp string
-	state, ok := p.tracker.Begin(StateServing)
-	if !ok {
-		failResp = fmt.Sprintf("service not available, currently %v", state)
+	if p.readAcquire() {
+		defer p.wg.Done()
+	} else {
+		failResp = "sync not available, currently mutating"
 	}
 
 	remoteConfig, err := p.handleConfig(conn, SERVE, failResp)
@@ -392,8 +412,7 @@ func (p *Peer) Accept(conn net.Conn) (_err error) {
 		return errgo.Mask(err)
 	}
 
-	if ok {
-		defer p.tracker.Done()
+	if failResp == "" {
 		return p.interactWithClient(conn, remoteConfig, cf.NewBitstring(0))
 	}
 	return nil
@@ -597,7 +616,7 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 			var hasMsg bool
 
 			// Set a small read timeout to simulate non-blocking I/O
-			err = conn.SetReadDeadline(time.Now().Add(time.Millisecond))
+			p.setReadDeadline(conn, time.Millisecond)
 			if err != nil {
 				return errgo.Mask(err)
 			}
@@ -605,7 +624,7 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 			hasMsg = (nbErr == nil)
 
 			// Restore blocking I/O
-			err = conn.SetReadDeadline(time.Time{})
+			p.setReadDeadline(conn, defaultTimeout)
 			if err != nil {
 				return errgo.Mask(err)
 			}
@@ -625,6 +644,7 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 					}
 				} else {
 					recon.popBottom()
+					p.setReadDeadline(conn, defaultTimeout)
 					msg, err = ReadMsg(conn)
 					if err != nil {
 						return errgo.Mask(err)

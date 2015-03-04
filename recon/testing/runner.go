@@ -25,6 +25,7 @@ package testing
 import (
 	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	gc "gopkg.in/check.v1"
@@ -63,9 +64,26 @@ func (s *ReconSuite) pollRootConvergence(c *gc.C, peer1, peer2 *recon.Peer, ptre
 	t.Go(func() error {
 		defer peer1.Stop()
 		defer peer2.Stop()
+
+		var mu sync.Mutex
 		var zs1 *cf.ZSet = cf.NewZSet()
 		var zs2 *cf.ZSet = cf.NewZSet()
+
 		timer := time.NewTimer(LongTimeout)
+		peer1.SetMutatedFunc(func() {
+			mu.Lock()
+			root1, err := ptree1.Root()
+			c.Assert(err, gc.IsNil)
+			zs1 = cf.NewZSet(recon.MustElements(root1)...)
+			mu.Unlock()
+		})
+		peer2.SetMutatedFunc(func() {
+			mu.Lock()
+			root2, err := ptree2.Root()
+			c.Assert(err, gc.IsNil)
+			zs2 = cf.NewZSet(recon.MustElements(root2)...)
+			mu.Unlock()
+		})
 	POLLING:
 		for {
 			select {
@@ -78,18 +96,6 @@ func (s *ReconSuite) pollRootConvergence(c *gc.C, peer1, peer2 *recon.Peer, ptre
 					c.Assert(zp, gc.NotNil)
 					peer1.Insert(zp)
 				}
-				peer1.ExecCmd(
-					func() error {
-						root1, err := ptree1.Root()
-						if err != nil {
-							return err
-						}
-						zs1 = cf.NewZSet(recon.MustElements(root1)...)
-						return nil
-					},
-					func(err error) {
-						c.Assert(err, gc.IsNil)
-					})
 			case r2, ok := <-peer2.RecoverChan:
 				if !ok {
 					break POLLING
@@ -99,23 +105,16 @@ func (s *ReconSuite) pollRootConvergence(c *gc.C, peer1, peer2 *recon.Peer, ptre
 					c.Assert(zp, gc.NotNil)
 					peer2.Insert(zp)
 				}
-				peer2.ExecCmd(
-					func() error {
-						root2, err := ptree2.Root()
-						if err != nil {
-							return err
-						}
-						zs2 = cf.NewZSet(recon.MustElements(root2)...)
-						return nil
-					},
-					func(err error) {
-						c.Assert(err, gc.IsNil)
-					})
 			case _ = <-timer.C:
 				return fmt.Errorf("timeout waiting for convergence")
 			default:
 			}
-			if zs1.Len() > 0 && zs1.Equal(zs2) {
+
+			var done bool
+			mu.Lock()
+			done = zs1.Len() > 0 && zs1.Equal(zs2)
+			mu.Unlock()
+			if done {
 				c.Logf("peer1 has %q, peer2 has %q", zs1, zs2)
 				return nil
 			}

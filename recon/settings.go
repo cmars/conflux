@@ -127,8 +127,6 @@ var defaultSettings = Settings{
 	HTTPAddr:  DefaultHTTPAddr,
 	ReconAddr: DefaultReconAddr,
 
-	Partners: PartnerMap{},
-
 	GossipIntervalSecs:          DefaultGossipIntervalSecs,
 	MaxOutstandingReconRequests: DefaultMaxOutstandingReconRequests,
 }
@@ -176,7 +174,8 @@ func ParseSettings(data string) (*Settings, error) {
 			Recon Settings `toml:"recon"`
 		} `toml:"conflux"`
 	}
-	doc.Conflux.Recon = defaultSettings
+	defaults := DefaultSettings()
+	doc.Conflux.Recon = *defaults
 	_, err := toml.Decode(data, &doc)
 	if err != nil {
 		return nil, errgo.Mask(err)
@@ -193,6 +192,7 @@ func ParseSettings(data string) (*Settings, error) {
 // DefaultSettings returns default peer configuration settings.
 func DefaultSettings() *Settings {
 	settings := defaultSettings
+	settings.Partners = make(PartnerMap)
 	return &settings
 }
 
