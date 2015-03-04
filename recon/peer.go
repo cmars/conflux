@@ -204,7 +204,7 @@ func (p *Peer) mutate() {
 				log.Warningf("cannot remove %q from prefix tree: %v", z, errgo.Details(err))
 			}
 		}
-		p.logFields("mutate", log.Fields{"elements": p.insertElements}).Debugf("removed")
+		p.logFields("mutate", log.Fields{"elements": p.removeElements}).Debugf("removed")
 		p.insertElements = nil
 		p.removeElements = nil
 		if p.mutatedFunc != nil {
