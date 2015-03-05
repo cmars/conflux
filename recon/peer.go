@@ -191,20 +191,27 @@ func (p *Peer) mutate() {
 		p.mu.Unlock()
 
 		p.muElements.Lock()
+
 		for _, z := range p.insertElements {
 			err := p.ptree.Insert(z)
 			if err != nil {
 				log.Warningf("cannot insert %q into prefix tree: %v", z, errgo.Details(err))
 			}
 		}
-		p.logFields("mutate", log.Fields{"elements": p.insertElements}).Debugf("inserted")
+		if len(p.insertElements) > 0 {
+			p.logFields("mutate", log.Fields{"elements": len(p.insertElements)}).Debugf("inserted")
+		}
+
 		for _, z := range p.removeElements {
 			err := p.ptree.Remove(z)
 			if err != nil {
 				log.Warningf("cannot remove %q from prefix tree: %v", z, errgo.Details(err))
 			}
 		}
-		p.logFields("mutate", log.Fields{"elements": p.removeElements}).Debugf("removed")
+		if len(p.removeElements) > 0 {
+			p.logFields("mutate", log.Fields{"elements": len(p.removeElements)}).Debugf("removed")
+		}
+
 		p.insertElements = nil
 		p.removeElements = nil
 		if p.mutatedFunc != nil {
@@ -333,7 +340,7 @@ func (p *Peer) handleConfig(conn net.Conn, role string, failResp string) (_ *Con
 	}
 
 	if failResp != "" {
-		err = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
+		err = conn.SetWriteDeadline(time.Now().Add(defaultTimeout))
 		if err != nil {
 			p.logErr(role, err)
 		}
@@ -585,6 +592,8 @@ var zeroTime time.Time
 
 func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring *cf.Bitstring) error {
 	p.log(SERVE).Debug("interacting with client")
+	p.setReadDeadline(conn, defaultTimeout)
+
 	recon := reconWithClient{Peer: p, conn: conn, rcvrSet: cf.NewZSet()}
 	root, err := p.ptree.Root()
 	if err != nil {
