@@ -340,7 +340,7 @@ func (p *Peer) handleConfig(conn net.Conn, role string, failResp string) (_ *Con
 	}
 
 	if failResp != "" {
-		err = conn.SetWriteDeadline(time.Now().Add(defaultTimeout))
+		err = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 		if err != nil {
 			p.logErr(role, err)
 		}
