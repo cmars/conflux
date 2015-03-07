@@ -176,11 +176,17 @@ func (p *Peer) clientRecon(conn net.Conn, remoteConfig *Config) error {
 	}
 	items := respSet.Items()
 	if len(items) > 0 {
-		p.log(GOSSIP).Infof("sending recover: %d items", len(items))
-		p.RecoverChan <- &Recover{
+		select {
+		case p.RecoverChan <- &Recover{
 			RemoteAddr:     conn.RemoteAddr(),
 			RemoteConfig:   remoteConfig,
-			RemoteElements: items}
+			RemoteElements: items}:
+			p.log(GOSSIP).Infof("recovered %d items", len(items))
+		default:
+			p.mu.Lock()
+			p.full = true
+			p.mu.Unlock()
+		}
 	}
 	return nil
 }

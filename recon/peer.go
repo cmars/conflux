@@ -87,6 +87,7 @@ type Peer struct {
 	wg sync.WaitGroup
 
 	mu       sync.RWMutex
+	full     bool
 	mutating bool
 	once     *sync.Once
 
@@ -99,7 +100,7 @@ type Peer struct {
 
 func NewPeer(settings *Settings, tree PrefixTree) *Peer {
 	return &Peer{
-		RecoverChan: make(RecoverChan),
+		RecoverChan: make(RecoverChan, 1024),
 		settings:    settings,
 		ptree:       tree,
 	}
@@ -170,6 +171,11 @@ func (p *Peer) readAcquire() bool {
 	defer p.mu.RUnlock()
 
 	if !p.mutating {
+		if p.full {
+			// Outbound recovery channel is full.
+			return false
+		}
+
 		p.wg.Add(1)
 
 		if p.once == nil {
@@ -221,6 +227,7 @@ func (p *Peer) mutate() {
 
 		p.mu.Lock()
 		p.mutating = false
+		p.full = false
 		p.mu.Unlock()
 
 		return nil
@@ -653,7 +660,7 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 					}
 				} else {
 					recon.popBottom()
-					p.setReadDeadline(conn, defaultTimeout)
+					p.setReadDeadline(conn, 3*time.Second)
 					msg, err = ReadMsg(conn)
 					if err != nil {
 						return errgo.Mask(err)
@@ -682,10 +689,17 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 
 	items := recon.rcvrSet.Items()
 	if len(items) > 0 && p.t.Alive() {
-		p.RecoverChan <- &Recover{
+		select {
+		case p.RecoverChan <- &Recover{
 			RemoteAddr:     conn.RemoteAddr(),
 			RemoteConfig:   remoteConfig,
-			RemoteElements: items}
+			RemoteElements: items}:
+			p.log(SERVE).Infof("recovered %d items", len(items))
+		default:
+			p.mu.Lock()
+			p.full = true
+			p.mu.Unlock()
+		}
 	}
 	return nil
 }

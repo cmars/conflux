@@ -183,7 +183,7 @@ func (s *ReconSuite) newPeer(listenPort, partnerPort int, mode recon.PeerMode, p
 	settings.Partners[partnerAddr] = recon.Partner{
 		ReconAddr: partnerAddr,
 	}
-	settings.GossipIntervalSecs = 3
+	settings.GossipIntervalSecs = 2
 	peer := recon.NewPeer(settings, ptree)
 	peer.StartMode(mode)
 	return peer
