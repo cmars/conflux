@@ -144,6 +144,10 @@ type msgProgressChan chan *msgProgress
 
 func (p *Peer) clientRecon(conn net.Conn, remoteConfig *Config) error {
 	respSet := cf.NewZSet()
+	defer func() {
+		p.sendItems(respSet.Items(), conn, remoteConfig)
+	}()
+
 	var pendingMessages []ReconMsg
 	for step := range p.interactWithServer(conn) {
 		if step.err != nil {
@@ -173,20 +177,6 @@ func (p *Peer) clientRecon(conn net.Conn, remoteConfig *Config) error {
 		p.log(GOSSIP).Debugf("add step: %v", step)
 		respSet.AddAll(step.elements)
 		p.log(GOSSIP).Infof("recover set now %d elements", respSet.Len())
-	}
-	items := respSet.Items()
-	if len(items) > 0 {
-		select {
-		case p.RecoverChan <- &Recover{
-			RemoteAddr:     conn.RemoteAddr(),
-			RemoteConfig:   remoteConfig,
-			RemoteElements: items}:
-			p.log(GOSSIP).Infof("recovered %d items", len(items))
-		default:
-			p.mu.Lock()
-			p.full = true
-			p.mu.Unlock()
-		}
 	}
 	return nil
 }

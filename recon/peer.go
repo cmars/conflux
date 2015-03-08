@@ -635,6 +635,11 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 	if err != nil {
 		return err
 	}
+
+	defer func() {
+		p.sendItems(recon.rcvrSet.Items(), conn, remoteConfig)
+	}()
+
 	recon.pushRequest(&requestEntry{node: root, key: bitstring})
 	for !recon.isDone() {
 		bottom := recon.topBottom()
@@ -715,8 +720,10 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 	if err != nil {
 		return errgo.Mask(err)
 	}
+	return nil
+}
 
-	items := recon.rcvrSet.Items()
+func (p *Peer) sendItems(items []*cf.Zp, conn net.Conn, remoteConfig *Config) error {
 	if len(items) > 0 && p.t.Alive() {
 		select {
 		case p.RecoverChan <- &Recover{
