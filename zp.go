@@ -262,13 +262,13 @@ func (zp *Zp) assertEqualP(values ...*Zp) {
 
 // ZSet is a set of integers in a finite field.
 type ZSet struct {
-	s map[string]bool
+	s map[string]*big.Int
 	p *big.Int
 }
 
 // NewZSet returns a new ZSet containing the given elements.
 func NewZSet(elements ...*Zp) (zs *ZSet) {
-	zs = &ZSet{s: make(map[string]bool)}
+	zs = &ZSet{s: make(map[string]*big.Int)}
 	for _, element := range elements {
 		zs.Add(element)
 	}
@@ -290,7 +290,7 @@ func (zs *ZSet) Add(v *Zp) {
 	} else {
 		v.assertP(zs.p)
 	}
-	zs.s[v.String()] = true
+	zs.s[v.String()] = v.Int
 }
 
 // Remove removes an element from the set.
@@ -330,8 +330,8 @@ func (zs *ZSet) AddAll(other *ZSet) {
 	if zs.p == nil {
 		zs.p = other.p
 	}
-	for k, _ := range other.s {
-		zs.s[k] = true
+	for k, v := range other.s {
+		zs.s[k] = v
 	}
 }
 
@@ -357,10 +357,8 @@ func (zs *ZSet) Items() (result []*Zp) {
 	if zs == nil {
 		return nil
 	}
-	for k, _ := range zs.s {
-		n := big.NewInt(int64(0))
-		n.SetString(k, 10)
-		result = append(result, &Zp{Int: n, P: zs.p})
+	for _, v := range zs.s {
+		result = append(result, &Zp{Int: v, P: zs.p})
 	}
 	return
 }

@@ -194,8 +194,11 @@ func (p *Peer) clientRecon(conn net.Conn, remoteConfig *Config) error {
 func (p *Peer) interactWithServer(conn net.Conn) msgProgressChan {
 	out := make(msgProgressChan)
 	go func() {
+		defer close(out)
+
 		var resp *msgProgress
-		for resp == nil || resp.err == nil {
+		var n int
+		for (resp == nil || resp.err == nil) && n < maxRecoverSize {
 			p.setReadDeadline(conn, defaultTimeout)
 			msg, err := ReadMsg(conn)
 			if err != nil {
@@ -219,6 +222,7 @@ func (p *Peer) interactWithServer(conn net.Conn) msgProgressChan {
 			default:
 				resp = &msgProgress{err: errgo.Newf("unexpected message: %v", m)}
 			}
+			n += resp.elements.Len()
 			out <- resp
 		}
 	}()

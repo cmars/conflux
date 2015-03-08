@@ -82,7 +82,8 @@ type Peer struct {
 
 	RecoverChan RecoverChan
 
-	t tomb.Tomb
+	muDie sync.Mutex
+	t     tomb.Tomb
 
 	wg sync.WaitGroup
 
@@ -100,7 +101,7 @@ type Peer struct {
 
 func NewPeer(settings *Settings, tree PrefixTree) *Peer {
 	return &Peer{
-		RecoverChan: make(RecoverChan, 1024),
+		RecoverChan: make(RecoverChan, 1),
 		settings:    settings,
 		ptree:       tree,
 	}
@@ -144,7 +145,11 @@ func (p *Peer) Start() {
 }
 
 func (p *Peer) Stop() error {
+	// This lock prevents goroutines from panicking the tomb after the kill.
+	p.muDie.Lock()
 	p.t.Kill(nil)
+	p.muDie.Unlock()
+
 	return p.t.Wait()
 }
 
@@ -187,7 +192,22 @@ func (p *Peer) readAcquire() bool {
 	return false
 }
 
+func (p *Peer) isDying() bool {
+	select {
+	case <-p.t.Dying():
+		return true
+	default:
+	}
+	return false
+}
+
 func (p *Peer) mutate() {
+	p.muDie.Lock()
+	defer p.muDie.Unlock()
+	if p.isDying() {
+		return
+	}
+
 	p.t.Go(func() error {
 		p.wg.Wait()
 
@@ -247,11 +267,11 @@ func (p *Peer) Serve() error {
 		<-p.t.Dying()
 		return ln.Close()
 	})
+
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			p.logErr(SERVE, errgo.Mask(err)).Error()
-			return err
+			return errgo.Mask(err)
 		}
 
 		if tcConn, ok := conn.(*net.TCPConn); ok {
@@ -259,14 +279,21 @@ func (p *Peer) Serve() error {
 			tcConn.SetKeepAlivePeriod(3 * time.Minute)
 		}
 
-		go func() {
+		p.muDie.Lock()
+		if p.isDying() {
+			conn.Close()
+			return nil
+		}
+		p.t.Go(func() error {
 			err = p.Accept(conn)
 			if errgo.Cause(err) == ErrPeerBusy {
 				p.logErr(GOSSIP, err).Debug()
 			} else if err != nil {
 				p.logErr(SERVE, err).Errorf("recon with %v failed", conn.RemoteAddr())
 			}
-		}()
+			return nil
+		})
+		p.muDie.Unlock()
 	}
 }
 
@@ -518,8 +545,10 @@ func (rwc *reconWithClient) popRequest() *requestEntry {
 	return result
 }
 
+const maxRecoverSize = 15000
+
 func (rwc *reconWithClient) isDone() bool {
-	return len(rwc.requestQ) == 0 && len(rwc.bottomQ) == 0
+	return len(rwc.requestQ) == 0 && len(rwc.bottomQ) == 0 && rwc.rcvrSet.Len() < maxRecoverSize
 }
 
 func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) error {
