@@ -307,6 +307,7 @@ func (p *Peer) setReadDeadline(conn net.Conn, d time.Duration) {
 }
 
 func (p *Peer) handleConfig(conn net.Conn, role string, failResp string) (_ *Config, _err error) {
+	w := bufio.NewWriter(conn)
 	p.setReadDeadline(conn, defaultTimeout)
 
 	config, err := p.settings.Config()
@@ -320,7 +321,11 @@ func (p *Peer) handleConfig(conn net.Conn, role string, failResp string) (_ *Con
 	// Send config to server on connect
 	handshake.Go(func() error {
 		p.logFields(role, log.Fields{"config": config}).Debug("writing config")
-		err := WriteMsg(conn, config)
+		err := WriteMsg(w, config)
+		if err != nil {
+			return errgo.Mask(err)
+		}
+		err = w.Flush()
 		if err != nil {
 			return errgo.Mask(err)
 		}
@@ -379,11 +384,15 @@ func (p *Peer) handleConfig(conn net.Conn, role string, failResp string) (_ *Con
 			p.logErr(role, err)
 		}
 
-		err = WriteString(conn, RemoteConfigFailed)
+		err = WriteString(w, RemoteConfigFailed)
 		if err != nil {
 			p.logErr(role, err)
 		}
-		err = WriteString(conn, failResp)
+		err = WriteString(w, failResp)
+		if err != nil {
+			p.logErr(role, err)
+		}
+		err = w.Flush()
 		if err != nil {
 			p.logErr(role, err)
 		}
@@ -393,12 +402,11 @@ func (p *Peer) handleConfig(conn net.Conn, role string, failResp string) (_ *Con
 
 	var acknowledge tomb.Tomb
 	acknowledge.Go(func() error {
-		bufw := bufio.NewWriter(conn)
-		err = WriteString(bufw, RemoteConfigPassed)
+		err = WriteString(w, RemoteConfigPassed)
 		if err != nil {
 			return errgo.Mask(err)
 		}
-		err = bufw.Flush()
+		err = w.Flush()
 		if err != nil {
 			return errgo.Mask(err)
 		}
@@ -509,6 +517,7 @@ type reconWithClient struct {
 	rcvrSet  *cf.ZSet
 	flushing bool
 	conn     net.Conn
+	bwr      *bufio.Writer
 	messages []ReconMsg
 }
 
@@ -614,9 +623,13 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 func (rwc *reconWithClient) flushQueue() error {
 	rwc.Peer.log(SERVE).Debug("flush queue")
 	rwc.messages = append(rwc.messages, &Flush{})
-	err := WriteMsg(rwc.conn, rwc.messages...)
+	err := WriteMsg(rwc.bwr, rwc.messages...)
 	if err != nil {
 		return errgo.NoteMask(err, "error writing messages")
+	}
+	err = rwc.bwr.Flush()
+	if err != nil {
+		return errgo.Mask(err)
 	}
 	rwc.messages = nil
 	rwc.pushBottom(&bottomEntry{state: reconStateFlushEnded})
@@ -630,7 +643,12 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 	p.log(SERVE).Debug("interacting with client")
 	p.setReadDeadline(conn, defaultTimeout)
 
-	recon := reconWithClient{Peer: p, conn: conn, rcvrSet: cf.NewZSet()}
+	recon := reconWithClient{
+		Peer:    p,
+		conn:    conn,
+		bwr:     bufio.NewWriter(conn),
+		rcvrSet: cf.NewZSet(),
+	}
 	root, err := p.ptree.Root()
 	if err != nil {
 		return err
@@ -716,7 +734,7 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 			return errgo.New("failed to match expected patterns")
 		}
 	}
-	err = WriteMsg(conn, &Done{})
+	err = WriteMsg(recon.bwr, &Done{})
 	if err != nil {
 		return errgo.Mask(err)
 	}

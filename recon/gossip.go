@@ -22,6 +22,7 @@
 package recon
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -143,6 +144,7 @@ func msgTypes(messages []ReconMsg) []string {
 type msgProgressChan chan *msgProgress
 
 func (p *Peer) clientRecon(conn net.Conn, remoteConfig *Config) error {
+	w := bufio.NewWriter(conn)
 	respSet := cf.NewZSet()
 	defer func() {
 		p.sendItems(respSet.Items(), conn, remoteConfig)
@@ -155,7 +157,7 @@ func (p *Peer) clientRecon(conn net.Conn, remoteConfig *Config) error {
 				p.log(GOSSIP).Info("reconcilation done")
 				break
 			} else {
-				err := WriteMsg(conn, &Error{&textMsg{Text: step.err.Error()}})
+				err := WriteMsg(w, &Error{&textMsg{Text: step.err.Error()}})
 				if err != nil {
 					p.logErr(GOSSIP, err).Error()
 				}
@@ -166,12 +168,17 @@ func (p *Peer) clientRecon(conn net.Conn, remoteConfig *Config) error {
 			pendingMessages = append(pendingMessages, step.messages...)
 			if step.flush {
 				for _, msg := range pendingMessages {
-					err := WriteMsg(conn, msg)
+					err := WriteMsg(w, msg)
 					if err != nil {
 						return errgo.Mask(err)
 					}
 				}
 				pendingMessages = nil
+
+				err := w.Flush()
+				if err != nil {
+					return errgo.Mask(err)
+				}
 			}
 		}
 		p.log(GOSSIP).Debugf("add step: %v", step)
