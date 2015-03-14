@@ -29,10 +29,16 @@ import (
 	"fmt"
 	"io"
 
+	"gopkg.in/errgo.v1"
+
 	cf "gopkg.in/hockeypuck/conflux.v2"
 )
 
-var SksZpNbytes int
+var (
+	SksZpNbytes int
+
+	maxReadLen = 1 << 20
+)
 
 func init() {
 	SksZpNbytes = cf.P_SKS.BitLen() / 8
@@ -132,6 +138,17 @@ func ReadInt(r io.Reader) (n int, err error) {
 	return
 }
 
+func ReadLen(r io.Reader) (int, error) {
+	n, err := ReadInt(r)
+	if err != nil {
+		return n, errgo.Mask(err)
+	}
+	if n > maxReadLen {
+		return 0, errgo.Newf("read length %d exceeds maximum limit", n)
+	}
+	return n, nil
+}
+
 func WriteInt(w io.Writer, n int) (err error) {
 	buf := make([]byte, 4)
 	binary.BigEndian.PutUint32(buf, uint32(n))
@@ -141,7 +158,7 @@ func WriteInt(w io.Writer, n int) (err error) {
 
 func ReadString(r io.Reader) (string, error) {
 	var n int
-	n, err := ReadInt(r)
+	n, err := ReadLen(r)
 	if err != nil || n == 0 {
 		return "", err
 	}
@@ -160,12 +177,12 @@ func WriteString(w io.Writer, text string) (err error) {
 }
 
 func ReadBitstring(r io.Reader) (*cf.Bitstring, error) {
-	nbits, err := ReadInt(r)
+	nbits, err := ReadLen(r)
 	if err != nil {
 		return nil, err
 	}
 	bs := cf.NewBitstring(nbits)
-	nbytes, err := ReadInt(r)
+	nbytes, err := ReadLen(r)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +209,7 @@ func WriteBitstring(w io.Writer, bs *cf.Bitstring) (err error) {
 }
 
 func ReadZZarray(r io.Reader) ([]*cf.Zp, error) {
-	n, err := ReadInt(r)
+	n, err := ReadLen(r)
 	if err != nil {
 		return nil, err
 	}
@@ -291,7 +308,7 @@ func (msg *ReconRqstPoly) unmarshal(r io.Reader) (err error) {
 	if err != nil {
 		return
 	}
-	msg.Size, err = ReadInt(r)
+	msg.Size, err = ReadLen(r)
 	if err != nil {
 		return
 	}
@@ -526,7 +543,7 @@ func (msg *Config) marshal(w io.Writer) (err error) {
 
 func (msg *Config) unmarshal(r io.Reader) (err error) {
 	var n int
-	if n, err = ReadInt(r); err != nil {
+	if n, err = ReadLen(r); err != nil {
 		return err
 	}
 	msg.Custom = make(map[string]string)
@@ -544,7 +561,7 @@ func (msg *Config) unmarshal(r io.Reader) (err error) {
 			fallthrough
 		case "mbar":
 			// Read the int length
-			if ival, err = ReadInt(r); err != nil {
+			if ival, err = ReadLen(r); err != nil {
 				return err
 			} else if ival != 4 {
 				return errors.New(fmt.Sprintf("Invalid length=%d for integer config value %s", ival, k))
@@ -579,7 +596,7 @@ func (msg *Config) unmarshal(r io.Reader) (err error) {
 
 func ReadMsg(r io.Reader) (msg ReconMsg, err error) {
 	var msgSize int
-	msgSize, err = ReadInt(r)
+	msgSize, err = ReadLen(r)
 	if err != nil {
 		return nil, err
 	}
