@@ -37,7 +37,7 @@ import (
 var (
 	SksZpNbytes int
 
-	maxReadLen = 1 << 20
+	maxReadLen = 1 << 24
 )
 
 func init() {
