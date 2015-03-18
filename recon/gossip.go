@@ -40,12 +40,12 @@ const GOSSIP = "gossip"
 // Gossip with remote servers, acting as a client.
 func (p *Peer) Gossip() error {
 	rand.Seed(time.Now().UnixNano())
-	delay := time.Second * time.Duration(rand.Intn(p.settings.GossipIntervalSecs))
+	timer := time.NewTimer(time.Second * time.Duration(rand.Intn(p.settings.GossipIntervalSecs)))
 	for {
 		select {
 		case <-p.t.Dying():
 			return nil
-		case <-time.After(delay):
+		case <-timer.C:
 
 			if p.readAcquire() {
 				peer, err := p.choosePartner()
@@ -55,20 +55,21 @@ func (p *Peer) Gossip() error {
 					} else {
 						p.logErr(GOSSIP, err).Error("choosePartner")
 					}
-				}
-
-				err = p.InitiateRecon(peer)
-				if errgo.Cause(err) == ErrPeerBusy {
-					p.logErr(GOSSIP, err).Debug()
-				} else if err != nil {
-					p.logErr(GOSSIP, err).Errorf("recon with %v failed", peer)
+				} else {
+					err = p.InitiateRecon(peer)
+					if errgo.Cause(err) == ErrPeerBusy {
+						p.logErr(GOSSIP, err).Debug()
+					} else if err != nil {
+						p.logErr(GOSSIP, err).Errorf("recon with %v failed", peer)
+					}
 				}
 
 				p.wg.Done()
 			}
 
-			delay = time.Second * time.Duration(rand.Intn(p.settings.GossipIntervalSecs))
+			delay := time.Second * time.Duration(rand.Intn(p.settings.GossipIntervalSecs))
 			p.log(GOSSIP).Infof("waiting %s for next gossip attempt", delay)
+			timer.Reset(delay)
 		}
 	}
 }
