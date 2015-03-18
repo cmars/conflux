@@ -50,28 +50,28 @@ type Settings struct {
 	PTreeConfig
 
 	Version   string     `toml:"version"`
-	LogName   string     `toml:"logname"`
+	LogName   string     `toml:"logname" json:"-"`
 	HTTPAddr  string     `toml:"httpAddr"`
-	HTTPNet   network    `toml:"httpNet"`
+	HTTPNet   network    `toml:"httpNet" json:"-"`
 	ReconAddr string     `toml:"reconAddr"`
-	ReconNet  network    `toml:"reconNet"`
+	ReconNet  network    `toml:"reconNet" json:"-"`
 	Partners  PartnerMap `toml:"partner"`
 	Filters   []string   `toml:"filters"`
 
 	// Backwards-compatible keys
-	CompatHTTPPort     int      `toml:"httpPort"`
-	CompatReconPort    int      `toml:"reconPort"`
-	CompatPartnerAddrs []string `toml:"partners"`
+	CompatHTTPPort     int      `toml:"httpPort" json:"-"`
+	CompatReconPort    int      `toml:"reconPort" json:"-"`
+	CompatPartnerAddrs []string `toml:"partners" json:"-"`
 
-	GossipIntervalSecs          int `toml:"gossipIntervalSecs"`
-	MaxOutstandingReconRequests int `toml:"maxOutstandingReconRequests"`
+	GossipIntervalSecs          int `toml:"gossipIntervalSecs" json:"-"`
+	MaxOutstandingReconRequests int `toml:"maxOutstandingReconRequests" json:"-"`
 }
 
 type Partner struct {
 	HTTPAddr  string  `toml:"httpAddr"`
-	HTTPNet   network `toml:"httpNet"`
+	HTTPNet   network `toml:"httpNet" json:"-"`
 	ReconAddr string  `toml:"reconAddr"`
-	ReconNet  network `toml:"reconNet"`
+	ReconNet  network `toml:"reconNet" json:"-"`
 }
 
 type network string
