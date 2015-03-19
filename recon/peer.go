@@ -153,6 +153,10 @@ func (p *Peer) Stop() error {
 	return p.t.Wait()
 }
 
+func (p *Peer) Flush() {
+	p.flush()
+}
+
 func (p *Peer) Insert(zs ...*cf.Zp) {
 	p.muElements.Lock()
 	defer p.muElements.Unlock()
@@ -216,34 +220,7 @@ func (p *Peer) mutate() {
 		p.once = nil
 		p.mu.Unlock()
 
-		p.muElements.Lock()
-
-		for _, z := range p.insertElements {
-			err := p.ptree.Insert(z)
-			if err != nil {
-				log.Warningf("cannot insert %q into prefix tree: %v", z, errgo.Details(err))
-			}
-		}
-		if len(p.insertElements) > 0 {
-			p.logFields("mutate", log.Fields{"elements": len(p.insertElements)}).Debugf("inserted")
-		}
-
-		for _, z := range p.removeElements {
-			err := p.ptree.Remove(z)
-			if err != nil {
-				log.Warningf("cannot remove %q from prefix tree: %v", z, errgo.Details(err))
-			}
-		}
-		if len(p.removeElements) > 0 {
-			p.logFields("mutate", log.Fields{"elements": len(p.removeElements)}).Debugf("removed")
-		}
-
-		p.insertElements = nil
-		p.removeElements = nil
-		if p.mutatedFunc != nil {
-			p.mutatedFunc()
-		}
-		p.muElements.Unlock()
+		p.flush()
 
 		p.mu.Lock()
 		p.mutating = false
@@ -252,6 +229,37 @@ func (p *Peer) mutate() {
 
 		return nil
 	})
+}
+
+func (p *Peer) flush() {
+	p.muElements.Lock()
+
+	for _, z := range p.insertElements {
+		err := p.ptree.Insert(z)
+		if err != nil {
+			log.Warningf("cannot insert %q into prefix tree: %v", z, errgo.Details(err))
+		}
+	}
+	if len(p.insertElements) > 0 {
+		p.logFields("mutate", log.Fields{"elements": len(p.insertElements)}).Debugf("inserted")
+	}
+
+	for _, z := range p.removeElements {
+		err := p.ptree.Remove(z)
+		if err != nil {
+			log.Warningf("cannot remove %q from prefix tree: %v", z, errgo.Details(err))
+		}
+	}
+	if len(p.removeElements) > 0 {
+		p.logFields("mutate", log.Fields{"elements": len(p.removeElements)}).Debugf("removed")
+	}
+
+	p.insertElements = nil
+	p.removeElements = nil
+	if p.mutatedFunc != nil {
+		p.mutatedFunc()
+	}
+	p.muElements.Unlock()
 }
 
 func (p *Peer) Serve() error {
