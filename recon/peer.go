@@ -305,7 +305,7 @@ func (p *Peer) Serve() error {
 	}
 }
 
-var defaultTimeout = 30 * time.Second
+var defaultTimeout = 300 * time.Second
 
 func (p *Peer) setReadDeadline(conn net.Conn, d time.Duration) {
 	err := conn.SetReadDeadline(time.Now().Add(d))
@@ -518,6 +518,8 @@ func (rs reconState) String() string {
 	return "Unknown"
 }
 
+const maxRequestQueueLen = 60000
+
 type reconWithClient struct {
 	*Peer
 	requestQ []*requestEntry
@@ -531,6 +533,12 @@ type reconWithClient struct {
 
 func (rwc *reconWithClient) pushBottom(bottom *bottomEntry) {
 	rwc.bottomQ = append(rwc.bottomQ, bottom)
+}
+
+func (rwc *reconWithClient) prependRequests(req ...*requestEntry) {
+	if len(rwc.requestQ) < maxRequestQueueLen {
+		rwc.requestQ = append(req, rwc.requestQ...)
+	}
 }
 
 func (rwc *reconWithClient) pushRequest(req *requestEntry) {
@@ -569,6 +577,10 @@ func (rwc *reconWithClient) isDone() bool {
 }
 
 func (rwc *reconWithClient) sendRequest(p *Peer, req *requestEntry) error {
+	if req == nil {
+		return errgo.New("nil request")
+	}
+
 	var msg ReconMsg
 	if req.node.IsLeaf() || (req.node.Size() < p.settings.MBar) {
 		elements, err := req.node.Elements()
@@ -602,9 +614,13 @@ func (rwc *reconWithClient) handleReply(p *Peer, msg ReconMsg, req *requestEntry
 		if err != nil {
 			return errgo.Mask(err)
 		}
-		for _, childNode := range children {
+		for i, childNode := range children {
 			rwc.Peer.logFields(SERVE, log.Fields{"childNode": childNode.Key()}).Debug("push")
-			rwc.pushRequest(&requestEntry{key: childNode.Key(), node: childNode})
+			if i == 0 {
+				rwc.pushRequest(&requestEntry{key: childNode.Key(), node: childNode})
+			} else {
+				rwc.prependRequests(&requestEntry{key: childNode.Key(), node: childNode})
+			}
 		}
 	case *Elements:
 		rwc.rcvrSet.AddAll(m.ZSet)
@@ -664,6 +680,9 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 
 	defer func() {
 		p.sendItems(recon.rcvrSet.Items(), conn, remoteConfig)
+	}()
+	defer func() {
+		WriteMsg(recon.bwr, &Done{})
 	}()
 
 	recon.pushRequest(&requestEntry{node: root, key: bitstring})
@@ -741,10 +760,6 @@ func (p *Peer) interactWithClient(conn net.Conn, remoteConfig *Config, bitstring
 		default:
 			return errgo.New("failed to match expected patterns")
 		}
-	}
-	err = WriteMsg(recon.bwr, &Done{})
-	if err != nil {
-		return errgo.Mask(err)
 	}
 	return nil
 }
