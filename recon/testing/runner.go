@@ -307,7 +307,7 @@ func (s *ReconSuite) TestPolySyncLowMBar(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 }
 
-func (s *ReconSuite) RunOneSided(c *gc.C, n int, timeout time.Duration) {
+func (s *ReconSuite) RunOneSided(c *gc.C, n int, serverHas bool, timeout time.Duration) {
 	ptree1, cleanup, err := s.Factory()
 	c.Assert(err, gc.IsNil)
 	defer cleanup()
@@ -325,8 +325,18 @@ func (s *ReconSuite) RunOneSided(c *gc.C, n int, timeout time.Duration) {
 	}
 
 	port1, port2 := portPair(c)
-	peer1 := s.newPeer(port1, port2, recon.PeerModeGossipOnly, ptree1)
-	peer2 := s.newPeer(port2, port1, recon.PeerModeServeOnly, ptree2)
+	var peer1Mode recon.PeerMode
+	var peer2Mode recon.PeerMode
+	if serverHas {
+		peer1Mode = recon.PeerModeGossipOnly
+		peer2Mode = recon.PeerModeServeOnly
+	} else {
+		peer1Mode = recon.PeerModeServeOnly
+		peer2Mode = recon.PeerModeGossipOnly
+	}
+
+	peer1 := s.newPeer(port1, port2, peer1Mode, ptree1)
+	peer2 := s.newPeer(port2, port1, peer2Mode, ptree2)
 
 	err = s.pollConvergence(c, peer1, peer2, expected, cf.NewZSet(), timeout)
 	c.Assert(err, gc.IsNil)

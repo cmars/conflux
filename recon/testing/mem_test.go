@@ -50,19 +50,22 @@ var _ = gc.Suite(&MemReconSuite{
 })
 
 func (s *MemReconSuite) TestOneSidedMedium(c *gc.C) {
-	s.RunOneSided(c, 250, 30*time.Second)
+	s.RunOneSided(c, 250, true, 30*time.Second)
+	s.RunOneSided(c, 250, false, 30*time.Second)
 }
 
 func (s *MemReconSuite) TestOneSidedLarge(c *gc.C) {
 	if !*long {
 		c.Skip("long running test")
 	}
-	s.RunOneSided(c, 15000, 60*time.Second)
+	s.RunOneSided(c, 15000, true, 60*time.Second)
+	s.RunOneSided(c, 15000, false, 60*time.Second)
 }
 
 func (s *MemReconSuite) TestOneSidedRidiculous(c *gc.C) {
 	if !*long {
 		c.Skip("long running test")
 	}
-	s.RunOneSided(c, 150000, 300*time.Second)
+	s.RunOneSided(c, 150000, true, 300*time.Second)
+	s.RunOneSided(c, 150000, false, 300*time.Second)
 }
