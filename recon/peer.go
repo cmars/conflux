@@ -267,6 +267,11 @@ func (p *Peer) Serve() error {
 	if err != nil {
 		return errgo.Mask(err)
 	}
+	matcher, err := p.settings.Matcher()
+	if err != nil {
+		return errgo.Mask(err)
+	}
+
 	ln, err := net.Listen(addr.Network(), addr.String())
 	if err != nil {
 		return errgo.Mask(err)
@@ -285,6 +290,13 @@ func (p *Peer) Serve() error {
 		if tcConn, ok := conn.(*net.TCPConn); ok {
 			tcConn.SetKeepAlive(true)
 			tcConn.SetKeepAlivePeriod(3 * time.Minute)
+
+			remoteAddr := tcConn.RemoteAddr().(*net.TCPAddr)
+			if !matcher.Match(remoteAddr.IP) {
+				log.Warningf("connection rejected from %q", remoteAddr)
+				conn.Close()
+				continue
+			}
 		}
 
 		p.muDie.Lock()

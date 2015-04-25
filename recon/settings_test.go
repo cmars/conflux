@@ -22,6 +22,7 @@
 package recon
 
 import (
+	"net"
 	"testing"
 
 	gc "gopkg.in/check.v1"
@@ -205,5 +206,54 @@ partners=["1.2.3.4:11370","5.6.7.8:11370"]
 		} else {
 			c.Check(settings, gc.DeepEquals, testCase.settings)
 		}
+	}
+}
+
+func (s *SettingsSuite) TestMatcher(c *gc.C) {
+	settings := &Settings{
+		AllowCIDRs: []string{"192.168.1.0/24", "10.0.0.0/8", "20.21.22.23/32"},
+		Partners: map[string]Partner{
+			"foo": Partner{
+				HTTPAddr:  "1.2.3.4:11371",
+				ReconAddr: "4.3.2.1:11370",
+			},
+			"bar": Partner{
+				HTTPAddr:  "5.6.7.8:11371",
+				ReconAddr: "5.6.7.8:11370",
+			},
+		},
+	}
+
+	matcher, err := settings.Matcher()
+	c.Assert(err, gc.IsNil)
+	testCases := []struct {
+		addr   string
+		expect bool
+	}{
+		{"10.0.0.14", true},
+		{"10.1.0.14", true},
+		{"11.1.0.14", false},
+
+		{"1.2.3.4", true},
+		{"1.2.3.5", false},
+		{"1.3.3.5", false},
+		{"4.3.2.1", true},
+
+		{"5.6.7.8", true},
+		{"5.6.7.9", false},
+		{"5.7.7.8", false},
+
+		{"20.21.22.23", true},
+		{"20.21.22.11", false},
+
+		{"147.26.10.11", false},
+		{"2.2.3.4", false},
+	}
+
+	for _, tc := range testCases {
+		ip := net.ParseIP(tc.addr)
+		c.Assert(err, gc.IsNil)
+		result := matcher.Match(ip)
+		c.Check(result, gc.Equals, tc.expect, gc.Commentf("addr=%q", tc.addr))
 	}
 }

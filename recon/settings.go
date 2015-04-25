@@ -49,14 +49,15 @@ type PTreeConfig struct {
 type Settings struct {
 	PTreeConfig
 
-	Version   string     `toml:"version"`
-	LogName   string     `toml:"logname" json:"-"`
-	HTTPAddr  string     `toml:"httpAddr"`
-	HTTPNet   network    `toml:"httpNet" json:"-"`
-	ReconAddr string     `toml:"reconAddr"`
-	ReconNet  network    `toml:"reconNet" json:"-"`
-	Partners  PartnerMap `toml:"partner"`
-	Filters   []string   `toml:"filters"`
+	Version    string     `toml:"version"`
+	LogName    string     `toml:"logname" json:"-"`
+	HTTPAddr   string     `toml:"httpAddr"`
+	HTTPNet    netType    `toml:"httpNet" json:"-"`
+	ReconAddr  string     `toml:"reconAddr"`
+	ReconNet   netType    `toml:"reconNet" json:"-"`
+	Partners   PartnerMap `toml:"partner"`
+	AllowCIDRs []string   `toml:"allowCIDRs"`
+	Filters    []string   `toml:"filters"`
 
 	// Backwards-compatible keys
 	CompatHTTPPort     int      `toml:"httpPort" json:"-"`
@@ -69,28 +70,102 @@ type Settings struct {
 
 type Partner struct {
 	HTTPAddr  string  `toml:"httpAddr"`
-	HTTPNet   network `toml:"httpNet" json:"-"`
+	HTTPNet   netType `toml:"httpNet" json:"-"`
 	ReconAddr string  `toml:"reconAddr"`
-	ReconNet  network `toml:"reconNet" json:"-"`
+	ReconNet  netType `toml:"reconNet" json:"-"`
 }
 
-type network string
+type matchAccessType uint8
 
 const (
-	NetworkDefault = network("")
-	NetworkTCP     = network("tcp")
-	NetworkUnix    = network("unix")
+	matchAllowAccess matchAccessType = iota
+)
+
+type IPMatcher interface {
+	Match(ip net.IP) bool
+}
+
+type ipMatcher struct {
+	nets []*net.IPNet
+}
+
+func newIPMatcher() *ipMatcher {
+	return &ipMatcher{}
+}
+
+func (m *ipMatcher) allow(partner Partner) error {
+	var httpAddr *net.TCPAddr
+	if partner.HTTPNet == NetworkDefault || partner.HTTPNet == NetworkTCP {
+		httpAddr, resolveErr := net.ResolveTCPAddr("tcp", partner.HTTPAddr)
+		if resolveErr == nil {
+			err := m.allowCIDR(fmt.Sprintf("%s/32", httpAddr.IP.String()))
+			if err != nil {
+				return errgo.Mask(err)
+			}
+		}
+	}
+	if partner.ReconNet == NetworkDefault || partner.ReconNet == NetworkTCP {
+		addr, err := net.ResolveTCPAddr("tcp", partner.ReconAddr)
+		if err == nil && (httpAddr == nil || !addr.IP.Equal(httpAddr.IP)) {
+			return m.allowCIDR(fmt.Sprintf("%s/32", addr.IP.String()))
+		}
+	}
+	return nil
+}
+
+func (m *ipMatcher) allowCIDR(cidr string) error {
+	_, ipnet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return errgo.Mask(err)
+	}
+	m.nets = append(m.nets, ipnet)
+	return nil
+}
+
+func (m *ipMatcher) Match(ip net.IP) bool {
+	for _, matchNet := range m.nets {
+		if matchNet.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Settings) Matcher() (IPMatcher, error) {
+	m := newIPMatcher()
+	for _, allowCIDR := range s.AllowCIDRs {
+		// TODO: improve iptrie to return errors
+		err := m.allowCIDR(allowCIDR)
+		if err != nil {
+			return nil, errgo.Mask(err)
+		}
+	}
+	for _, partner := range s.Partners {
+		err := m.allow(partner)
+		if err != nil {
+			return nil, errgo.Mask(err)
+		}
+	}
+	return m, nil
+}
+
+type netType string
+
+const (
+	NetworkDefault = netType("")
+	NetworkTCP     = netType("tcp")
+	NetworkUnix    = netType("unix")
 )
 
 // String implements the fmt.Stringer interface.
-func (n network) String() string {
+func (n netType) String() string {
 	if n == "" {
 		return string(NetworkTCP)
 	}
 	return string(n)
 }
 
-func (n network) Resolve(addr string) (net.Addr, error) {
+func (n netType) Resolve(addr string) (net.Addr, error) {
 	switch n {
 	case NetworkDefault, NetworkTCP:
 		return net.ResolveTCPAddr("tcp", addr)
