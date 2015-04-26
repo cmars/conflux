@@ -97,7 +97,7 @@ func (m *ipMatcher) allow(partner Partner) error {
 	var httpAddr *net.TCPAddr
 	if partner.HTTPNet == NetworkDefault || partner.HTTPNet == NetworkTCP {
 		httpAddr, resolveErr := net.ResolveTCPAddr("tcp", partner.HTTPAddr)
-		if resolveErr == nil {
+		if resolveErr == nil && httpAddr.IP != nil {
 			err := m.allowCIDR(fmt.Sprintf("%s/32", httpAddr.IP.String()))
 			if err != nil {
 				return errgo.Mask(err)
@@ -105,8 +105,8 @@ func (m *ipMatcher) allow(partner Partner) error {
 		}
 	}
 	if partner.ReconNet == NetworkDefault || partner.ReconNet == NetworkTCP {
-		addr, err := net.ResolveTCPAddr("tcp", partner.ReconAddr)
-		if err == nil && (httpAddr == nil || !addr.IP.Equal(httpAddr.IP)) {
+		addr, resolveErr := net.ResolveTCPAddr("tcp", partner.ReconAddr)
+		if resolveErr == nil && addr.IP != nil && (httpAddr == nil || !addr.IP.Equal(httpAddr.IP)) {
 			return m.allowCIDR(fmt.Sprintf("%s/32", addr.IP.String()))
 		}
 	}
@@ -123,6 +123,9 @@ func (m *ipMatcher) allowCIDR(cidr string) error {
 }
 
 func (m *ipMatcher) Match(ip net.IP) bool {
+	if ip.IsLoopback() {
+		return true
+	}
 	for _, matchNet := range m.nets {
 		if matchNet.Contains(ip) {
 			return true
@@ -134,7 +137,6 @@ func (m *ipMatcher) Match(ip net.IP) bool {
 func (s *Settings) Matcher() (IPMatcher, error) {
 	m := newIPMatcher()
 	for _, allowCIDR := range s.AllowCIDRs {
-		// TODO: improve iptrie to return errors
 		err := m.allowCIDR(allowCIDR)
 		if err != nil {
 			return nil, errgo.Mask(err)

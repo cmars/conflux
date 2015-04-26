@@ -269,6 +269,7 @@ func (p *Peer) Serve() error {
 	}
 	matcher, err := p.settings.Matcher()
 	if err != nil {
+		log.Errorf("cannot create matcher: %v", err)
 		return errgo.Mask(err)
 	}
 

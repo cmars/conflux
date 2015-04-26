@@ -257,3 +257,26 @@ func (s *SettingsSuite) TestMatcher(c *gc.C) {
 		c.Check(result, gc.Equals, tc.expect, gc.Commentf("addr=%q", tc.addr))
 	}
 }
+
+func (s *SettingsSuite) TestMatchAll(c *gc.C) {
+	settings := &Settings{
+		AllowCIDRs: []string{"0.0.0.0/0"},
+	}
+	matcher, err := settings.Matcher()
+	c.Assert(err, gc.IsNil)
+	testCases := []struct {
+		addr   string
+		expect bool
+	}{
+		{"10.0.0.1", true},
+		{"192.168.1.14", true},
+		{"127.0.0.1", true},
+	}
+
+	for _, tc := range testCases {
+		ip := net.ParseIP(tc.addr)
+		c.Assert(err, gc.IsNil)
+		result := matcher.Match(ip)
+		c.Check(result, gc.Equals, tc.expect, gc.Commentf("addr=%q", tc.addr))
+	}
+}
