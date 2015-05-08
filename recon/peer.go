@@ -353,6 +353,8 @@ func (p *Peer) handleConfig(conn net.Conn, role string, failResp string) (_ *Con
 		return nil
 	})
 
+	time.Sleep(3)
+
 	// Receive remote peer's config
 	handshake.Go(func() error {
 		defer close(result)

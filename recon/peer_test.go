@@ -23,13 +23,42 @@ package recon
 
 import (
 	"net"
+	"time"
 
 	gc "gopkg.in/check.v1"
+	"gopkg.in/errgo.v1"
 )
 
 type PeerSuite struct{}
 
 var _ = gc.Suite(&PeerSuite{})
+
+type errConn struct{}
+
+func (*errConn) Read(b []byte) (n int, err error) { return -1, errgo.New("err read") }
+
+func (*errConn) Write(b []byte) (n int, err error) { return -1, errgo.New("err write") }
+
+func (*errConn) Close() error { return errgo.New("err close") }
+
+func (*errConn) LocalAddr() net.Addr { return nil }
+
+func (*errConn) RemoteAddr() net.Addr { return nil }
+
+func (*errConn) SetDeadline(t time.Time) error { return errgo.New("err set deadline") }
+
+func (*errConn) SetReadDeadline(t time.Time) error { return errgo.New("err set read deadline") }
+
+func (*errConn) SetWriteDeadline(t time.Time) error { return errgo.New("err set write deadline") }
+
+func (s *PeerSuite) TestBrokenConfigExchange(c *gc.C) {
+	settings := DefaultSettings()
+	ptree := &MemPrefixTree{}
+	ptree.Init()
+	peer := NewPeer(settings, ptree)
+	_, err := peer.handleConfig(&errConn{}, "test", "something")
+	c.Assert(err, gc.NotNil)
+}
 
 func (s *PeerSuite) TestResolveRecoverAddr(c *gc.C) {
 	for _, testHostPort := range []string{"147.26.10.11:11370", "[fe80::d0dd:7dff:fefc:a828]:11370"} {
