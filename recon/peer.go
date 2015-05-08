@@ -327,20 +327,18 @@ func (p *Peer) setReadDeadline(conn net.Conn, d time.Duration) {
 	}
 }
 
-func (p *Peer) handleConfig(conn net.Conn, role string, failResp string) (_ *Config, _err error) {
+func (p *Peer) remoteConfig(conn net.Conn, role string, config *Config) (*Config, error) {
+	var remoteConfig *Config
 	w := bufio.NewWriter(conn)
-	p.setReadDeadline(conn, defaultTimeout)
 
-	config, err := p.settings.Config()
-	if err != nil {
-		return nil, errgo.Mask(err)
-	}
-
-	var handshake tomb.Tomb
-	result := make(chan *Config)
-
-	// Send config to server on connect
-	handshake.Go(func() error {
+	ch := make(chan struct{})
+	var t tomb.Tomb
+	t.Go(func() error {
+		<-ch
+		return nil
+	})
+	t.Go(func() error {
+		<-ch
 		p.logFields(role, log.Fields{"config": config}).Debug("writing config")
 		err := WriteMsg(w, config)
 		if err != nil {
@@ -352,33 +350,81 @@ func (p *Peer) handleConfig(conn net.Conn, role string, failResp string) (_ *Con
 		}
 		return nil
 	})
-
-	// Receive remote peer's config
-	handshake.Go(func() error {
-		defer close(result)
-
+	t.Go(func() error {
+		<-ch
 		p.logFields(role, log.Fields{"remoteAddr": conn.RemoteAddr()}).Debug("reading remote config")
 		var msg ReconMsg
-		msg, err = ReadMsg(conn)
+		msg, err := ReadMsg(conn)
 		if err != nil {
 			return errgo.Mask(err)
 		}
 
-		remoteConfig, ok := msg.(*Config)
+		rconf, ok := msg.(*Config)
 		if !ok {
 			return errgo.Newf("expected remote config, got %+v", msg)
 		}
 
-		result <- remoteConfig
+		remoteConfig = rconf
 		return nil
 	})
-
-	remoteConfig, ok := <-result
-	err = handshake.Wait()
+	close(ch)
+	err := t.Wait()
 	if err != nil {
 		return nil, errgo.Mask(err)
-	} else if !ok {
-		return nil, errgo.New("config handshake failed")
+	}
+	return remoteConfig, nil
+}
+
+func (p *Peer) ackConfig(conn net.Conn) error {
+	w := bufio.NewWriter(conn)
+
+	ch := make(chan struct{})
+	var t tomb.Tomb
+	t.Go(func() error {
+		<-ch
+		return nil
+	})
+	t.Go(func() error {
+		<-ch
+		err := WriteString(w, RemoteConfigPassed)
+		if err != nil {
+			return errgo.Mask(err)
+		}
+		err = w.Flush()
+		if err != nil {
+			return errgo.Mask(err)
+		}
+		return nil
+	})
+	t.Go(func() error {
+		remoteConfigStatus, err := ReadString(conn)
+		if err != nil {
+			return errgo.Mask(err)
+		}
+		if remoteConfigStatus != RemoteConfigPassed {
+			reason, err := ReadString(conn)
+			if err != nil {
+				return errgo.WithCausef(err, ErrRemoteRejectedConfig, "remote rejected config")
+			}
+			return errgo.NoteMask(ErrRemoteRejectedConfig, reason)
+		}
+		return nil
+	})
+	close(ch)
+	return t.Wait()
+}
+
+func (p *Peer) handleConfig(conn net.Conn, role string, failResp string) (_ *Config, _err error) {
+	p.setReadDeadline(conn, defaultTimeout)
+
+	config, err := p.settings.Config()
+	if err != nil {
+		return nil, errgo.Mask(err)
+	}
+
+	remoteConfig, err := p.remoteConfig(conn, role, config)
+	if err != nil {
+		return nil, errgo.Mask(err)
 	}
 
 	p.logFields(role, log.Fields{"remoteConfig": remoteConfig}).Debug()
@@ -399,6 +445,7 @@ func (p *Peer) handleConfig(conn net.Conn, role string, failResp string) (_ *Con
 		}
 	}
 
+	w := bufio.NewWriter(conn)
 	if failResp != "" {
 		err = conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 		if err != nil {
@@ -421,36 +468,7 @@ func (p *Peer) handleConfig(conn net.Conn, role string, failResp string) (_ *Con
 		return nil, errgo.Newf("cannot peer: %v", failResp)
 	}
 
-	var acknowledge tomb.Tomb
-	acknowledge.Go(func() error {
-		err = WriteString(w, RemoteConfigPassed)
-		if err != nil {
-			return errgo.Mask(err)
-		}
-		err = w.Flush()
-		if err != nil {
-			return errgo.Mask(err)
-		}
-		return nil
-	})
-
-	acknowledge.Go(func() error {
-		remoteConfigStatus, err := ReadString(conn)
-		if err != nil {
-			return errgo.Mask(err)
-		}
-		if remoteConfigStatus != RemoteConfigPassed {
-			reason, err := ReadString(conn)
-			if err != nil {
-				return errgo.WithCausef(err, ErrRemoteRejectedConfig, "remote rejected config")
-			}
-			return errgo.NoteMask(ErrRemoteRejectedConfig, reason)
-		}
-		return nil
-	})
-
-	// Ensure we were able to complete acknowledgement.
-	err = acknowledge.Wait()
+	err = p.ackConfig(conn)
 	if err != nil {
 		return nil, errgo.Mask(err)
 	}
