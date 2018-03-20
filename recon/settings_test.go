@@ -91,7 +91,7 @@ filters=["something","else"]
 		"invalid toml",
 		`nope`,
 		nil,
-		`.*(Expected key separator '=', but got '\\n' instead|Bare keys cannot contain '\\n').*`,
+		`.*(Expected key separator '=', but got '\\n' instead|Bare keys cannot contain '\\n'|bare keys cannot contain '\\x00').*`,
 	}, {
 		"invalid http net",
 		`
@@ -101,14 +101,14 @@ httpNet="ansible"
 		nil,
 		`.*don't know how to resolve network \"ansible\" address.*`,
 	}, {
-		"invalid http net",
+		"invalid http addr",
 		`
 [conflux.recon]
 httpNet="tcp"
 httpAddr="/dev/null"
 `,
 		nil,
-		`.*missing port in address /dev/null.*`,
+		`.*(missing port in address /dev/null|address /dev/null: missing port in address).*`,
 	}, {
 		"invalid recon net",
 		`
@@ -130,7 +130,7 @@ reconNet="tcp"
 reconAddr=":nope"
 `,
 		nil,
-		`.*unknown port tcp/nope.*`,
+		`.*(unknown port tcp/nope|address tcp/nope: unknown port).*`,
 	}, {
 		"new-style recon partners",
 		`
