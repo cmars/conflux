@@ -85,12 +85,12 @@ type Peer struct {
 	muDie sync.Mutex
 	t     tomb.Tomb
 
-	wg sync.WaitGroup
-
+	cond     *sync.Cond
 	mu       sync.RWMutex
+	once     *sync.Once
 	full     bool
 	mutating bool
-	once     *sync.Once
+	readers  int
 
 	muElements     sync.Mutex
 	insertElements []*cf.Zp
@@ -100,11 +100,14 @@ type Peer struct {
 }
 
 func NewPeer(settings *Settings, tree PrefixTree) *Peer {
-	return &Peer{
+	p := &Peer{
 		RecoverChan: make(RecoverChan, 1),
 		settings:    settings,
+		once:        &sync.Once{},
 		ptree:       tree,
 	}
+	p.cond = sync.NewCond(&p.mu)
+	return p
 }
 
 func NewMemPeer() *Peer {
@@ -176,24 +179,30 @@ func (p *Peer) SetMutatedFunc(f func()) {
 }
 
 func (p *Peer) readAcquire() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
-	if !p.mutating {
-		if p.full {
-			// Outbound recovery channel is full.
-			return false
-		}
-
-		p.wg.Add(1)
-
-		if p.once == nil {
-			p.once = &sync.Once{}
-		}
-		p.once.Do(p.mutate)
-		return true
+	// Mutating or outbound recovery channel is full.
+	if p.mutating || p.full {
+		return false
 	}
-	return false
+
+	p.readers++
+	p.once.Do(p.mutate)
+
+	return true
+}
+
+func (p *Peer) readRelease() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.readers--
+	if p.readers < 0 {
+		panic("negative readers")
+	}
+
+	p.cond.Signal()
 }
 
 func (p *Peer) isDying() bool {
@@ -213,11 +222,12 @@ func (p *Peer) mutate() {
 	}
 
 	p.t.Go(func() error {
-		p.wg.Wait()
-
 		p.mu.Lock()
+		for p.readers != 0 {
+			p.cond.Wait()
+		}
 		p.mutating = true
-		p.once = nil
+		p.once = &sync.Once{}
 		p.mu.Unlock()
 
 		p.flush()
@@ -490,7 +500,7 @@ func (p *Peer) Accept(conn net.Conn) (_err error) {
 
 	var failResp string
 	if p.readAcquire() {
-		defer p.wg.Done()
+		defer p.readRelease()
 	} else {
 		failResp = "sync not available, currently mutating"
 	}

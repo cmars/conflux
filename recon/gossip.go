@@ -37,10 +37,20 @@ import (
 
 const GOSSIP = "gossip"
 
+// skewedGossipInterval returns the configured gossip interval
+// with a randomised skew of between +/-10%, giving 90% to 110%
+// of the configured interval.
+func (p *Peer) skewedGossipInterval() time.Duration {
+	interval := float32(p.settings.GossipIntervalSecs)
+	base := time.Duration(interval * 0.9)
+	skew := time.Duration(rand.Intn(int(interval*0.2) + 1))
+	return (base + skew) * time.Second
+}
+
 // Gossip with remote servers, acting as a client.
 func (p *Peer) Gossip() error {
 	rand.Seed(time.Now().UnixNano())
-	timer := time.NewTimer(time.Second * time.Duration(rand.Intn(p.settings.GossipIntervalSecs)))
+	timer := time.NewTimer(p.skewedGossipInterval())
 	for {
 		select {
 		case <-p.t.Dying():
@@ -64,10 +74,10 @@ func (p *Peer) Gossip() error {
 					}
 				}
 
-				p.wg.Done()
+				p.readRelease()
 			}
 
-			delay := time.Second * time.Duration(rand.Intn(p.settings.GossipIntervalSecs))
+			delay := p.skewedGossipInterval()
 			p.log(GOSSIP).Infof("waiting %s for next gossip attempt", delay)
 			timer.Reset(delay)
 		}
