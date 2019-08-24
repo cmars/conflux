@@ -4,6 +4,8 @@
 conflux - Distributed database synchronization
 ==============================================
 
+__This package has been moved into https://github.com/hockeypuck/hockeypuck. Further contributions should be made there, this project has been archived.__
+
 Conflux synchronizes data by unique content-addressable identifiers.
 It does this by representing the entire set of identifiers with a
 polynomial. The difference between the databases is represented as
